@@ -123,3 +123,17 @@ API keys are now session inputs instead of only environment variables:
 - The desktop app labels the shared key field as **Session API Key** and passes
   it through project generation directly instead of mutating process environment
   variables.
+
+## Seventh implementation slice
+
+Layouts are no longer limited to built-in presets:
+
+- Project JSON can store custom atlas layouts beside asset types.
+- The prompt planner and project generator resolve custom layouts through the
+  project before falling back to built-ins.
+- `spritegen project layout add-grid` creates reusable project-specific grid
+  atlases for contact sheets, tiles, multi-pose outputs, or any repeated cells.
+- `spritegen project layout import/export/info/list/slice` lets users move layout
+  JSON between projects and slice generated images with either built-in or custom
+  layouts.
+- The desktop layout picker includes project layouts after a project is loaded.

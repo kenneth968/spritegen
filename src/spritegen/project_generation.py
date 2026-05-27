@@ -8,7 +8,6 @@ from pathlib import Path
 
 from .config import SpriteConfig
 from .generator import SpriteGenerator
-from .layouts import get_layout
 from .projects import AssetSpec, ProjectSpec, ProjectStore, PromptPacket, PromptPlanner
 from .slicer import Slicer
 from .style import StylePreset, StyleManager
@@ -122,7 +121,7 @@ class ProjectAssetGenerator:
         outputs: list[GeneratedPacketOutput] = []
 
         for packet in packets:
-            layout = get_layout(packet.layout_name)
+            layout = project.get_layout(packet.layout_name)
             stage_name = self._stage_filename(packet)
             raw_path = base_output / f"{stage_name}.png"
 

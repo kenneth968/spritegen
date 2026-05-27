@@ -219,6 +219,7 @@ class ProjectSpec:
     color_treatment: ColorTreatment = field(default_factory=ColorTreatment)
     postprocess: PostProcessSettings = field(default_factory=PostProcessSettings)
     asset_types: dict[str, AssetTypeSpec] = field(default_factory=dict)
+    custom_layouts: dict[str, AssetLayout] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not self.slug:
@@ -226,6 +227,21 @@ class ProjectSpec:
 
     def add_asset_type(self, asset_type: AssetTypeSpec) -> None:
         self.asset_types[asset_type.name] = asset_type
+
+    def add_layout(self, layout: AssetLayout) -> None:
+        errors = layout.validate()
+        if errors:
+            raise ValueError("; ".join(errors))
+        self.custom_layouts[layout.name] = layout
+
+    def get_layout(self, name: str) -> AssetLayout:
+        if name in self.custom_layouts:
+            return self.custom_layouts[name]
+        try:
+            return get_layout(name)
+        except ValueError as exc:
+            known = ", ".join(sorted([*self.custom_layouts.keys()])) or "none"
+            raise ValueError(f"{exc}. Project custom layouts: {known}") from exc
 
     def get_asset_type(self, name: str) -> AssetTypeSpec:
         try:
@@ -251,6 +267,10 @@ class ProjectSpec:
                 name: asset_type.to_dict()
                 for name, asset_type in sorted(self.asset_types.items())
             },
+            "custom_layouts": {
+                name: layout.to_dict()
+                for name, layout in sorted(self.custom_layouts.items())
+            },
         }
 
     @classmethod
@@ -271,6 +291,8 @@ class ProjectSpec:
         )
         for asset_type_data in data.get("asset_types", {}).values():
             project.add_asset_type(AssetTypeSpec.from_dict(asset_type_data))
+        for layout_data in data.get("custom_layouts", {}).values():
+            project.add_layout(AssetLayout.from_dict(layout_data))
         return project
 
 
@@ -464,7 +486,7 @@ class PromptPlanner:
         known_assets: list[AssetSpec] | None = None,
     ) -> str:
         known = self._known_asset_context(known_assets or [], exclude_slug=asset.slug)
-        layout = get_layout(asset.layout or asset_type.default_layout)
+        layout = project.get_layout(asset.layout or asset_type.default_layout)
         return "\n".join(
             part
             for part in [
@@ -492,7 +514,7 @@ class PromptPlanner:
         asset_type: AssetTypeSpec,
         asset: AssetSpec,
     ) -> str:
-        layout = get_layout(asset.layout or asset_type.default_layout)
+        layout = project.get_layout(asset.layout or asset_type.default_layout)
         guide_names = [
             "project",
             "asset_type",
@@ -509,7 +531,7 @@ class PromptPlanner:
         known_assets: list[AssetSpec] | None = None,
     ) -> list[PromptPacket]:
         asset_type = project.get_asset_type(asset.asset_type)
-        layout = get_layout(asset.layout or asset_type.default_layout)
+        layout = project.get_layout(asset.layout or asset_type.default_layout)
         count = max(asset_type.evolution.count, 1)
         packets: list[PromptPacket] = []
         for stage_index in range(1, count + 1):

@@ -74,6 +74,56 @@ def test_project_store_round_trips_prompt_plan(tmp_path):
     assert plan_path.exists()
 
 
+def test_project_custom_layout_round_trips_and_drives_prompt_plan(tmp_path):
+    project = ProjectSpec(
+        name="Portraits",
+        summary="Character portrait set",
+        visual_style="clean tactical RPG portraits",
+        shared_context="Moonlit guild members.",
+    )
+    project.provider_defaults.image_provider = "mock"
+    project.provider_defaults.image_model = "mock"
+    layout = AssetLayout.grid(
+        name="portrait_emotions",
+        width=768,
+        height=512,
+        rows=2,
+        columns=3,
+        region_prefix="emotion",
+    )
+    layout.prompt_instructions = (
+        "Create a 3 by 2 portrait emotion atlas with clean seams."
+    )
+    project.add_layout(layout)
+    project.add_asset_type(
+        AssetTypeSpec(
+            name="portrait",
+            shared_prompt="Same character, different expressions.",
+            default_layout="portrait_emotions",
+        )
+    )
+    asset = AssetSpec(
+        name="Rook",
+        asset_type="portrait",
+        description="A rogue assassin portrait sheet.",
+    )
+
+    store = ProjectStore(tmp_path)
+    loaded = store.load_project(store.save_project(project))
+    packet = PromptPlanner().build_prompt_packets(loaded, asset)[0]
+    result = ProjectAssetGenerator(ProjectStore(tmp_path / "generated-store")).generate(
+        project=loaded,
+        asset=asset,
+        output_root=tmp_path / "generated",
+    )
+
+    assert loaded.get_layout("portrait_emotions").width == 768
+    assert packet.layout_name == "portrait_emotions"
+    assert "3 by 2 portrait emotion atlas" in packet.prompt
+    assert "emotion_6" in packet.prompt
+    assert len(result.outputs[0].slices) == 6
+
+
 def test_prompt_uses_known_assets_for_universe_coherence():
     project = ProjectSpec(
         name="Dungeon portraits",

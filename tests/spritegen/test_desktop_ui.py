@@ -51,6 +51,7 @@ def test_main_window_loads_saved_project_and_asset(tmp_path):
         ProjectSpec,
         ProjectStore,
     )
+    from spritegen.layouts import AssetLayout
     from spritegen.ui.main_window import MainWindow
 
     store = ProjectStore(tmp_path / "projects")
@@ -63,12 +64,22 @@ def test_main_window_loads_saved_project_and_asset(tmp_path):
         color_treatment=ColorTreatment(mode="grayscale_value_map"),
     )
     project.postprocess.remove_background = False
+    project.add_layout(
+        AssetLayout.grid(
+            name="tower_cards",
+            width=768,
+            height=512,
+            rows=2,
+            columns=3,
+            region_prefix="card",
+        )
+    )
     project.add_asset_type(
         AssetTypeSpec(
             name="tower",
             shared_prompt="Readable tower upgrades.",
             evolution=EvolutionPlan(count=3),
-            default_layout="four_stage_grid",
+            default_layout="tower_cards",
         )
     )
     asset = AssetSpec(
@@ -77,7 +88,7 @@ def test_main_window_loads_saved_project_and_asset(tmp_path):
         description="Spore cloud tower.",
         details="Soft cap.",
         enhanced_prompt="Improved spore cloud prompt.",
-        layout="four_stage_grid",
+        layout="tower_cards",
     )
     store.save_project(project)
     store.save_asset(project, asset)
@@ -95,7 +106,8 @@ def test_main_window_loads_saved_project_and_asset(tmp_path):
     assert window.style_edit.toPlainText() == "inked grayscale sprites"
     assert window.color_mode_combo.currentData() == "grayscale_value_map"
     assert window.remove_background_check.isChecked() is False
-    assert window.layout_combo.currentData() == "four_stage_grid"
+    assert window.layout_combo.findData("tower_cards") >= 0
+    assert window.layout_combo.currentData() == "tower_cards"
 
     asset_index = window.asset_combo.findData("puffball")
     assert asset_index >= 0

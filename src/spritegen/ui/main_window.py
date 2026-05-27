@@ -270,8 +270,7 @@ class MainWindow(QWidget):
         asset_layout.addRow("AI Type:", self.improve_type_btn)
 
         self.layout_combo = QComboBox()
-        for name in sorted(PRESET_LAYOUTS):
-            self.layout_combo.addItem(name, name)
+        self._refresh_layout_combo()
         asset_layout.addRow("Layout:", self.layout_combo)
 
         asset_open_row = QHBoxLayout()
@@ -431,6 +430,23 @@ class MainWindow(QWidget):
             index = self.asset_combo.findData(selected)
             if index >= 0:
                 self.asset_combo.setCurrentIndex(index)
+
+    def _refresh_layout_combo(
+        self,
+        project: ProjectSpec | None = None,
+        selected_name: str | None = None,
+    ) -> None:
+        if not hasattr(self, "layout_combo"):
+            return
+        selected = selected_name or self.layout_combo.currentData()
+        self.layout_combo.clear()
+        for name in sorted(PRESET_LAYOUTS):
+            self.layout_combo.addItem(name, name)
+        if project:
+            for name in sorted(project.custom_layouts):
+                self.layout_combo.addItem(f"{name} (project)", name)
+        if selected:
+            self._set_combo_value(self.layout_combo, selected)
 
     def _on_load_project(self) -> None:
         slug = self.project_combo.currentData()
@@ -675,6 +691,8 @@ class MainWindow(QWidget):
         )
         existing_project = self._existing_project(slug)
         if existing_project:
+            for layout in existing_project.custom_layouts.values():
+                project.add_layout(layout)
             for existing_asset_type in existing_project.asset_types.values():
                 project.add_asset_type(existing_asset_type)
         project.add_asset_type(
@@ -747,6 +765,7 @@ class MainWindow(QWidget):
         self._set_combo_value(self.color_mode_combo, project.color_treatment.mode)
         self.color_prompt_edit.setPlainText(project.color_treatment.custom_prompt)
         self.remove_background_check.setChecked(project.postprocess.remove_background)
+        self._refresh_layout_combo(project)
         if project.asset_types:
             self._apply_asset_type_spec(next(iter(project.asset_types.values())))
 

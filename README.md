@@ -15,6 +15,7 @@ AI-powered sprite sheet generator for tower defense games. Generates evolution c
 - **Color production modes**: Generate full color, limited palette, black/white, grayscale value-map, or single-hue value-map assets
 - **Post-processing control**: Save whether layout slices should remove simple backgrounds or keep the generated frame/background
 - **Atlas layouts**: Define sliceable composite outputs, including a full-body character plus eight chibi emotion heads in one generated image
+- **Project custom layouts**: Save reusable project-specific atlas grids and slice generated images with them
 
 ## Quick Start
 
@@ -116,6 +117,28 @@ spritegen layout slice \
   --layout character_full_plus_8_emotions \
   --output output/rogue \
   --prefix rogue_assassin
+```
+
+For project-specific atlas shapes, save a custom layout on the project and reuse it
+for future assets:
+
+```bash
+spritegen project layout --project myceliumtd add-grid \
+  --name tower_contact_sheet \
+  --width 1536 \
+  --height 1024 \
+  --rows 2 \
+  --columns 3 \
+  --region-prefix tower_pose \
+  --prompt-instructions "Create six clean tower pose cells with hard seams."
+
+spritegen project asset \
+  --project myceliumtd \
+  --asset-type tower \
+  --name PuffballContact \
+  --description "Puffball tower shown in six readable pose variants" \
+  --layout tower_contact_sheet \
+  --print-prompts
 ```
 
 ## Tower Types

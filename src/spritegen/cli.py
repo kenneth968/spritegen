@@ -7,10 +7,11 @@ Usage:
 """
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
-from .layouts import PRESET_LAYOUTS, get_layout
+from .layouts import PRESET_LAYOUTS, AssetLayout, get_layout
 from .enhancement import PromptEnhancer
 from .project_generation import ProjectAssetGenerator
 from .projects import (
@@ -169,9 +170,87 @@ def cmd_layout(args: argparse.Namespace) -> int:
     return 1
 
 
+def print_layout(layout: AssetLayout) -> None:
+    print(f"Layout: {layout.name}")
+    print(f"Canvas: {layout.width}x{layout.height}")
+    print(layout.prompt_instructions)
+    for region in layout.regions:
+        print(
+            f"  - {region.name}: ({region.x},{region.y}) "
+            f"{region.width}x{region.height} - {region.prompt_role}"
+        )
+
+
 def cmd_project(args: argparse.Namespace) -> int:
     store = ProjectStore(root=args.project_root)
     planner = PromptPlanner()
+
+    if args.project_command == "layout":
+        project = store.load_project(args.project)
+
+        if args.layout_action == "list":
+            print("Built-in layouts:")
+            for name, layout in sorted(PRESET_LAYOUTS.items()):
+                print(f"  - {name}: {layout.width}x{layout.height}, {len(layout.regions)} regions")
+            print("Project layouts:")
+            if not project.custom_layouts:
+                print("  - none")
+            for name, layout in sorted(project.custom_layouts.items()):
+                print(f"  - {name}: {layout.width}x{layout.height}, {len(layout.regions)} regions")
+            return 0
+
+        if args.layout_action == "info":
+            print_layout(project.get_layout(args.name))
+            return 0
+
+        if args.layout_action == "add-grid":
+            layout = AssetLayout.grid(
+                name=args.name,
+                width=args.width,
+                height=args.height,
+                rows=args.rows,
+                columns=args.columns,
+                region_prefix=args.region_prefix,
+            )
+            if args.prompt_instructions:
+                layout.prompt_instructions = args.prompt_instructions
+            project.add_layout(layout)
+            path = store.save_project(project)
+            print(f"Saved layout: {layout.name}")
+            print(f"Project file: {path}")
+            return 0
+
+        if args.layout_action == "import":
+            data = json.loads(Path(args.file).read_text(encoding="utf-8"))
+            layout = AssetLayout.from_dict(data)
+            project.add_layout(layout)
+            path = store.save_project(project)
+            print(f"Imported layout: {layout.name}")
+            print(f"Project file: {path}")
+            return 0
+
+        if args.layout_action == "export":
+            layout = project.get_layout(args.name)
+            data = json.dumps(layout.to_dict(), indent=2)
+            if args.output:
+                output = Path(args.output)
+                output.parent.mkdir(parents=True, exist_ok=True)
+                output.write_text(data, encoding="utf-8")
+                print(f"Exported layout: {output}")
+            else:
+                print(data)
+            return 0
+
+        if args.layout_action == "slice":
+            layout = project.get_layout(args.name)
+            image_data = Path(args.image).read_bytes()
+            slicer = Slicer(output_dir=Path(args.output))
+            paths = slicer.slice_layout_image(image_data, layout, prefix=args.prefix)
+            for path in paths:
+                print(f"Saved: {path}")
+            return 0
+
+        return 1
 
     if args.project_command == "init":
         if args.evolutions < 1:
@@ -217,6 +296,7 @@ def cmd_project(args: argparse.Namespace) -> int:
     if args.project_command == "asset":
         project = store.load_project(args.project)
         asset_type = project.get_asset_type(args.asset_type)
+        project.get_layout(args.layout or asset_type.default_layout)
         asset = AssetSpec(
             name=args.name,
             asset_type=args.asset_type,
@@ -595,6 +675,49 @@ def main() -> int:
         dest="project_command",
         required=True,
     )
+
+    project_layout = project_subparsers.add_parser(
+        "layout",
+        help="Manage project-specific atlas layouts",
+    )
+    project_layout.add_argument("--project", required=True, help="Project slug or JSON path")
+    project_layout_subparsers = project_layout.add_subparsers(
+        dest="layout_action",
+        required=True,
+    )
+    project_layout_subparsers.add_parser("list", help="List built-in and project layouts")
+    project_layout_info = project_layout_subparsers.add_parser("info", help="Show a layout")
+    project_layout_info.add_argument("--name", required=True)
+    project_layout_add_grid = project_layout_subparsers.add_parser(
+        "add-grid",
+        help="Add a reusable grid atlas layout to the project",
+    )
+    project_layout_add_grid.add_argument("--name", required=True)
+    project_layout_add_grid.add_argument("--width", type=int, default=1024)
+    project_layout_add_grid.add_argument("--height", type=int, default=1024)
+    project_layout_add_grid.add_argument("--rows", type=int, required=True)
+    project_layout_add_grid.add_argument("--columns", type=int, required=True)
+    project_layout_add_grid.add_argument("--region-prefix", default="cell")
+    project_layout_add_grid.add_argument("--prompt-instructions", default="")
+    project_layout_import = project_layout_subparsers.add_parser(
+        "import",
+        help="Import a layout JSON file into the project",
+    )
+    project_layout_import.add_argument("--file", required=True)
+    project_layout_export = project_layout_subparsers.add_parser(
+        "export",
+        help="Export a built-in or project layout as JSON",
+    )
+    project_layout_export.add_argument("--name", required=True)
+    project_layout_export.add_argument("--output")
+    project_layout_slice = project_layout_subparsers.add_parser(
+        "slice",
+        help="Slice an image with a built-in or project layout",
+    )
+    project_layout_slice.add_argument("--name", required=True, help="Layout name")
+    project_layout_slice.add_argument("--image", required=True, help="Generated atlas image")
+    project_layout_slice.add_argument("--output", default="output/sprites")
+    project_layout_slice.add_argument("--prefix")
 
     project_init = project_subparsers.add_parser("init", help="Create a project spec")
     project_init.add_argument("--name", required=True)
