@@ -23,12 +23,14 @@ def test_main_window_saves_project_plan(tmp_path):
         window.color_mode_combo.findData("single_hue_value_map")
     )
     window.color_prompt_edit.setPlainText("Use cap color as tint band 3.")
+    window.remove_background_check.setChecked(False)
 
     project, asset = window._save_current_specs()
 
     assert project.slug == "myceliumtd"
     assert asset.slug == "puffball"
     assert project.color_treatment.mode == "single_hue_value_map"
+    assert project.postprocess.remove_background is False
     assert (tmp_path / "projects" / "myceliumtd" / "project.json").exists()
     assert (tmp_path / "projects" / "myceliumtd" / "assets" / "puffball.json").exists()
 
@@ -60,6 +62,7 @@ def test_main_window_loads_saved_project_and_asset(tmp_path):
         palette=["#222222", "#BBBBBB"],
         color_treatment=ColorTreatment(mode="grayscale_value_map"),
     )
+    project.postprocess.remove_background = False
     project.add_asset_type(
         AssetTypeSpec(
             name="tower",
@@ -91,6 +94,7 @@ def test_main_window_loads_saved_project_and_asset(tmp_path):
 
     assert window.style_edit.toPlainText() == "inked grayscale sprites"
     assert window.color_mode_combo.currentData() == "grayscale_value_map"
+    assert window.remove_background_check.isChecked() is False
     assert window.layout_combo.currentData() == "four_stage_grid"
 
     asset_index = window.asset_combo.findData("puffball")

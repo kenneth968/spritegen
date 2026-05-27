@@ -64,6 +64,7 @@ class ProjectAssetGenerator:
         provider: str | None = None,
         model: str | None = None,
         output_root: Path | str | None = None,
+        remove_background: bool | None = None,
     ) -> ProjectGenerationResult:
         planner = PromptPlanner()
         packets = planner.build_prompt_packets(
@@ -78,6 +79,7 @@ class ProjectAssetGenerator:
             provider=provider,
             model=model,
             output_root=output_root,
+            remove_background=remove_background,
         )
 
     def generate_packets(
@@ -88,6 +90,7 @@ class ProjectAssetGenerator:
         provider: str | None = None,
         model: str | None = None,
         output_root: Path | str | None = None,
+        remove_background: bool | None = None,
     ) -> ProjectGenerationResult:
         image_provider = provider or project.provider_defaults.image_provider
         image_model = model or project.provider_defaults.image_model
@@ -100,6 +103,11 @@ class ProjectAssetGenerator:
             else self.store.generated_dir(project_slug) / asset_slug
         )
         base_output.mkdir(parents=True, exist_ok=True)
+        should_remove_background = (
+            project.postprocess.remove_background
+            if remove_background is None
+            else remove_background
+        )
 
         generator = self._create_generator(project, image_provider, image_model, base_output)
         outputs: list[GeneratedPacketOutput] = []
@@ -122,7 +130,7 @@ class ProjectAssetGenerator:
                 output_dir=slice_dir,
                 config=SpriteConfig(
                     output_dir=slice_dir,
-                    transparent_bg=True,
+                    transparent_bg=should_remove_background,
                 ),
             )
             slice_paths = slicer.slice_layout_image(
@@ -148,6 +156,9 @@ class ProjectAssetGenerator:
             "asset": asset.to_dict(),
             "provider": image_provider,
             "model": image_model,
+            "postprocess": {
+                "remove_background": should_remove_background,
+            },
             "outputs": [output.to_dict() for output in outputs],
         }
         manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")

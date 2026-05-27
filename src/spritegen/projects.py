@@ -120,6 +120,34 @@ class ColorTreatment:
 
 
 @dataclass
+class PostProcessSettings:
+    remove_background: bool = True
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "remove_background": self.remove_background,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> "PostProcessSettings":
+        if not data:
+            return cls()
+        return cls(remove_background=bool(data.get("remove_background", True)))
+
+    def prompt_text(self) -> str:
+        if self.remove_background:
+            return (
+                "Generated regions will be background-removed after slicing. Use a simple, "
+                "plain, high-contrast background around the asset and avoid shadows that merge "
+                "with the object silhouette."
+            )
+        return (
+            "Keep the background or frame as part of the generated asset region. Do not rely "
+            "on automatic transparency after slicing."
+        )
+
+
+@dataclass
 class EvolutionPlan:
     count: int = 1
     labels: list[str] = field(default_factory=list)
@@ -189,6 +217,7 @@ class ProjectSpec:
     negative_prompt: str = ""
     provider_defaults: ProviderDefaults = field(default_factory=ProviderDefaults)
     color_treatment: ColorTreatment = field(default_factory=ColorTreatment)
+    postprocess: PostProcessSettings = field(default_factory=PostProcessSettings)
     asset_types: dict[str, AssetTypeSpec] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -217,6 +246,7 @@ class ProjectSpec:
             "negative_prompt": self.negative_prompt,
             "provider_defaults": self.provider_defaults.to_dict(),
             "color_treatment": self.color_treatment.to_dict(),
+            "postprocess": self.postprocess.to_dict(),
             "asset_types": {
                 name: asset_type.to_dict()
                 for name, asset_type in sorted(self.asset_types.items())
@@ -237,6 +267,7 @@ class ProjectSpec:
             negative_prompt=data.get("negative_prompt", ""),
             provider_defaults=ProviderDefaults.from_dict(data.get("provider_defaults")),
             color_treatment=ColorTreatment.from_dict(data.get("color_treatment")),
+            postprocess=PostProcessSettings.from_dict(data.get("postprocess")),
         )
         for asset_type_data in data.get("asset_types", {}).values():
             project.add_asset_type(AssetTypeSpec.from_dict(asset_type_data))
@@ -334,6 +365,7 @@ class PromptPlanner:
                 f"Current palette: {', '.join(project.palette)}" if project.palette else "",
                 f"Current negative prompt: {project.negative_prompt}" if project.negative_prompt else "",
                 f"Current color mode: {project.color_treatment.mode}",
+                f"Post-processing: {project.postprocess.prompt_text()}",
                 (
                     f"Current color-mode notes: {project.color_treatment.custom_prompt}"
                     if project.color_treatment.custom_prompt
@@ -382,6 +414,7 @@ class PromptPlanner:
                 f"Project context: {project.shared_context}",
                 f"Visual style: {project.visual_style}",
                 f"Color treatment: {project.color_treatment.prompt_text(project.palette)}",
+                f"Post-processing: {project.postprocess.prompt_text()}",
                 f"Asset type: {asset_type.name}",
                 f"Current asset-type rules: {asset_type.shared_prompt}",
                 f"Evolution count: {asset_type.evolution.count}",
@@ -442,6 +475,7 @@ class PromptPlanner:
                 f"Visual style: {project.visual_style}",
                 f"Palette: {', '.join(project.palette)}" if project.palette else "",
                 f"Color treatment: {project.color_treatment.prompt_text(project.palette)}",
+                f"Post-processing: {project.postprocess.prompt_text()}",
                 f"Asset type rules: {asset_type.shared_prompt}",
                 f"Existing universe assets to harmonize with: {known}" if known else "",
                 f"Raw asset idea: {asset.description}",
@@ -517,6 +551,7 @@ class PromptPlanner:
             f"Visual style: {project.visual_style}",
             f"Color palette: {', '.join(project.palette)}" if project.palette else "",
             f"Color treatment: {project.color_treatment.prompt_text(project.palette)}",
+            f"Post-processing: {project.postprocess.prompt_text()}",
             f"Asset type: {asset_type.name}. {asset_type.shared_prompt}",
             f"Existing related assets: {known_context}" if known_context else "",
             f"Current asset: {asset.name}. {asset.enhanced_prompt or asset.description}",
@@ -544,6 +579,7 @@ class PromptPlanner:
             metadata={
                 "provider_defaults": project.provider_defaults.to_dict(),
                 "color_treatment": project.color_treatment.to_dict(),
+                "postprocess": project.postprocess.to_dict(),
                 "layout": layout.to_dict(),
             },
         )

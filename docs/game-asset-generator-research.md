@@ -95,3 +95,18 @@ project:
   from the prompt-improvement model.
 - Structured prompt enhancement accepts fenced or plain JSON from providers and
   writes validated fields back to the existing project JSON.
+
+## Fifth implementation slice
+
+Post-processing is now explicit project configuration:
+
+- Project JSON stores whether generated layout slices should remove simple
+  backgrounds.
+- The prompt planner tells image and prompt-improvement models whether the output
+  will be background-removed, so generated assets can use removable backgrounds
+  when transparency is desired.
+- `spritegen project init` accepts `--remove-background` / `--no-remove-background`.
+- `spritegen project generate` can override the saved setting for one run with
+  the same boolean flag.
+- The desktop app exposes the same setting as a project checkbox, and generated
+  manifests record the effective background-removal choice.

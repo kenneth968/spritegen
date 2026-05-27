@@ -13,6 +13,7 @@ AI-powered sprite sheet generator for tower defense games. Generates evolution c
 - **Separate model choices**: Use one provider/model for final image generation and another provider/model for AI prompt improvement
 - **Markdown prompt guides**: Bundled `.md` system prompts steer project, asset type, asset, layout, and color-mode prompt improvement
 - **Color production modes**: Generate full color, limited palette, black/white, grayscale value-map, or single-hue value-map assets
+- **Post-processing control**: Save whether layout slices should remove simple backgrounds or keep the generated frame/background
 - **Atlas layouts**: Define sliceable composite outputs, including a full-body character plus eight chibi emotion heads in one generated image
 
 ## Quick Start
@@ -66,6 +67,7 @@ spritegen project init \
   --palette "#8B4513,#228B22,#9932CC,#00FA9A" \
   --color-mode limited_palette \
   --color-prompt "Keep values readable when recolored by tower upgrade tier" \
+  --remove-background \
   --asset-type tower \
   --asset-type-context "Every tower has four upgrade stages and should read clearly at small game size" \
   --evolutions 4
@@ -88,6 +90,10 @@ spritegen project enhance --project myceliumtd --asset puffball
 # and write a generation_manifest.json beside the output.
 spritegen project generate --project myceliumtd --asset puffball
 ```
+
+Use `--no-remove-background` on `project init` for assets where the generated
+background is intentional, or pass `--remove-background` / `--no-remove-background`
+to `project generate` to override the project setting for one run.
 
 `spritegen project enhance` sends the user's rough asset idea as the user prompt and the
 bundled Markdown guides in `src/spritegen/prompt_guides/` as system/developer guidance

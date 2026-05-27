@@ -21,6 +21,7 @@ from .projects import (
     EvolutionPlan,
     ProjectSpec,
     ProjectStore,
+    PostProcessSettings,
     ProviderDefaults,
     PromptPlanner,
     apply_asset_type_enhancement,
@@ -195,6 +196,7 @@ def cmd_project(args: argparse.Namespace) -> int:
                 mode=args.color_mode,
                 custom_prompt=args.color_prompt or "",
             ),
+            postprocess=PostProcessSettings(remove_background=args.remove_background),
         )
         project.add_asset_type(
             AssetTypeSpec(
@@ -342,6 +344,7 @@ def cmd_project(args: argparse.Namespace) -> int:
             provider=args.provider,
             model=args.model,
             output_root=args.output_root,
+            remove_background=args.remove_background,
         )
         print(f"Generated asset: {result.output_dir}")
         print(f"Manifest: {result.manifest_path}")
@@ -614,6 +617,12 @@ def main() -> int:
         default="",
         help="Extra color-mode instructions, such as value bands or palette rules",
     )
+    project_init.add_argument(
+        "--remove-background",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Whether generated layout slices should have simple backgrounds removed",
+    )
     project_init.add_argument("--asset-type", default="tower")
     project_init.add_argument("--asset-type-context", default="")
     project_init.add_argument("--evolutions", type=int, default=4)
@@ -679,6 +688,12 @@ def main() -> int:
     project_generate.add_argument("--provider")
     project_generate.add_argument("--model")
     project_generate.add_argument("--output-root")
+    project_generate.add_argument(
+        "--remove-background",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Override the saved project background-removal setting for this run",
+    )
     project_generate.add_argument(
         "--dry-run",
         action="store_true",

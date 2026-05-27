@@ -8,6 +8,7 @@ from spritegen.projects import (
     AssetTypeSpec,
     ColorTreatment,
     EvolutionPlan,
+    PostProcessSettings,
     ProjectSpec,
     ProjectStore,
     PromptPlanner,
@@ -69,6 +70,7 @@ def test_project_store_round_trips_prompt_plan(tmp_path):
     assert len(packets) == 4
     assert "A forest floor world" in packets[0].prompt
     assert "Evolution stage 1 of 4" in packets[0].prompt
+    assert loaded.postprocess.remove_background is True
     assert plan_path.exists()
 
 
@@ -190,6 +192,38 @@ def test_project_generator_saves_manifest_and_slices(tmp_path):
     assert result.outputs[0].slices[0].exists()
 
 
+def test_project_generator_can_keep_backgrounds(tmp_path):
+    from PIL import Image
+
+    project = ProjectSpec(
+        name="TileSet",
+        summary="Terrain tiles",
+        visual_style="flat tile art",
+        shared_context="Mossy stone dungeon tiles.",
+        postprocess=PostProcessSettings(remove_background=False),
+    )
+    project.provider_defaults.image_provider = "mock"
+    project.provider_defaults.image_model = "mock"
+    project.add_asset_type(AssetTypeSpec(name="tile", shared_prompt="Keep full tile background."))
+    asset = AssetSpec(
+        name="Moss Stone",
+        asset_type="tile",
+        description="Square stone tile with moss.",
+    )
+
+    result = ProjectAssetGenerator(ProjectStore(tmp_path / "projects")).generate(
+        project=project,
+        asset=asset,
+        output_root=tmp_path / "generated",
+    )
+
+    sprite_path = result.outputs[0].slices[0]
+    with Image.open(sprite_path) as image:
+        assert image.getpixel((0, 0))[3] == 255
+    manifest = result.manifest_path.read_text(encoding="utf-8")
+    assert '"remove_background": false' in manifest
+
+
 def test_prompt_guides_and_color_treatment_feed_prompting():
     project = ProjectSpec(
         name="MyceliumTD",
@@ -224,6 +258,7 @@ def test_prompt_guides_and_color_treatment_feed_prompting():
 
     assert "grayscale value-map" in brief
     assert "four clear value bands" in packet.prompt
+    assert "background-removed" in packet.prompt
     assert "Project Prompt Guide" in system_prompt
     assert "Four Stage Grid Layout Guide" in system_prompt
     assert packet.metadata["color_treatment"]["mode"] == "grayscale_value_map"

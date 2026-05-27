@@ -12,6 +12,7 @@ from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
+    QCheckBox,
     QFileDialog,
     QFormLayout,
     QFrame,
@@ -38,6 +39,7 @@ from ..projects import (
     EvolutionPlan,
     ProjectSpec,
     ProjectStore,
+    PostProcessSettings,
     ProviderDefaults,
     PromptPlanner,
     apply_asset_type_enhancement,
@@ -208,6 +210,10 @@ class MainWindow(QWidget):
             "Optional color rules, value bands, recolor map notes, etc."
         )
         project_layout.addRow("Color Notes:", self.color_prompt_edit)
+
+        self.remove_background_check = QCheckBox("Remove simple backgrounds after slicing")
+        self.remove_background_check.setChecked(True)
+        project_layout.addRow("Post:", self.remove_background_check)
 
         root_row = QHBoxLayout()
         self.project_root_edit = QLineEdit(self._project_root)
@@ -663,6 +669,9 @@ class MainWindow(QWidget):
                 mode=self.color_mode_combo.currentData(),
                 custom_prompt=self.color_prompt_edit.toPlainText().strip(),
             ),
+            postprocess=PostProcessSettings(
+                remove_background=self.remove_background_check.isChecked(),
+            ),
         )
         existing_project = self._existing_project(slug)
         if existing_project:
@@ -737,6 +746,7 @@ class MainWindow(QWidget):
         self.prompt_model_edit.setText(project.provider_defaults.prompt_model)
         self._set_combo_value(self.color_mode_combo, project.color_treatment.mode)
         self.color_prompt_edit.setPlainText(project.color_treatment.custom_prompt)
+        self.remove_background_check.setChecked(project.postprocess.remove_background)
         if project.asset_types:
             self._apply_asset_type_spec(next(iter(project.asset_types.values())))
 
