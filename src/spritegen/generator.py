@@ -20,8 +20,11 @@ Usage:
 from __future__ import annotations
 
 import io
+import json
+import os
 import subprocess
 import sys
+import urllib.request
 
 from .config import SpriteConfig, SpriteDefinition, SheetLayout
 from .models import GeneratedSheet, SpriteMetadata
@@ -83,37 +86,39 @@ class SpriteGenerator:
         if model == "dall-e-3":
             size_str = "1024x1024"
 
-        import json
+        api_key = os.environ.get("OPENAI_API_KEY", "")
+        if not api_key:
+            raise ImageGenerationError("OPENAI_API_KEY is required for OpenAI image generation")
 
-        prompt_json = json.dumps(prompt)
+        full_prompt = prompt
+        if negative_prompt:
+            full_prompt = f"{prompt}\n\nAvoid: {negative_prompt}"
 
-        script = f'''
-import openai
-import sys
+        payload = {
+            "model": model,
+            "prompt": full_prompt,
+            "size": size_str,
+            "n": 1,
+        }
+        request = urllib.request.Request(
+            "https://api.openai.com/v1/images/generations",
+            data=json.dumps(payload).encode("utf-8"),
+            method="POST",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=API_TIMEOUT_SECONDS) as resp:
+                result = json.loads(resp.read().decode("utf-8"))
+        except Exception as exc:
+            raise ImageGenerationError(f"OpenAI image generation failed: {exc}") from exc
 
-client = openai.OpenAI()
-try:
-    response = client.images.generate(
-        model="{model}",
-        prompt={prompt_json},
-        size="{size_str}",
-        n=1
-    )
-    print(response.data[0].b64_json)
-except openai.APIStatusError as e:
-    print(f"ERROR:API_STATUS:" + str(e.response.status_code) + ":" + str(e)[:200])
-    sys.exit(1)
-except openai.APIError as e:
-    print(f"ERROR:API_ERROR:" + str(e)[:200])
-    sys.exit(1)
-except Exception as e:
-    print(f"ERROR:UNEXPECTED:" + type(e).__name__ + ":" + str(e)[:200])
-    sys.exit(1)
-'''
-        result = self._run_python_script(script)
-        if result.startswith("ERROR:"):
-            raise ImageGenerationError(result)
-        return self._b64_to_png(result)
+        try:
+            return self._b64_to_png(result["data"][0]["b64_json"])
+        except (KeyError, IndexError, TypeError) as exc:
+            raise ImageGenerationError("OpenAI response did not include b64 image data") from exc
 
     def _call_mock(self, prompt: str, size: tuple[int, int]) -> bytes:
         try:
@@ -296,6 +301,7 @@ except Exception as e:
         """Generate image via OpenRouter (Gemini Flash image generation)."""
         import json as _json
 
+        image_config_json = _json.dumps(self._openrouter_image_config(size))
         full_prompt = (
             f"Generate a game sprite image: {prompt}. "
             f"Avoid: {negative_prompt}. "
@@ -333,9 +339,7 @@ payload = json.dumps({{
         }}
     ],
     "modalities": ["image", "text"],
-    "image_config": {{
-        "size": "{size[0]}x{size[1]}"
-    }},
+    "image_config": {image_config_json},
 }}).encode()
 
 try:
@@ -379,6 +383,37 @@ except Exception as e:
         if result.startswith("ERROR:"):
             raise ImageGenerationError(result)
         return self._b64_to_png(result)
+
+    def _openrouter_image_config(self, size: tuple[int, int]) -> dict[str, str]:
+        width, height = size
+        return {
+            "aspect_ratio": self._aspect_ratio(width, height),
+            "image_size": self._openrouter_image_size(width, height),
+        }
+
+    def _aspect_ratio(self, width: int, height: int) -> str:
+        supported = {
+            "1:1": 1 / 1,
+            "2:3": 2 / 3,
+            "3:2": 3 / 2,
+            "3:4": 3 / 4,
+            "4:3": 4 / 3,
+            "4:5": 4 / 5,
+            "5:4": 5 / 4,
+            "9:16": 9 / 16,
+            "16:9": 16 / 9,
+            "21:9": 21 / 9,
+        }
+        target = width / height
+        return min(supported, key=lambda ratio: abs(supported[ratio] - target))
+
+    def _openrouter_image_size(self, width: int, height: int) -> str:
+        longest_edge = max(width, height)
+        if longest_edge <= 1024:
+            return "1K"
+        if longest_edge <= 2048:
+            return "2K"
+        return "4K"
 
     def _call_anthropic(
         self,
@@ -542,6 +577,16 @@ except Exception as e:
                 "sheet_size": (w, h),
             },
         )
+
+    def generate_raw_image(
+        self,
+        prompt: str,
+        negative_prompt: str,
+        width: int,
+        height: int,
+    ) -> bytes:
+        """Generate one image without adding style-manager prompt text."""
+        return self._call_image_api(prompt, negative_prompt, (width, height))
 
     def generate_evolution_chain(
         self,

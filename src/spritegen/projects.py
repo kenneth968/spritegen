@@ -384,6 +384,9 @@ class ProjectStore:
     def asset_dir(self, slug: str) -> Path:
         return self.project_dir(slug) / "assets"
 
+    def generated_dir(self, slug: str) -> Path:
+        return self.project_dir(slug) / "generated"
+
     def save_project(self, project: ProjectSpec) -> Path:
         path = self.project_path(project.slug or slugify(project.name))
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -404,6 +407,15 @@ class ProjectStore:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(asset.to_dict(), indent=2), encoding="utf-8")
         return path
+
+    def load_asset(self, project: ProjectSpec, slug_or_path: str | Path) -> AssetSpec:
+        raw_path = Path(slug_or_path)
+        if raw_path.exists():
+            path = raw_path
+        else:
+            path = self.asset_dir(project.slug or slugify(project.name)) / f"{slug_or_path}.json"
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return AssetSpec.from_dict(data)
 
     def load_assets(self, project: ProjectSpec) -> list[AssetSpec]:
         root = self.asset_dir(project.slug or slugify(project.name))

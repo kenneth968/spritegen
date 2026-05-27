@@ -30,6 +30,8 @@ from .projects import (
     ProjectStore,
     PromptPlanner,
 )
+from .enhancement import PromptEnhancer
+from .project_generation import ProjectAssetGenerator, ProjectGenerationResult
 from . import mycomed
 
 __all__ = [
@@ -48,6 +50,9 @@ __all__ = [
     "ProjectSpec",
     "ProjectStore",
     "PromptPlanner",
+    "PromptEnhancer",
+    "ProjectAssetGenerator",
+    "ProjectGenerationResult",
     "create_mycomed_style",
     "mycomed",
 ]

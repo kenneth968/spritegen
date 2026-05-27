@@ -11,6 +11,8 @@ from spritegen.projects import (
     ProjectStore,
     PromptPlanner,
 )
+from spritegen.enhancement import PromptEnhancer
+from spritegen.project_generation import ProjectAssetGenerator
 from spritegen.slicer import Slicer
 
 
@@ -133,3 +135,53 @@ def test_slicer_saves_named_layout_regions(tmp_path):
     assert (tmp_path / "rogue_full_body.png").exists()
     assert (tmp_path / "rogue_head_victory.png").exists()
     assert (tmp_path / "rogue_layout_metadata.json").exists()
+
+
+def test_mock_enhancer_adds_asset_context():
+    brief = "\n".join(
+        [
+            "Raw asset idea: A mushroom tower that attacks with spore clouds",
+            "Extra details: Soft white cap, area damage identity",
+        ]
+    )
+
+    enhanced = PromptEnhancer().enhance(brief, provider="mock", model="mock")
+
+    assert "spore clouds" in enhanced
+    assert "Soft white cap" in enhanced
+    assert "consistent palette" in enhanced
+
+
+def test_project_generator_saves_manifest_and_slices(tmp_path):
+    project = ProjectSpec(
+        name="MyceliumTD",
+        summary="Fungal tower defense game",
+        visual_style="clean cartoon tower defense sprites with bold outlines",
+        shared_context="A forest floor world of friendly fungal towers.",
+    )
+    project.provider_defaults.image_provider = "mock"
+    project.provider_defaults.image_model = "mock"
+    project.add_asset_type(
+        AssetTypeSpec(
+            name="tower",
+            shared_prompt="Each tower has readable upgrade stages.",
+            evolution=EvolutionPlan(count=2, labels=["sprout", "ultimate"]),
+        )
+    )
+    asset = AssetSpec(
+        name="Puffball",
+        asset_type="tower",
+        description="A mushroom that attacks with spore clouds.",
+    )
+
+    result = ProjectAssetGenerator(ProjectStore(tmp_path / "projects")).generate(
+        project=project,
+        asset=asset,
+        output_root=tmp_path / "generated",
+    )
+
+    assert result.manifest_path.exists()
+    assert len(result.outputs) == 2
+    assert result.outputs[0].raw_image.exists()
+    assert result.outputs[0].slices
+    assert result.outputs[0].slices[0].exists()

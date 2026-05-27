@@ -114,6 +114,32 @@ class TestSpriteMetadata:
 
 
 class TestOpenAIIntegration:
+    def test_openrouter_image_config_uses_supported_keys(self):
+        from spritegen.generator import SpriteGenerator
+        from spritegen.style import StyleManager, StylePreset
+        from spritegen.config import SpriteConfig
+
+        mgr = StyleManager()
+        style = StylePreset(
+            name="test_style",
+            base_prompt="pixel art",
+            negative_prompt="",
+            color_palette=[],
+            visual_tags=[],
+            seed="test456",
+        )
+        config = SpriteConfig(api_provider="openrouter", api_model="google/test")
+        generator = SpriteGenerator(style=style, config=config, style_manager=mgr)
+
+        assert generator._openrouter_image_config((1024, 1024)) == {
+            "aspect_ratio": "1:1",
+            "image_size": "1K",
+        }
+        assert generator._openrouter_image_config((1344, 768)) == {
+            "aspect_ratio": "16:9",
+            "image_size": "2K",
+        }
+
     def test_openai_script_generation(self):
         from spritegen.generator import SpriteGenerator
         from spritegen.style import StyleManager, StylePreset
@@ -165,6 +191,7 @@ print(response.data[0].b64_json)
         try:
             generator._call_openai("test prompt", "blurry", (512, 512), "dall-e-3")
         except ImageGenerationError as e:
-            assert "billing" in str(e).lower() or "ERROR" in str(e)
+            message = str(e).lower()
+            assert "billing" in message or "api_key" in message or "failed" in message
         except Exception:
             pass

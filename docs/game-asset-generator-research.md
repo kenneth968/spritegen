@@ -42,3 +42,18 @@ generator:
   layout regions and writes metadata.
 - CLI commands let users create project specs, create prompt plans, inspect
   layouts, and slice layout images.
+
+## Second implementation slice
+
+The follow-up commit makes saved project assets executable:
+
+- `spritegen.enhancement` enhances asset descriptions through mock,
+  Pollinations, OpenAI Responses, or OpenRouter Chat Completions.
+- `spritegen.project_generation` generates each prompt packet, saves raw images,
+  slices layout regions, and writes a `generation_manifest.json`.
+- `spritegen project enhance` updates a saved asset with provider-improved prompt
+  text and rewrites its prompt plan.
+- `spritegen project generate` runs a saved asset through the configured image
+  provider. `--dry-run` updates and prints the plan without making image calls.
+- OpenAI image generation now uses direct HTTPS with `OPENAI_API_KEY`, so the CLI
+  no longer requires users to install the OpenAI Python package separately.

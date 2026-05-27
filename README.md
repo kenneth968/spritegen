@@ -51,6 +51,14 @@ spritegen project asset \
   --description "A mushroom tower that attacks by releasing spore clouds" \
   --details "Soft white cap, playful shape language, area damage identity" \
   --print-prompts
+
+# Optional: have the prompt provider rewrite the rough asset idea.
+# Use OPENAI_API_KEY or OPENROUTER_API_KEY in your environment for paid providers.
+spritegen project enhance --project myceliumtd --asset puffball
+
+# Generate all prompt packets for the asset, save raw images, slice layout regions,
+# and write a generation_manifest.json beside the output.
+spritegen project generate --project myceliumtd --asset puffball
 ```
 
 For character atlases, ask the image model for the built-in layout, then slice the result:

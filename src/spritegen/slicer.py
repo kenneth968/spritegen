@@ -265,9 +265,20 @@ class Slicer:
         layout: AssetLayout,
         prefix: str | None = None,
     ) -> list[Path]:
+        if not HAS_PIL:
+            raise SlicerError("PIL/Pillow is required for slicing")
+
         errors = layout.validate()
         if errors:
             raise SlicerError("; ".join(errors))
+
+        image = Image.open(io.BytesIO(image_data))
+        if image.size != (layout.width, layout.height):
+            raise SlicerError(
+                "Layout image size mismatch: "
+                f"got {image.size[0]}x{image.size[1]}, "
+                f"expected {layout.width}x{layout.height}"
+            )
 
         saved_paths: list[Path] = []
         for region in layout.regions:

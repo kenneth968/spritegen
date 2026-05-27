@@ -11,6 +11,8 @@ import sys
 from pathlib import Path
 
 from .layouts import PRESET_LAYOUTS, get_layout
+from .enhancement import PromptEnhancer
+from .project_generation import ProjectAssetGenerator
 from .projects import (
     AssetSpec,
     AssetTypeSpec,
@@ -229,6 +231,61 @@ def cmd_project(args: argparse.Namespace) -> int:
                 print(packet.prompt)
         else:
             print(f"Prompt packets: {len(packets)}")
+        return 0
+
+    if args.project_command == "enhance":
+        project = store.load_project(args.project)
+        asset = store.load_asset(project, args.asset)
+        asset_type = project.get_asset_type(asset.asset_type)
+        known_assets = store.load_assets(project)
+        brief = planner.build_enhancement_brief(project, asset_type, asset, known_assets)
+        provider = args.provider or project.provider_defaults.prompt_provider
+        model = args.model or project.provider_defaults.prompt_model
+
+        enhanced = PromptEnhancer().enhance(
+            brief,
+            provider=provider,
+            model=model,
+            api_key=args.api_key,
+        )
+        asset.enhanced_prompt = enhanced
+        asset_path = store.save_asset(project, asset)
+        packets = planner.build_prompt_packets(project, asset, known_assets=known_assets)
+        plan_path = store.save_prompt_plan(project, asset, packets)
+
+        print(f"Enhanced asset prompt: {asset_path}")
+        print(f"Updated prompt plan: {plan_path}")
+        print(enhanced)
+        return 0
+
+    if args.project_command == "generate":
+        project = store.load_project(args.project)
+        asset = store.load_asset(project, args.asset)
+        known_assets = store.load_assets(project)
+        packets = planner.build_prompt_packets(project, asset, known_assets=known_assets)
+        plan_path = store.save_prompt_plan(project, asset, packets)
+
+        if args.dry_run:
+            print(f"Dry run: would generate {len(packets)} image(s)")
+            print(f"Prompt plan: {plan_path}")
+            for packet in packets:
+                label = packet.stage_label or "single"
+                print(f"  - {asset.name} / {label}: {packet.layout_name}")
+            return 0
+
+        result = ProjectAssetGenerator(store=store).generate_packets(
+            project=project,
+            asset=asset,
+            packets=packets,
+            provider=args.provider,
+            model=args.model,
+            output_root=args.output_root,
+        )
+        print(f"Generated asset: {result.output_dir}")
+        print(f"Manifest: {result.manifest_path}")
+        for output in result.outputs:
+            label = output.stage_label or "single"
+            print(f"  - {label}: {output.raw_image} ({len(output.slices)} slices)")
         return 0
 
     return 1
@@ -505,6 +562,31 @@ def main() -> int:
         "--print-prompts",
         action="store_true",
         help="Print full image prompts for every packet",
+    )
+
+    project_enhance = project_subparsers.add_parser(
+        "enhance",
+        help="Improve a saved asset prompt using the project's prompt provider",
+    )
+    project_enhance.add_argument("--project", required=True, help="Project slug or JSON path")
+    project_enhance.add_argument("--asset", required=True, help="Asset slug or JSON path")
+    project_enhance.add_argument("--provider")
+    project_enhance.add_argument("--model")
+    project_enhance.add_argument("--api-key", help="Session-only API key override")
+
+    project_generate = project_subparsers.add_parser(
+        "generate",
+        help="Generate a saved asset from its project prompt plan",
+    )
+    project_generate.add_argument("--project", required=True, help="Project slug or JSON path")
+    project_generate.add_argument("--asset", required=True, help="Asset slug or JSON path")
+    project_generate.add_argument("--provider")
+    project_generate.add_argument("--model")
+    project_generate.add_argument("--output-root")
+    project_generate.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Write/update the prompt plan without calling an image API",
     )
 
     args = parser.parse_args()
