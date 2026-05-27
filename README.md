@@ -47,6 +47,8 @@ Saved projects and assets can be reopened from the Project and Asset selectors, 
 generations can reuse the same universe, style, palette, color mode, and prior assets.
 Use **Improve Project**, **Improve Type Rules**, and **Enhance Asset** to run the
 prompt-improvement model at the right level of the workflow before generating images.
+The output panel previews both the raw generated atlas and the sliced sprite files from
+`generation_manifest.json`, so desktop users can inspect the game-ready files directly.
 
 For a distributable Windows executable:
 

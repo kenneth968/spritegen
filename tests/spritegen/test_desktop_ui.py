@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 
 import pytest
@@ -42,6 +43,7 @@ def test_main_window_loads_saved_project_and_asset(tmp_path):
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     pytest.importorskip("PySide6")
 
+    from PIL import Image
     from PySide6.QtWidgets import QApplication
     from spritegen.projects import (
         AssetSpec,
@@ -92,6 +94,34 @@ def test_main_window_loads_saved_project_and_asset(tmp_path):
     )
     store.save_project(project)
     store.save_asset(project, asset)
+    output_dir = store.generated_dir(project.slug) / asset.slug
+    slice_dir = output_dir / "single"
+    slice_dir.mkdir(parents=True)
+    raw_path = output_dir / "single.png"
+    idle_path = slice_dir / "single_idle.png"
+    attack_path = slice_dir / "single_attack.png"
+    Image.new("RGBA", (32, 32), (255, 0, 0, 255)).save(raw_path)
+    Image.new("RGBA", (16, 16), (0, 255, 0, 255)).save(idle_path)
+    Image.new("RGBA", (16, 16), (0, 0, 255, 255)).save(attack_path)
+    (output_dir / "generation_manifest.json").write_text(
+        json.dumps(
+            {
+                "outputs": [
+                    {
+                        "stage_index": None,
+                        "stage_label": None,
+                        "layout_name": "tower_cards",
+                        "raw_image": "single.png",
+                        "slices": [
+                            "single/single_idle.png",
+                            "single/single_attack.png",
+                        ],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
 
     app = QApplication.instance() or QApplication([])
     window = MainWindow()
@@ -116,8 +146,44 @@ def test_main_window_loads_saved_project_and_asset(tmp_path):
 
     assert window.asset_name_edit.text() == "Puffball"
     assert window.enhanced_prompt_edit.toPlainText() == "Improved spore cloud prompt."
+    assert window.preview_panel.image_paths == [raw_path, idle_path, attack_path]
 
     window.close()
+    app.processEvents()
+
+
+def test_preview_panel_displays_raw_and_sliced_outputs(tmp_path):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    pytest.importorskip("PySide6")
+
+    from PIL import Image
+    from PySide6.QtWidgets import QApplication, QLabel
+    from spritegen.ui.main_window import PreviewPanel
+
+    raw_path = tmp_path / "atlas.png"
+    idle_path = tmp_path / "idle.png"
+    attack_path = tmp_path / "attack.png"
+    Image.new("RGBA", (32, 32), (255, 0, 0, 255)).save(raw_path)
+    Image.new("RGBA", (16, 16), (0, 255, 0, 255)).save(idle_path)
+    Image.new("RGBA", (16, 16), (0, 0, 255, 255)).save(attack_path)
+
+    app = QApplication.instance() or QApplication([])
+    panel = PreviewPanel()
+    panel.add_generation_output(raw_path, [idle_path, attack_path], title="Idle stage")
+
+    labels = {label.text() for label in panel.findChildren(QLabel)}
+    assert "Idle stage" in labels
+    assert "Raw atlas: atlas.png" in labels
+    assert "Sliced sprites (2)" in labels
+    assert panel.image_paths == [raw_path, idle_path, attack_path]
+
+    panel.clear()
+
+    assert panel.image_paths == []
+    labels = {label.text() for label in panel.findChildren(QLabel)}
+    assert "No generated assets yet." in labels
+
+    panel.close()
     app.processEvents()
 
 

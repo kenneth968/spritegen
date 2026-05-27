@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QFrame,
     QGroupBox,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -90,6 +91,7 @@ COLOR_MODE_LABELS = {
 class PreviewPanel(QWidget):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
+        self._image_paths: list[Path] = []
         self._setup_ui()
 
     def _setup_ui(self) -> None:
@@ -104,40 +106,121 @@ class PreviewPanel(QWidget):
         self.container_layout = QVBoxLayout(self.container)
         self.container_layout.setAlignment(Qt.AlignTop)
 
+        self._add_placeholder()
+
+        scroll.setWidget(self.container)
+        layout.addWidget(scroll)
+
+    @property
+    def image_paths(self) -> list[Path]:
+        return list(self._image_paths)
+
+    def _add_placeholder(self) -> None:
         self.placeholder = QLabel("No generated assets yet.")
         self.placeholder.setAlignment(Qt.AlignCenter)
         self.placeholder.setStyleSheet("color: #666; font-size: 14px; padding: 40px;")
         self.container_layout.addWidget(self.placeholder)
 
-        scroll.setWidget(self.container)
-        layout.addWidget(scroll)
-
     def clear(self) -> None:
-        while self.container_layout.count() > 1:
+        while self.container_layout.count():
             item = self.container_layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
-        self.placeholder.show()
+        self._image_paths.clear()
+        self._add_placeholder()
 
     def add_image_path(self, path: Path) -> None:
-        self.placeholder.hide()
-        label = QLabel(path.name)
-        label.setStyleSheet("font-weight: bold;")
-        self.container_layout.addWidget(label)
+        self.add_generation_output(path, [])
 
+    def add_generation_output(
+        self,
+        raw_path: Path | None,
+        slice_paths: list[Path],
+        title: str | None = None,
+    ) -> None:
+        if raw_path is None and not slice_paths:
+            return
+        self.placeholder.hide()
+        header = QLabel(title or self._group_title(raw_path, slice_paths))
+        header.setStyleSheet("font-weight: bold; font-size: 14px; margin-top: 8px;")
+        self.container_layout.addWidget(header)
+
+        if raw_path is not None and raw_path.exists():
+            raw_label = QLabel(f"Raw atlas: {raw_path.name}")
+            raw_label.setStyleSheet("color: #555;")
+            self.container_layout.addWidget(raw_label)
+            self._add_scaled_image(raw_path, max_width=480, max_height=480)
+
+        existing_slices = [path for path in slice_paths if path.exists()]
+        if existing_slices:
+            slices_label = QLabel(f"Sliced sprites ({len(existing_slices)})")
+            slices_label.setStyleSheet("color: #555; margin-top: 6px;")
+            self.container_layout.addWidget(slices_label)
+            self._add_slice_grid(existing_slices)
+
+    def _group_title(self, raw_path: Path | None, slice_paths: list[Path]) -> str:
+        if raw_path is not None:
+            return raw_path.stem.replace("_", " ")
+        if slice_paths:
+            return slice_paths[0].parent.name.replace("_", " ")
+        return "Generated output"
+
+    def _add_scaled_image(self, path: Path, max_width: int, max_height: int) -> None:
         pixmap = QPixmap.fromImage(QImage(str(path)))
-        if not pixmap.isNull():
+        if pixmap.isNull():
+            return
+        image_label = QLabel()
+        image_label.setAlignment(Qt.AlignCenter)
+        image_label.setPixmap(
+            pixmap.scaled(
+                max_width,
+                max_height,
+                Qt.KeepAspectRatio,
+                Qt.SmoothTransformation,
+            )
+        )
+        self.container_layout.addWidget(image_label)
+        self._image_paths.append(path)
+
+    def _add_slice_grid(self, slice_paths: list[Path]) -> None:
+        grid_widget = QWidget()
+        grid = QGridLayout(grid_widget)
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(8)
+        grid.setVerticalSpacing(8)
+
+        for index, path in enumerate(slice_paths):
+            cell = QWidget()
+            cell_layout = QVBoxLayout(cell)
+            cell_layout.setContentsMargins(0, 0, 0, 0)
+            cell_layout.setSpacing(4)
+
+            pixmap = QPixmap.fromImage(QImage(str(path)))
             image_label = QLabel()
             image_label.setAlignment(Qt.AlignCenter)
-            image_label.setPixmap(
-                pixmap.scaled(
-                    480,
-                    480,
-                    Qt.KeepAspectRatio,
-                    Qt.SmoothTransformation,
+            image_label.setMinimumSize(96, 96)
+            if not pixmap.isNull():
+                image_label.setPixmap(
+                    pixmap.scaled(
+                        128,
+                        128,
+                        Qt.KeepAspectRatio,
+                        Qt.SmoothTransformation,
+                    )
                 )
-            )
-            self.container_layout.addWidget(image_label)
+                self._image_paths.append(path)
+            cell_layout.addWidget(image_label)
+
+            name_label = QLabel(path.name)
+            name_label.setAlignment(Qt.AlignCenter)
+            name_label.setWordWrap(True)
+            name_label.setStyleSheet("font-size: 11px; color: #555;")
+            cell_layout.addWidget(name_label)
+
+            row, column = divmod(index, 4)
+            grid.addWidget(cell, row, column)
+
+        self.container_layout.addWidget(grid_widget)
 
 
 class MainWindow(QWidget):
@@ -640,7 +723,16 @@ class MainWindow(QWidget):
     def _on_generation_finished(self, result) -> None:
         self._last_output_dir = str(result.output_dir)
         for output in result.outputs:
-            self.preview_panel.add_image_path(output.raw_image)
+            title = self._generation_output_title(
+                stage_label=output.stage_label,
+                stage_index=output.stage_index,
+                layout_name=output.layout_name,
+            )
+            self.preview_panel.add_generation_output(
+                output.raw_image,
+                output.slices,
+                title=title,
+            )
         self._set_busy(False, f"Generated {len(result.outputs)} image(s)")
         self._refresh_asset_list(result.asset_slug)
         self._thread = None
@@ -813,11 +905,46 @@ class MainWindow(QWidget):
         except (OSError, json.JSONDecodeError):
             return
         for output in manifest.get("outputs", []):
-            raw_image = output.get("raw_image") if isinstance(output, dict) else None
-            if raw_image:
-                path = Path(raw_image)
-                if path.exists():
-                    self.preview_panel.add_image_path(path)
+            if not isinstance(output, dict):
+                continue
+            raw_image = self._manifest_image_path(output.get("raw_image"), output_dir)
+            slice_paths = [
+                path
+                for value in output.get("slices", [])
+                if (path := self._manifest_image_path(value, output_dir)) is not None
+            ]
+            if raw_image is not None or slice_paths:
+                title = self._generation_output_title(
+                    stage_label=output.get("stage_label"),
+                    stage_index=output.get("stage_index"),
+                    layout_name=output.get("layout_name"),
+                )
+                self.preview_panel.add_generation_output(
+                    raw_image,
+                    slice_paths,
+                    title=title,
+                )
+
+    def _manifest_image_path(self, value: object, base_dir: Path) -> Path | None:
+        if not isinstance(value, str) or not value:
+            return None
+        path = Path(value)
+        if not path.is_absolute():
+            path = base_dir / path
+        return path if path.exists() else None
+
+    def _generation_output_title(
+        self,
+        stage_label: object,
+        stage_index: object,
+        layout_name: object,
+    ) -> str:
+        layout = str(layout_name) if layout_name else "layout"
+        if stage_label:
+            return f"{stage_label} ({layout})"
+        if stage_index is not None:
+            return f"Stage {stage_index} ({layout})"
+        return f"Generated asset ({layout})"
 
     def _api_key_for(self, provider: str) -> str:
         override = self.api_key_override.text().strip()

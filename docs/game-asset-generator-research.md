@@ -137,3 +137,13 @@ Layouts are no longer limited to built-in presets:
   JSON between projects and slice generated images with either built-in or custom
   layouts.
 - The desktop layout picker includes project layouts after a project is loaded.
+
+## Eighth implementation slice
+
+Desktop output inspection now matches the files game users actually consume:
+
+- Fresh generations show each raw atlas with its sliced sprite outputs beneath it.
+- Saved assets reload `generation_manifest.json` and preview both raw and sliced
+  images, including manifests that store relative paths.
+- The preview panel clear path now resets all prior widgets before showing the
+  empty-state message again.
