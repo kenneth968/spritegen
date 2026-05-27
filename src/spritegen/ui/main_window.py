@@ -31,7 +31,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..layouts import PRESET_LAYOUTS
+from ..layouts import PRESET_LAYOUTS, AssetLayout
 from ..projects import (
     AssetSpec,
     AssetTypeSpec,
@@ -361,6 +361,53 @@ class MainWindow(QWidget):
         self._refresh_layout_combo()
         asset_layout.addRow("Layout:", self.layout_combo)
 
+        custom_layout_group = QGroupBox("Custom Layout")
+        custom_layout_form = QFormLayout(custom_layout_group)
+
+        self.layout_name_edit = QLineEdit("tower_contact_sheet")
+        custom_layout_form.addRow("Name:", self.layout_name_edit)
+
+        canvas_row = QHBoxLayout()
+        self.layout_width_spin = QSpinBox()
+        self.layout_width_spin.setRange(64, 4096)
+        self.layout_width_spin.setSingleStep(64)
+        self.layout_width_spin.setValue(1024)
+        self.layout_height_spin = QSpinBox()
+        self.layout_height_spin.setRange(64, 4096)
+        self.layout_height_spin.setSingleStep(64)
+        self.layout_height_spin.setValue(1024)
+        canvas_row.addWidget(self.layout_width_spin)
+        canvas_row.addWidget(QLabel("x"))
+        canvas_row.addWidget(self.layout_height_spin)
+        custom_layout_form.addRow("Canvas:", canvas_row)
+
+        grid_row = QHBoxLayout()
+        self.layout_rows_spin = QSpinBox()
+        self.layout_rows_spin.setRange(1, 16)
+        self.layout_rows_spin.setValue(2)
+        self.layout_columns_spin = QSpinBox()
+        self.layout_columns_spin.setRange(1, 16)
+        self.layout_columns_spin.setValue(2)
+        grid_row.addWidget(QLabel("Rows"))
+        grid_row.addWidget(self.layout_rows_spin)
+        grid_row.addWidget(QLabel("Columns"))
+        grid_row.addWidget(self.layout_columns_spin)
+        custom_layout_form.addRow("Grid:", grid_row)
+
+        self.layout_region_prefix_edit = QLineEdit("cell")
+        custom_layout_form.addRow("Region Prefix:", self.layout_region_prefix_edit)
+
+        self.layout_prompt_edit = QTextEdit()
+        self.layout_prompt_edit.setMaximumHeight(54)
+        self.layout_prompt_edit.setPlaceholderText("Optional seam and composition instructions")
+        custom_layout_form.addRow("Prompt Notes:", self.layout_prompt_edit)
+
+        self.add_grid_layout_btn = QPushButton("Add Grid Layout")
+        self.add_grid_layout_btn.clicked.connect(self._on_add_grid_layout)
+        custom_layout_form.addRow("Save:", self.add_grid_layout_btn)
+
+        asset_layout.addRow(custom_layout_group)
+
         asset_open_row = QHBoxLayout()
         self.asset_combo = QComboBox()
         self.refresh_assets_btn = QPushButton("Refresh")
@@ -635,6 +682,54 @@ class MainWindow(QWidget):
             self.status_label.setText(f"Saved {project.name} / {asset.name}")
         except Exception as exc:
             QMessageBox.warning(self, "Save Failed", str(exc))
+
+    def _on_add_grid_layout(self) -> None:
+        try:
+            project = self._build_project_spec()
+            layout = self._build_grid_layout()
+            project.add_layout(layout)
+            asset_type_name = self.asset_type_edit.text().strip() or "asset"
+            if asset_type_name in project.asset_types:
+                project.asset_types[asset_type_name].default_layout = layout.name
+            self._current_project = project
+            store = ProjectStore(self.project_root_edit.text())
+            store.save_project(project)
+            self._refresh_project_list(project.slug)
+            self._refresh_layout_combo(project, layout.name)
+            self.status_label.setText(
+                f"Saved layout {layout.name}: "
+                f"{layout.width}x{layout.height}, {len(layout.regions)} regions"
+            )
+        except Exception as exc:
+            QMessageBox.warning(self, "Layout Failed", str(exc))
+
+    def _build_grid_layout(self) -> AssetLayout:
+        name = self.layout_name_edit.text().strip()
+        if not name:
+            raise ValueError("Layout name is required")
+        layout_name = slugify(name).replace("-", "_")
+        if not layout_name:
+            raise ValueError("Layout name is required")
+        width = self.layout_width_spin.value()
+        height = self.layout_height_spin.value()
+        rows = self.layout_rows_spin.value()
+        columns = self.layout_columns_spin.value()
+        if width % columns or height % rows:
+            raise ValueError("Canvas width and height must divide evenly by the grid")
+        prefix = self.layout_region_prefix_edit.text().strip() or "cell"
+        region_prefix = slugify(prefix).replace("-", "_") or "cell"
+        layout = AssetLayout.grid(
+            name=layout_name,
+            width=width,
+            height=height,
+            rows=rows,
+            columns=columns,
+            region_prefix=region_prefix,
+        )
+        prompt_instructions = self.layout_prompt_edit.toPlainText().strip()
+        if prompt_instructions:
+            layout.prompt_instructions = prompt_instructions
+        return layout
 
     def _on_check_provider_setup(self) -> None:
         missing = []
@@ -1098,6 +1193,7 @@ class MainWindow(QWidget):
         self.improve_type_btn.setEnabled(not busy)
         self.enhance_btn.setEnabled(not busy)
         self.generate_btn.setEnabled(not busy)
+        self.add_grid_layout_btn.setEnabled(not busy)
         self.check_provider_setup_btn.setEnabled(not busy)
         self.save_provider_settings_btn.setEnabled(not busy)
         self.clear_saved_keys_btn.setEnabled(not busy)

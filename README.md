@@ -50,6 +50,8 @@ Saved projects and assets can be reopened from the Project and Asset selectors, 
 generations can reuse the same universe, style, palette, color mode, and prior assets.
 Use **Improve Project**, **Improve Type Rules**, and **Enhance Asset** to run the
 prompt-improvement model at the right level of the workflow before generating images.
+Use **Custom Layout** to add reusable equal-cell atlases, contact sheets, tile grids,
+or pose sheets to the current project without leaving the app.
 The output panel previews both the raw generated atlas and the sliced sprite files from
 `generation_manifest.json`, so desktop users can inspect the game-ready files directly.
 
@@ -125,7 +127,8 @@ spritegen layout slice \
 ```
 
 For project-specific atlas shapes, save a custom layout on the project and reuse it
-for future assets:
+for future assets. In the desktop app, use **Custom Layout** for equal-cell grids; the
+same layouts can also be managed from the CLI:
 
 ```bash
 spritegen project layout --project myceliumtd add-grid \

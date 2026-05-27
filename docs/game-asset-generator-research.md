@@ -160,3 +160,14 @@ Provider setup is now closer to a normal desktop app:
 - **Check Setup** validates required model/key fields without making a network
   request.
 - Saved API keys stay out of project JSON and can be cleared from the app.
+
+## Tenth implementation slice
+
+Custom layout creation moved into the desktop workflow:
+
+- The Asset panel can create reusable equal-cell grid layouts with a project-local
+  name, canvas size, row/column count, region prefix, and prompt instructions.
+- New layouts are saved into project JSON, immediately selected in the Layout
+  picker, and set as the current asset type's default layout.
+- This closes the gap where users could define custom contact sheets from the CLI
+  but not from the app they are expected to double-click and use.

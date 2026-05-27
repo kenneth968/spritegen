@@ -239,6 +239,52 @@ def test_main_window_applies_project_and_type_improvements(tmp_path):
     app.processEvents()
 
 
+def test_main_window_adds_project_grid_layout(tmp_path):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    pytest.importorskip("PySide6")
+
+    from PySide6.QtWidgets import QApplication
+    from spritegen.projects import ProjectStore
+    from spritegen.user_settings import UserSettingsStore
+    from spritegen.ui.main_window import MainWindow
+
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow(settings_store=UserSettingsStore(tmp_path / "settings.json"))
+    window.project_root_edit.setText(str(tmp_path / "projects"))
+    window.project_name_edit.setText("MyceliumTD")
+    window.asset_type_edit.setText("tower")
+    window.layout_name_edit.setText("Tower Contact Sheet")
+    window.layout_width_spin.setValue(1536)
+    window.layout_height_spin.setValue(1024)
+    window.layout_rows_spin.setValue(2)
+    window.layout_columns_spin.setValue(3)
+    window.layout_region_prefix_edit.setText("tower pose")
+    window.layout_prompt_edit.setPlainText("Create six clean tower pose cells with hard seams.")
+
+    window._on_add_grid_layout()
+
+    assert window.layout_combo.currentData() == "tower_contact_sheet"
+    assert "Saved layout tower_contact_sheet" in window.status_label.text()
+
+    project = ProjectStore(tmp_path / "projects").load_project("myceliumtd")
+    layout = project.custom_layouts["tower_contact_sheet"]
+    assert layout.width == 1536
+    assert layout.height == 1024
+    assert len(layout.regions) == 6
+    assert layout.regions[0].name == "tower_pose_1"
+    assert layout.regions[-1].x == 1024
+    assert layout.regions[-1].y == 512
+    assert layout.prompt_instructions == "Create six clean tower pose cells with hard seams."
+    assert project.asset_types["tower"].default_layout == "tower_contact_sheet"
+
+    window.asset_name_edit.setText("Puffball Contact")
+    _project, asset = window._save_current_specs()
+    assert asset.layout == "tower_contact_sheet"
+
+    window.close()
+    app.processEvents()
+
+
 def test_main_window_saves_local_provider_setup(tmp_path, monkeypatch):
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     pytest.importorskip("PySide6")
