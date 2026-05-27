@@ -594,8 +594,14 @@ class MainWindow(QWidget):
         self.open_folder_btn.clicked.connect(self._open_output_folder)
         self.export_sprites_btn = QPushButton("Export Sprites")
         self.export_sprites_btn.clicked.connect(self._on_export_asset)
+        self.export_variant_spin = QSpinBox()
+        self.export_variant_spin.setRange(0, 8)
+        self.export_variant_spin.setSpecialValueText("All")
+        self.export_variant_spin.setValue(0)
         header.addWidget(header_label)
         header.addStretch()
+        header.addWidget(QLabel("Variant"))
+        header.addWidget(self.export_variant_spin)
         header.addWidget(self.export_sprites_btn)
         header.addWidget(self.open_folder_btn)
         layout.addLayout(header)
@@ -1174,6 +1180,8 @@ class MainWindow(QWidget):
 
     def _on_generation_finished(self, result) -> None:
         self._last_output_dir = str(result.output_dir)
+        max_variant_count = max((output.variant_count for output in result.outputs), default=1)
+        self.export_variant_spin.setMaximum(max(8, max_variant_count))
         for output in result.outputs:
             title = self._generation_output_title(
                 stage_label=output.stage_label,
@@ -1193,13 +1201,16 @@ class MainWindow(QWidget):
     def _on_export_asset(self) -> None:
         try:
             project, asset = self._save_current_specs()
+            variant_index = self.export_variant_spin.value() or None
             result = ProjectAssetExporter(ProjectStore(self.project_root_edit.text())).export_saved_asset(
                 project=project,
                 asset=asset,
+                variant_index=variant_index,
             )
             self._last_output_dir = str(result.output_dir)
+            variant_label = f" from variant {variant_index}" if variant_index else ""
             self.status_label.setText(
-                f"Exported {len(result.sprites)} sprite(s) to {result.output_dir}"
+                f"Exported {len(result.sprites)} sprite(s){variant_label} to {result.output_dir}"
             )
         except Exception as exc:
             QMessageBox.warning(self, "Export Failed", str(exc))
@@ -1469,6 +1480,7 @@ class MainWindow(QWidget):
         self.add_grid_layout_btn.setEnabled(not busy)
         self.add_hero_grid_layout_btn.setEnabled(not busy)
         self.export_sprites_btn.setEnabled(not busy)
+        self.export_variant_spin.setEnabled(not busy)
         self.check_provider_setup_btn.setEnabled(not busy)
         self.save_provider_settings_btn.setEnabled(not busy)
         self.clear_saved_keys_btn.setEnabled(not busy)

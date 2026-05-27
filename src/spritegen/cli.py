@@ -614,9 +614,12 @@ def cmd_project(args: argparse.Namespace) -> int:
             output_dir=args.output,
             manifest_path=args.manifest,
             include_raw=args.include_raw,
+            variant_index=args.variant,
         )
         print(f"Exported sprites: {result.output_dir}")
         print(f"Export manifest: {result.manifest_path}")
+        if args.variant:
+            print(f"Variant: {args.variant}")
         print(f"Sprites: {len(result.sprites)}")
         if result.raw_images:
             print(f"Raw images: {len(result.raw_images)}")
@@ -1121,6 +1124,11 @@ def main() -> int:
     project_export.add_argument("--asset", required=True, help="Asset slug or JSON path")
     project_export.add_argument("--output", help="Export directory")
     project_export.add_argument("--manifest", help="Generation manifest path override")
+    project_export.add_argument(
+        "--variant",
+        type=int,
+        help="Export only this generated variant number, such as 2",
+    )
     project_export.add_argument(
         "--include-raw",
         action="store_true",

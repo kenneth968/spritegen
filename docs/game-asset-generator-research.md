@@ -303,3 +303,18 @@ Generation now supports candidate variants:
   users, including dry-run image counts.
 - The desktop provider panel includes **Image Variants**, and preview titles mark
   variant outputs so users can compare candidates before exporting.
+
+## Twentieth implementation slice
+
+Variant runs can now be narrowed at export time:
+
+- `ProjectAssetExporter` accepts a selected variant and filters
+  `generation_manifest.json` outputs without mutating the saved project, asset, or
+  generation manifest.
+- `asset_export_manifest.json` records `selected_variant`, while each exported
+  sprite still carries its `variant_index` and `variant_count`.
+- `spritegen project export --variant N` lets CLI users export only the chosen
+  candidate from a variant generation run.
+- The desktop output toolbar adds a **Variant** selector with **All** as the
+  default, so users can compare generated candidates and export only the one they
+  want to bring into their game.

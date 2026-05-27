@@ -226,6 +226,88 @@ def test_main_window_exports_loaded_asset_slices(tmp_path):
     app.processEvents()
 
 
+def test_main_window_exports_selected_variant(tmp_path):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    pytest.importorskip("PySide6")
+
+    from PySide6.QtWidgets import QApplication
+    from spritegen.projects import AssetSpec, AssetTypeSpec, ProjectSpec, ProjectStore
+    from spritegen.user_settings import UserSettingsStore
+    from spritegen.ui.main_window import MainWindow
+
+    store = ProjectStore(tmp_path / "projects")
+    project = ProjectSpec(
+        name="MyceliumTD",
+        summary="Fungal tower defense game",
+        visual_style="inked sprites",
+        shared_context="Forest floor fungi.",
+    )
+    project.add_asset_type(AssetTypeSpec(name="tower"))
+    asset = AssetSpec(
+        name="Puffball",
+        asset_type="tower",
+        description="Spore cloud tower.",
+    )
+    store.save_project(project)
+    store.save_asset(project, asset)
+    output_dir = store.generated_dir(project.slug) / asset.slug
+    output_dir.mkdir(parents=True)
+    variant_1 = output_dir / "single-v01_sprite.png"
+    variant_2 = output_dir / "single-v02_sprite.png"
+    variant_1.write_bytes(b"variant-1")
+    variant_2.write_bytes(b"variant-2")
+    (output_dir / "generation_manifest.json").write_text(
+        json.dumps(
+            {
+                "project": project.to_dict(),
+                "asset": asset.to_dict(),
+                "outputs": [
+                    {
+                        "stage_index": None,
+                        "stage_label": None,
+                        "variant_index": 1,
+                        "variant_count": 2,
+                        "layout_name": "single_sprite",
+                        "slices": [variant_1.name],
+                    },
+                    {
+                        "stage_index": None,
+                        "stage_label": None,
+                        "variant_index": 2,
+                        "variant_count": 2,
+                        "layout_name": "single_sprite",
+                        "slices": [variant_2.name],
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow(settings_store=UserSettingsStore(tmp_path / "settings.json"))
+    window.project_root_edit.setText(str(tmp_path / "projects"))
+    window._refresh_project_list()
+    window.project_combo.setCurrentIndex(window.project_combo.findData("myceliumtd"))
+    window._on_load_project()
+    window.asset_combo.setCurrentIndex(window.asset_combo.findData("puffball"))
+    window._on_load_asset()
+    window.export_variant_spin.setValue(2)
+
+    window._on_export_asset()
+
+    exported = tmp_path / "projects" / "myceliumtd" / "exports" / "puffball"
+    manifest = json.loads((exported / "asset_export_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["selected_variant"] == 2
+    assert [sprite["variant_index"] for sprite in manifest["sprites"]] == [2]
+    assert (exported / "sprites" / variant_2.name).exists()
+    assert not (exported / "sprites" / variant_1.name).exists()
+    assert "from variant 2" in window.status_label.text()
+
+    window.close()
+    app.processEvents()
+
+
 def test_preview_panel_displays_raw_and_sliced_outputs(tmp_path):
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     pytest.importorskip("PySide6")

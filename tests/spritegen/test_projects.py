@@ -2,6 +2,7 @@
 
 import json
 from io import BytesIO
+from pathlib import Path
 
 from spritegen.layouts import AssetLayout, get_layout
 from spritegen.projects import (
@@ -597,6 +598,188 @@ def test_project_exporter_preserves_variant_metadata(tmp_path):
 
     assert {sprite["variant_index"] for sprite in manifest["sprites"]} == {1, 2}
     assert all(sprite["variant_count"] == 2 for sprite in manifest["sprites"])
+
+
+def test_project_exporter_can_filter_to_selected_variant(tmp_path):
+    source_dir = tmp_path / "generated"
+    source_dir.mkdir()
+    variant_1 = source_dir / "stage-01-sprout-v01_sprite.png"
+    variant_2 = source_dir / "stage-01-sprout-v02_sprite.png"
+    variant_1.write_bytes(b"variant-1")
+    variant_2.write_bytes(b"variant-2")
+    manifest_path = source_dir / "generation_manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "project": {"name": "MyceliumTD"},
+                "asset": {"name": "Puffball", "slug": "puffball"},
+                "outputs": [
+                    {
+                        "stage_index": 1,
+                        "stage_label": "sprout",
+                        "variant_index": 1,
+                        "variant_count": 2,
+                        "layout_name": "single_sprite",
+                        "raw_image": "stage-01-sprout-v01.png",
+                        "slices": [variant_1.name],
+                    },
+                    {
+                        "stage_index": 1,
+                        "stage_label": "sprout",
+                        "variant_index": 2,
+                        "variant_count": 2,
+                        "layout_name": "single_sprite",
+                        "raw_image": "stage-01-sprout-v02.png",
+                        "slices": [variant_2.name],
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = ProjectAssetExporter().export_manifest(
+        manifest_path,
+        tmp_path / "exported",
+        variant_index=2,
+    )
+    export_manifest = json.loads(result.manifest_path.read_text(encoding="utf-8"))
+
+    assert len(result.sprites) == 1
+    assert result.sprites[0].source == variant_2
+    assert result.sprites[0].variant_index == 2
+    assert export_manifest["selected_variant"] == 2
+    assert export_manifest["sprites"][0]["variant_index"] == 2
+    assert (tmp_path / "exported" / "sprites" / variant_2.name).exists()
+    assert not (tmp_path / "exported" / "sprites" / variant_1.name).exists()
+
+
+def test_project_exporter_resolves_cwd_relative_manifest_paths(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    source_dir = Path("generated")
+    source_dir.mkdir()
+    variant_1 = source_dir / "single-v01_sprite.png"
+    variant_2 = source_dir / "single-v02_sprite.png"
+    variant_1.write_bytes(b"variant-1")
+    variant_2.write_bytes(b"variant-2")
+    manifest_path = source_dir / "generation_manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "outputs": [
+                    {
+                        "variant_index": 1,
+                        "variant_count": 2,
+                        "layout_name": "single_sprite",
+                        "slices": [str(variant_1)],
+                    },
+                    {
+                        "variant_index": 2,
+                        "variant_count": 2,
+                        "layout_name": "single_sprite",
+                        "slices": [str(variant_2)],
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = ProjectAssetExporter().export_manifest(
+        manifest_path,
+        "exported",
+        variant_index=2,
+    )
+
+    assert len(result.sprites) == 1
+    assert result.sprites[0].source == variant_2
+    assert Path("exported/sprites/single-v02_sprite.png").exists()
+
+
+def test_project_export_cli_can_filter_to_selected_variant(monkeypatch, tmp_path, capsys):
+    import sys
+    from spritegen.cli import main
+
+    store = ProjectStore(tmp_path / "projects")
+    project = ProjectSpec(
+        name="MyceliumTD",
+        summary="Fungal tower defense game",
+        visual_style="clean cartoon sprites",
+        shared_context="Forest floor fungi.",
+    )
+    project.add_asset_type(AssetTypeSpec(name="tower"))
+    asset = AssetSpec(
+        name="Puffball",
+        asset_type="tower",
+        description="Spore cloud tower.",
+    )
+    store.save_project(project)
+    store.save_asset(project, asset)
+    generated_dir = store.generated_dir(project.slug) / asset.slug
+    generated_dir.mkdir(parents=True)
+    variant_1 = generated_dir / "single-v01_sprite.png"
+    variant_2 = generated_dir / "single-v02_sprite.png"
+    variant_1.write_bytes(b"variant-1")
+    variant_2.write_bytes(b"variant-2")
+    (generated_dir / "generation_manifest.json").write_text(
+        json.dumps(
+            {
+                "project": project.to_dict(),
+                "asset": asset.to_dict(),
+                "outputs": [
+                    {
+                        "stage_index": None,
+                        "stage_label": None,
+                        "variant_index": 1,
+                        "variant_count": 2,
+                        "layout_name": "single_sprite",
+                        "slices": [variant_1.name],
+                    },
+                    {
+                        "stage_index": None,
+                        "stage_label": None,
+                        "variant_index": 2,
+                        "variant_count": 2,
+                        "layout_name": "single_sprite",
+                        "slices": [variant_2.name],
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "spritegen",
+            "project",
+            "--project-root",
+            str(tmp_path / "projects"),
+            "export",
+            "--project",
+            "myceliumtd",
+            "--asset",
+            "puffball",
+            "--variant",
+            "2",
+        ],
+    )
+
+    assert main() == 0
+
+    output = capsys.readouterr().out
+    export_dir = tmp_path / "projects" / "myceliumtd" / "exports" / "puffball"
+    export_manifest = json.loads(
+        (export_dir / "asset_export_manifest.json").read_text(encoding="utf-8")
+    )
+
+    assert "Variant: 2" in output
+    assert export_manifest["selected_variant"] == 2
+    assert [sprite["variant_index"] for sprite in export_manifest["sprites"]] == [2]
+    assert (export_dir / "sprites" / variant_2.name).exists()
+    assert not (export_dir / "sprites" / variant_1.name).exists()
 
 
 def test_project_generator_passes_session_api_key_to_image_generator(tmp_path, monkeypatch):

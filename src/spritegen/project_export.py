@@ -63,6 +63,7 @@ class ProjectAssetExporter:
         output_dir: Path | str | None = None,
         manifest_path: Path | str | None = None,
         include_raw: bool = False,
+        variant_index: int | None = None,
     ) -> ProjectExportResult:
         project_slug = project.slug or slugify(project.name)
         asset_slug = asset.slug or slugify(asset.name)
@@ -77,6 +78,7 @@ class ProjectAssetExporter:
             manifest,
             target,
             include_raw=include_raw,
+            variant_index=variant_index,
         )
 
     def export_manifest(
@@ -84,7 +86,10 @@ class ProjectAssetExporter:
         manifest_path: Path | str,
         output_dir: Path | str,
         include_raw: bool = False,
+        variant_index: int | None = None,
     ) -> ProjectExportResult:
+        if variant_index is not None and variant_index < 1:
+            raise ValueError("variant_index must be at least 1")
         manifest_path = Path(manifest_path)
         output_dir = Path(output_dir)
         if not manifest_path.exists():
@@ -104,6 +109,8 @@ class ProjectAssetExporter:
 
         for output in manifest.get("outputs", []):
             if not isinstance(output, dict):
+                continue
+            if not self._matches_variant(output, variant_index):
                 continue
             export_context = {
                 "stage_index": output.get("stage_index"),
@@ -128,7 +135,10 @@ class ProjectAssetExporter:
                     exported_raw.append(ExportedFile(source=raw_source, path=raw_target, **export_context))
 
         if not exported_sprites:
-            raise ValueError(f"No generated slice files were found in {manifest_path}")
+            filter_note = f" for variant {variant_index}" if variant_index else ""
+            raise ValueError(
+                f"No generated slice files were found in {manifest_path}{filter_note}"
+            )
 
         export_manifest_path = output_dir / "asset_export_manifest.json"
         export_manifest = {
@@ -139,6 +149,7 @@ class ProjectAssetExporter:
             "provider": manifest.get("provider"),
             "model": manifest.get("model"),
             "postprocess": manifest.get("postprocess", {}),
+            "selected_variant": variant_index,
             "sprites": [sprite.to_dict(output_dir) for sprite in exported_sprites],
             "raw_images": [raw.to_dict(output_dir) for raw in exported_raw],
         }
@@ -151,10 +162,20 @@ class ProjectAssetExporter:
             raw_images=exported_raw,
         )
 
+    def _matches_variant(self, output: dict[str, Any], variant_index: int | None) -> bool:
+        if variant_index is None:
+            return True
+        output_variant = output.get("variant_index")
+        if output_variant is None:
+            return variant_index == 1
+        return output_variant == variant_index
+
     def _resolve_source(self, value: object, source_dir: Path) -> Path | None:
         if not isinstance(value, str) or not value:
             return None
         path = Path(value)
+        if path.exists():
+            return path
         if not path.is_absolute():
             path = source_dir / path
         return path if path.exists() else None
