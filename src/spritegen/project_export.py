@@ -20,6 +20,8 @@ class ExportedFile:
     path: Path
     stage_index: int | None = None
     stage_label: str | None = None
+    variant_index: int | None = None
+    variant_count: int = 1
     layout_name: str = ""
 
     def to_dict(self, base_dir: Path) -> dict[str, Any]:
@@ -28,6 +30,8 @@ class ExportedFile:
             "file": self.path.relative_to(base_dir).as_posix(),
             "stage_index": self.stage_index,
             "stage_label": self.stage_label,
+            "variant_index": self.variant_index,
+            "variant_count": self.variant_count,
             "layout_name": self.layout_name,
         }
 
@@ -104,6 +108,8 @@ class ProjectAssetExporter:
             export_context = {
                 "stage_index": output.get("stage_index"),
                 "stage_label": output.get("stage_label"),
+                "variant_index": output.get("variant_index"),
+                "variant_count": output.get("variant_count") or 1,
                 "layout_name": output.get("layout_name") or "",
             }
             for slice_value in output.get("slices", []):

@@ -180,6 +180,7 @@ class ProjectGenerationThread(QThread):
         provider: str,
         model: str,
         api_key: str | None,
+        variants_per_packet: int = 1,
         parent=None,
     ) -> None:
         super().__init__(parent)
@@ -190,6 +191,7 @@ class ProjectGenerationThread(QThread):
         self.provider = provider
         self.model = model
         self.api_key = api_key
+        self.variants_per_packet = variants_per_packet
 
     def run(self) -> None:
         try:
@@ -204,6 +206,7 @@ class ProjectGenerationThread(QThread):
                 model=self.model,
                 api_key=self.api_key,
                 output_root=Path(self.output_root),
+                variants_per_packet=self.variants_per_packet,
             )
             self.finished.emit(result)
         except Exception as exc:

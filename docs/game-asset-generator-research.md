@@ -288,3 +288,18 @@ First-run project setup now has executable examples:
 - The desktop Project panel exposes the same flow through **Starter** and
   **Create Starter**, so a double-click user can begin from a coherent MyceliumTD
   or rogue-character example without editing JSON or learning the CLI first.
+
+## Nineteenth implementation slice
+
+Generation now supports candidate variants:
+
+- `ProjectAssetGenerator.generate(..., variants_per_packet=N)` creates multiple
+  raw atlases and sliced outputs for each prompt packet without changing the
+  saved project or asset spec.
+- `generation_manifest.json` records `variants_per_packet`, `variant_index`, and
+  `variant_count` so later preview/export steps know which files belong to each
+  candidate.
+- `spritegen project generate --variants N` exposes the same workflow for CLI
+  users, including dry-run image counts.
+- The desktop provider panel includes **Image Variants**, and preview titles mark
+  variant outputs so users can compare candidates before exporting.

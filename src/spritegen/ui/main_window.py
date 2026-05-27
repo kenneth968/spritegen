@@ -492,6 +492,11 @@ class MainWindow(QWidget):
         )
         config_layout.addRow("Image Suggestions:", self.image_model_suggestions)
 
+        self.generation_variants_spin = QSpinBox()
+        self.generation_variants_spin.setRange(1, 8)
+        self.generation_variants_spin.setValue(1)
+        config_layout.addRow("Image Variants:", self.generation_variants_spin)
+
         self.prompt_provider_combo = self._provider_combo(PROMPT_PROVIDERS)
         self.prompt_provider_combo.currentIndexChanged.connect(self._on_prompt_provider_changed)
         config_layout.addRow("Prompt Provider:", self.prompt_provider_combo)
@@ -1160,6 +1165,7 @@ class MainWindow(QWidget):
             provider=provider,
             model=self.image_model_edit.text().strip(),
             api_key=api_key,
+            variants_per_packet=self.generation_variants_spin.value(),
         )
         self._thread.progress.connect(self.status_label.setText)
         self._thread.finished.connect(self._on_generation_finished)
@@ -1172,6 +1178,7 @@ class MainWindow(QWidget):
             title = self._generation_output_title(
                 stage_label=output.stage_label,
                 stage_index=output.stage_index,
+                variant_index=output.variant_index,
                 layout_name=output.layout_name,
             )
             self.preview_panel.add_generation_output(
@@ -1377,6 +1384,7 @@ class MainWindow(QWidget):
                 title = self._generation_output_title(
                     stage_label=output.get("stage_label"),
                     stage_index=output.get("stage_index"),
+                    variant_index=output.get("variant_index"),
                     layout_name=output.get("layout_name"),
                 )
                 self.preview_panel.add_generation_output(
@@ -1398,13 +1406,15 @@ class MainWindow(QWidget):
         stage_label: object,
         stage_index: object,
         layout_name: object,
+        variant_index: object = None,
     ) -> str:
         layout = str(layout_name) if layout_name else "layout"
+        variant = f" / Variant {variant_index}" if variant_index else ""
         if stage_label:
-            return f"{stage_label} ({layout})"
+            return f"{stage_label}{variant} ({layout})"
         if stage_index is not None:
-            return f"Stage {stage_index} ({layout})"
-        return f"Generated asset ({layout})"
+            return f"Stage {stage_index}{variant} ({layout})"
+        return f"Generated asset{variant} ({layout})"
 
     def _api_key_for(self, provider: str, purpose: str = "image") -> str:
         primary = self.prompt_api_key_edit if purpose == "prompt" else self.image_api_key_edit

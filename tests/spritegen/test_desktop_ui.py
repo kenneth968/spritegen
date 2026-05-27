@@ -470,6 +470,34 @@ def test_main_window_creates_project_starter(tmp_path):
     app.processEvents()
 
 
+def test_main_window_labels_generation_variants(tmp_path):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    pytest.importorskip("PySide6")
+
+    from PySide6.QtWidgets import QApplication
+    from spritegen.user_settings import UserSettingsStore
+    from spritegen.ui.main_window import MainWindow
+
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow(settings_store=UserSettingsStore(tmp_path / "settings.json"))
+
+    window.generation_variants_spin.setValue(3)
+
+    assert window.generation_variants_spin.value() == 3
+    assert (
+        window._generation_output_title(
+            stage_label="sprout",
+            stage_index=1,
+            variant_index=2,
+            layout_name="single_sprite",
+        )
+        == "sprout / Variant 2 (single_sprite)"
+    )
+
+    window.close()
+    app.processEvents()
+
+
 def test_main_window_previews_prompt_plan_with_prior_assets(tmp_path):
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     pytest.importorskip("PySide6")

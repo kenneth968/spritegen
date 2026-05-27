@@ -571,13 +571,18 @@ def cmd_project(args: argparse.Namespace) -> int:
         known_assets = store.load_assets(project)
         packets = planner.build_prompt_packets(project, asset, known_assets=known_assets)
         plan_path = store.save_prompt_plan(project, asset, packets)
+        if args.variants < 1:
+            print("--variants must be at least 1")
+            return 1
 
         if args.dry_run:
-            print(f"Dry run: would generate {len(packets)} image(s)")
+            image_count = len(packets) * args.variants
+            print(f"Dry run: would generate {image_count} image(s)")
             print(f"Prompt plan: {plan_path}")
             for packet in packets:
                 label = packet.stage_label or "single"
-                print(f"  - {asset.name} / {label}: {packet.layout_name}")
+                variant_note = f" x {args.variants} variant(s)" if args.variants > 1 else ""
+                print(f"  - {asset.name} / {label}: {packet.layout_name}{variant_note}")
             return 0
 
         result = ProjectAssetGenerator(store=store).generate_packets(
@@ -589,11 +594,14 @@ def cmd_project(args: argparse.Namespace) -> int:
             api_key=args.api_key,
             output_root=args.output_root,
             remove_background=args.remove_background,
+            variants_per_packet=args.variants,
         )
         print(f"Generated asset: {result.output_dir}")
         print(f"Manifest: {result.manifest_path}")
         for output in result.outputs:
             label = output.stage_label or "single"
+            if output.variant_index:
+                label = f"{label} / variant {output.variant_index}"
             print(f"  - {label}: {output.raw_image} ({len(output.slices)} slices)")
         return 0
 
@@ -1087,6 +1095,12 @@ def main() -> int:
     project_generate.add_argument("--model")
     project_generate.add_argument("--api-key", help="Session-only image API key override")
     project_generate.add_argument("--output-root")
+    project_generate.add_argument(
+        "--variants",
+        type=int,
+        default=1,
+        help="Generate this many candidate images for each prompt packet",
+    )
     project_generate.add_argument(
         "--remove-background",
         action=argparse.BooleanOptionalAction,

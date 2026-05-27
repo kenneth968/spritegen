@@ -59,6 +59,8 @@ Use **Improve Project**, **Improve Type Rules**, and **Enhance Asset** to run th
 prompt-improvement model at the right level of the workflow before generating images.
 Use **Preview Prompts** to inspect the exact image prompts, including prior saved
 assets that will be used as style and universe anchors, before spending image tokens.
+Set **Image Variants** above 1 when you want several candidate atlases for the same
+asset or evolution stage in one generation run.
 When using OpenRouter for image generation, saved raw atlases from prior project
 assets are also sent as visual reference images when available; other providers
 currently keep using the text anchors.
@@ -125,8 +127,9 @@ spritegen project enhance-type --project myceliumtd --asset-type tower
 spritegen project enhance --project myceliumtd --asset puffball
 
 # Generate all prompt packets for the asset, save raw images, slice layout regions,
-# and write a generation_manifest.json beside the output.
-spritegen project generate --project myceliumtd --asset puffball
+# and write a generation_manifest.json beside the output. Use --variants to create
+# multiple candidate images for each prompt packet.
+spritegen project generate --project myceliumtd --asset puffball --variants 2
 
 # Copy the sliced, game-ready PNGs into a clean export folder for an engine.
 spritegen project export --project myceliumtd --asset puffball

@@ -437,6 +437,98 @@ def test_project_generator_saves_manifest_and_slices(tmp_path):
     assert result.outputs[0].slices[0].exists()
 
 
+def test_project_generator_creates_variants_per_prompt_packet(tmp_path):
+    project = ProjectSpec(
+        name="MyceliumTD",
+        summary="Fungal tower defense game",
+        visual_style="clean cartoon sprites",
+        shared_context="Forest floor fungi.",
+    )
+    project.provider_defaults.image_provider = "mock"
+    project.provider_defaults.image_model = "mock"
+    project.add_asset_type(
+        AssetTypeSpec(
+            name="tower",
+            shared_prompt="Readable tower upgrades.",
+            evolution=EvolutionPlan(count=2, labels=["sprout", "elder"]),
+        )
+    )
+    asset = AssetSpec(
+        name="Puffball",
+        asset_type="tower",
+        description="Spore cloud tower.",
+    )
+
+    result = ProjectAssetGenerator(ProjectStore(tmp_path / "projects")).generate(
+        project=project,
+        asset=asset,
+        output_root=tmp_path / "generated",
+        variants_per_packet=2,
+    )
+    manifest = json.loads(result.manifest_path.read_text(encoding="utf-8"))
+
+    assert len(result.outputs) == 4
+    assert [output.variant_index for output in result.outputs] == [1, 2, 1, 2]
+    assert [output.variant_count for output in result.outputs] == [2, 2, 2, 2]
+    assert len({output.raw_image.name for output in result.outputs}) == 4
+    assert (tmp_path / "generated" / "stage-01-sprout-v01.png").exists()
+    assert (tmp_path / "generated" / "stage-01-sprout-v02.png").exists()
+    assert manifest["variants_per_packet"] == 2
+    assert manifest["outputs"][0]["variant_index"] == 1
+    assert manifest["outputs"][1]["variant_index"] == 2
+
+
+def test_project_generate_cli_dry_run_counts_variants(monkeypatch, tmp_path, capsys):
+    import sys
+    from spritegen.cli import main
+
+    project = ProjectSpec(
+        name="MyceliumTD",
+        summary="Fungal tower defense game",
+        visual_style="clean cartoon sprites",
+        shared_context="Forest floor fungi.",
+    )
+    project.add_asset_type(
+        AssetTypeSpec(
+            name="tower",
+            evolution=EvolutionPlan(count=2, labels=["sprout", "elder"]),
+        )
+    )
+    asset = AssetSpec(
+        name="Puffball",
+        asset_type="tower",
+        description="Spore cloud tower.",
+    )
+    store = ProjectStore(tmp_path / "projects")
+    store.save_project(project)
+    store.save_asset(project, asset)
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "spritegen",
+            "project",
+            "--project-root",
+            str(tmp_path / "projects"),
+            "generate",
+            "--project",
+            "myceliumtd",
+            "--asset",
+            "puffball",
+            "--variants",
+            "3",
+            "--dry-run",
+        ],
+    )
+
+    assert main() == 0
+
+    output = capsys.readouterr().out
+    assert "Dry run: would generate 6 image(s)" in output
+    assert "sprout: single_sprite x 3 variant(s)" in output
+
+
 def test_project_exporter_copies_game_ready_slices(tmp_path):
     project = ProjectSpec(
         name="MyceliumTD",
@@ -478,6 +570,33 @@ def test_project_exporter_copies_game_ready_slices(tmp_path):
     assert export_manifest["version"] == 1
     assert export_manifest["asset"]["slug"] == "puffball"
     assert export_manifest["sprites"][0]["file"].startswith("sprites/")
+
+
+def test_project_exporter_preserves_variant_metadata(tmp_path):
+    project = ProjectSpec(
+        name="MyceliumTD",
+        summary="Fungal tower defense game",
+        visual_style="clean cartoon sprites",
+        shared_context="Forest floor fungi.",
+    )
+    project.provider_defaults.image_provider = "mock"
+    project.provider_defaults.image_model = "mock"
+    project.add_asset_type(AssetTypeSpec(name="tower"))
+    asset = AssetSpec(
+        name="Puffball",
+        asset_type="tower",
+        description="Spore cloud tower.",
+    )
+    store = ProjectStore(tmp_path / "projects")
+    store.save_project(project)
+    store.save_asset(project, asset)
+    ProjectAssetGenerator(store).generate(project=project, asset=asset, variants_per_packet=2)
+
+    result = ProjectAssetExporter(store).export_saved_asset(project=project, asset=asset)
+    manifest = json.loads(result.manifest_path.read_text(encoding="utf-8"))
+
+    assert {sprite["variant_index"] for sprite in manifest["sprites"]} == {1, 2}
+    assert all(sprite["variant_count"] == 2 for sprite in manifest["sprites"])
 
 
 def test_project_generator_passes_session_api_key_to_image_generator(tmp_path, monkeypatch):
