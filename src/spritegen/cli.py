@@ -23,6 +23,8 @@ from .projects import (
     ProjectStore,
     ProviderDefaults,
     PromptPlanner,
+    apply_asset_type_enhancement,
+    apply_project_enhancement,
 )
 from . import (
     SpriteConfig,
@@ -267,6 +269,55 @@ def cmd_project(args: argparse.Namespace) -> int:
         print(f"Enhanced asset prompt: {asset_path}")
         print(f"Updated prompt plan: {plan_path}")
         print(enhanced)
+        return 0
+
+    if args.project_command == "enhance-project":
+        project = store.load_project(args.project)
+        provider = args.provider or project.provider_defaults.prompt_provider
+        model = args.model or project.provider_defaults.prompt_model
+        data = PromptEnhancer().enhance_json(
+            planner.build_project_enhancement_brief(project),
+            provider=provider,
+            model=model,
+            api_key=args.api_key,
+            system_prompt=planner.build_project_enhancement_system_prompt(),
+            fallback=planner.project_enhancement_fallback(project),
+        )
+        apply_project_enhancement(project, data)
+        path = store.save_project(project)
+
+        print(f"Enhanced project: {path}")
+        print(f"Summary: {project.summary}")
+        print(f"Style: {project.visual_style}")
+        print(f"Universe: {project.shared_context}")
+        if project.palette:
+            print(f"Palette: {', '.join(project.palette)}")
+        return 0
+
+    if args.project_command == "enhance-type":
+        project = store.load_project(args.project)
+        asset_type = project.get_asset_type(args.asset_type)
+        provider = args.provider or project.provider_defaults.prompt_provider
+        model = args.model or project.provider_defaults.prompt_model
+        data = PromptEnhancer().enhance_json(
+            planner.build_asset_type_enhancement_brief(project, asset_type),
+            provider=provider,
+            model=model,
+            api_key=args.api_key,
+            system_prompt=planner.build_asset_type_enhancement_system_prompt(),
+            fallback=planner.asset_type_enhancement_fallback(asset_type),
+        )
+        apply_asset_type_enhancement(asset_type, data)
+        project.add_asset_type(asset_type)
+        path = store.save_project(project)
+
+        print(f"Enhanced asset type: {asset_type.name}")
+        print(f"Project file: {path}")
+        print(f"Rules: {asset_type.shared_prompt}")
+        if asset_type.evolution.shared_prompt:
+            print(f"Evolution: {asset_type.evolution.shared_prompt}")
+        if asset_type.evolution.labels:
+            print(f"Labels: {', '.join(asset_type.evolution.labels)}")
         return 0
 
     if args.project_command == "generate":
@@ -595,6 +646,29 @@ def main() -> int:
     project_enhance.add_argument("--provider")
     project_enhance.add_argument("--model")
     project_enhance.add_argument("--api-key", help="Session-only API key override")
+
+    project_enhance_project = project_subparsers.add_parser(
+        "enhance-project",
+        help="Improve the saved project style, universe, palette, and negative prompt",
+    )
+    project_enhance_project.add_argument(
+        "--project",
+        required=True,
+        help="Project slug or JSON path",
+    )
+    project_enhance_project.add_argument("--provider")
+    project_enhance_project.add_argument("--model")
+    project_enhance_project.add_argument("--api-key", help="Session-only API key override")
+
+    project_enhance_type = project_subparsers.add_parser(
+        "enhance-type",
+        help="Improve reusable rules for one saved project asset type",
+    )
+    project_enhance_type.add_argument("--project", required=True, help="Project slug or JSON path")
+    project_enhance_type.add_argument("--asset-type", required=True)
+    project_enhance_type.add_argument("--provider")
+    project_enhance_type.add_argument("--model")
+    project_enhance_type.add_argument("--api-key", help="Session-only API key override")
 
     project_generate = project_subparsers.add_parser(
         "generate",

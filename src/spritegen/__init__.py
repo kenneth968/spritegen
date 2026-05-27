@@ -26,9 +26,12 @@ from .layouts import AssetLayout, LayoutRegion
 from .projects import (
     AssetSpec,
     AssetTypeSpec,
+    ColorTreatment,
     ProjectSpec,
     ProjectStore,
     PromptPlanner,
+    apply_asset_type_enhancement,
+    apply_project_enhancement,
 )
 from .enhancement import PromptEnhancer
 from .project_generation import ProjectAssetGenerator, ProjectGenerationResult
@@ -47,9 +50,12 @@ __all__ = [
     "LayoutRegion",
     "AssetSpec",
     "AssetTypeSpec",
+    "ColorTreatment",
     "ProjectSpec",
     "ProjectStore",
     "PromptPlanner",
+    "apply_asset_type_enhancement",
+    "apply_project_enhancement",
     "PromptEnhancer",
     "ProjectAssetGenerator",
     "ProjectGenerationResult",

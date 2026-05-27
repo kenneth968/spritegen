@@ -34,6 +34,26 @@ class PromptEnhancer:
             return self._enhance_openrouter(brief, model, api_key, system_prompt)
         raise PromptEnhancementError(f"Unsupported prompt provider: {provider}")
 
+    def enhance_json(
+        self,
+        brief: str,
+        provider: str,
+        model: str,
+        api_key: str | None = None,
+        system_prompt: str | None = None,
+        fallback: dict | None = None,
+    ) -> dict:
+        if provider == "mock":
+            return fallback or {}
+        text = self.enhance(
+            brief=brief,
+            provider=provider,
+            model=model,
+            api_key=api_key,
+            system_prompt=system_prompt,
+        )
+        return self._extract_json_object(text)
+
     def _enhance_mock(self, brief: str) -> str:
         raw_marker = "Raw asset idea:"
         detail_marker = "Extra details:"
@@ -173,6 +193,29 @@ class PromptEnhancer:
                 if isinstance(text, str):
                     texts.append(text)
         return "\n".join(texts)
+
+    def _extract_json_object(self, text: str) -> dict:
+        cleaned = text.strip()
+        if cleaned.startswith("```"):
+            lines = cleaned.splitlines()
+            if lines and lines[0].startswith("```"):
+                lines = lines[1:]
+            if lines and lines[-1].startswith("```"):
+                lines = lines[:-1]
+            cleaned = "\n".join(lines).strip()
+
+        start = cleaned.find("{")
+        end = cleaned.rfind("}")
+        if start >= 0 and end > start:
+            cleaned = cleaned[start : end + 1]
+
+        try:
+            value = json.loads(cleaned)
+        except json.JSONDecodeError as exc:
+            raise PromptEnhancementError("Prompt provider did not return valid JSON") from exc
+        if not isinstance(value, dict):
+            raise PromptEnhancementError("Prompt provider JSON output must be an object")
+        return value
 
     def _line_after_marker(self, text: str, marker: str) -> str:
         for line in text.splitlines():

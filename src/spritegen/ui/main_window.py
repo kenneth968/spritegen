@@ -40,9 +40,16 @@ from ..projects import (
     ProjectStore,
     ProviderDefaults,
     PromptPlanner,
+    apply_asset_type_enhancement,
+    apply_project_enhancement,
     slugify,
 )
-from .generation_thread import EnhancementThread, ProjectGenerationThread
+from .generation_thread import (
+    AssetTypeEnhancementThread,
+    EnhancementThread,
+    ProjectEnhancementThread,
+    ProjectGenerationThread,
+)
 
 
 IMAGE_PROVIDERS = ["mock", "pollinations", "openai", "openrouter"]
@@ -222,6 +229,10 @@ class MainWindow(QWidget):
         project_open_row.addWidget(self.load_project_btn)
         project_layout.addRow("Open Project:", project_open_row)
 
+        self.improve_project_btn = QPushButton("Improve Project")
+        self.improve_project_btn.clicked.connect(self._on_improve_project)
+        project_layout.addRow("AI:", self.improve_project_btn)
+
         layout.addWidget(project_group)
 
         asset_group = QGroupBox("Asset")
@@ -237,6 +248,20 @@ class MainWindow(QWidget):
         self.evolutions_spin.setRange(1, 8)
         self.evolutions_spin.setValue(4)
         asset_layout.addRow("Evolutions:", self.evolutions_spin)
+
+        self.evolution_context_edit = QLineEdit()
+        self.evolution_context_edit.setPlaceholderText(
+            "Optional: how stages should evolve while keeping identity"
+        )
+        asset_layout.addRow("Evolution Rules:", self.evolution_context_edit)
+
+        self.evolution_labels_edit = QLineEdit()
+        self.evolution_labels_edit.setPlaceholderText("Optional labels, comma-separated")
+        asset_layout.addRow("Stage Labels:", self.evolution_labels_edit)
+
+        self.improve_type_btn = QPushButton("Improve Type Rules")
+        self.improve_type_btn.clicked.connect(self._on_improve_asset_type)
+        asset_layout.addRow("AI Type:", self.improve_type_btn)
 
         self.layout_combo = QComboBox()
         for name in sorted(PRESET_LAYOUTS):
@@ -308,7 +333,7 @@ class MainWindow(QWidget):
         actions = QHBoxLayout()
         self.save_btn = QPushButton("Save Plan")
         self.save_btn.clicked.connect(self._on_save_plan)
-        self.enhance_btn = QPushButton("Enhance")
+        self.enhance_btn = QPushButton("Enhance Asset")
         self.enhance_btn.clicked.connect(self._on_enhance)
         self.generate_btn = QPushButton("Generate")
         self.generate_btn.clicked.connect(self._on_generate)
@@ -446,6 +471,79 @@ class MainWindow(QWidget):
         except Exception as exc:
             QMessageBox.warning(self, "Save Failed", str(exc))
 
+    def _on_improve_project(self) -> None:
+        try:
+            project = self._build_project_spec()
+        except Exception as exc:
+            QMessageBox.warning(self, "Improve Project Failed", str(exc))
+            return
+
+        provider = self.prompt_provider_combo.currentData()
+        api_key = self._api_key_for(provider)
+        if not self._provider_can_run(provider, api_key):
+            return
+
+        self._set_busy(True, "Improving project art direction...")
+        self._thread = ProjectEnhancementThread(
+            project=project,
+            provider=provider,
+            model=self.prompt_model_edit.text().strip(),
+            api_key=api_key,
+        )
+        self._thread.finished.connect(lambda data: self._on_project_improved(data, project))
+        self._thread.error.connect(self._on_thread_error)
+        self._thread.start()
+
+    def _on_project_improved(self, data: dict, project: ProjectSpec) -> None:
+        apply_project_enhancement(project, data)
+        self._apply_project_spec(project)
+        store = ProjectStore(self.project_root_edit.text())
+        store.save_project(project)
+        self._refresh_project_list(project.slug)
+        self._set_busy(False, "Project art direction improved")
+        self._thread = None
+
+    def _on_improve_asset_type(self) -> None:
+        try:
+            project = self._build_project_spec()
+            asset_type = project.get_asset_type(self.asset_type_edit.text().strip() or "asset")
+        except Exception as exc:
+            QMessageBox.warning(self, "Improve Type Failed", str(exc))
+            return
+
+        provider = self.prompt_provider_combo.currentData()
+        api_key = self._api_key_for(provider)
+        if not self._provider_can_run(provider, api_key):
+            return
+
+        self._set_busy(True, "Improving asset-type rules...")
+        self._thread = AssetTypeEnhancementThread(
+            project=project,
+            asset_type=asset_type,
+            provider=provider,
+            model=self.prompt_model_edit.text().strip(),
+            api_key=api_key,
+        )
+        self._thread.finished.connect(lambda data: self._on_asset_type_improved(data, project, asset_type))
+        self._thread.error.connect(self._on_thread_error)
+        self._thread.start()
+
+    def _on_asset_type_improved(
+        self,
+        data: dict,
+        project: ProjectSpec,
+        asset_type: AssetTypeSpec,
+    ) -> None:
+        apply_asset_type_enhancement(asset_type, data)
+        project.add_asset_type(asset_type)
+        self._current_project = project
+        self._apply_asset_type_spec(asset_type)
+        store = ProjectStore(self.project_root_edit.text())
+        store.save_project(project)
+        self._refresh_project_list(project.slug)
+        self._set_busy(False, "Asset-type rules improved")
+        self._thread = None
+
     def _on_enhance(self) -> None:
         try:
             project, asset = self._save_current_specs()
@@ -574,7 +672,11 @@ class MainWindow(QWidget):
             AssetTypeSpec(
                 name=asset_type,
                 shared_prompt=self.asset_type_context_edit.text().strip(),
-                evolution=EvolutionPlan(count=self.evolutions_spin.value()),
+                evolution=EvolutionPlan(
+                    count=self.evolutions_spin.value(),
+                    labels=self._evolution_labels(),
+                    shared_prompt=self.evolution_context_edit.text().strip(),
+                ),
                 default_layout=self.layout_combo.currentData(),
             )
         )
@@ -595,6 +697,13 @@ class MainWindow(QWidget):
 
     def _palette_values(self) -> list[str]:
         return [value.strip() for value in self.palette_edit.text().split(",") if value.strip()]
+
+    def _evolution_labels(self) -> list[str]:
+        return [
+            value.strip()
+            for value in self.evolution_labels_edit.text().split(",")
+            if value.strip()
+        ]
 
     def _existing_project(self, project_slug: str) -> ProjectSpec | None:
         if self._current_project and self._current_project.slug == project_slug:
@@ -634,8 +743,13 @@ class MainWindow(QWidget):
     def _apply_asset_type_spec(self, asset_type: AssetTypeSpec) -> None:
         self.asset_type_edit.setText(asset_type.name)
         self.asset_type_context_edit.setText(asset_type.shared_prompt)
+        self.evolution_context_edit.setText(asset_type.evolution.shared_prompt)
+        self.evolution_labels_edit.setText(", ".join(asset_type.evolution.labels))
         self.evolutions_spin.setValue(
-            max(self.evolutions_spin.minimum(), min(self.evolutions_spin.maximum(), asset_type.evolution.count))
+            max(
+                self.evolutions_spin.minimum(),
+                min(self.evolutions_spin.maximum(), asset_type.evolution.count),
+            )
         )
         self._set_combo_value(self.layout_combo, asset_type.default_layout)
 
@@ -700,6 +814,8 @@ class MainWindow(QWidget):
 
     def _set_busy(self, busy: bool, status: str) -> None:
         self.save_btn.setEnabled(not busy)
+        self.improve_project_btn.setEnabled(not busy)
+        self.improve_type_btn.setEnabled(not busy)
         self.enhance_btn.setEnabled(not busy)
         self.generate_btn.setEnabled(not busy)
         self.progress_bar.setRange(0, 0 if busy else 1)

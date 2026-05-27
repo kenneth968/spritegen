@@ -11,6 +11,8 @@ from spritegen.projects import (
     ProjectSpec,
     ProjectStore,
     PromptPlanner,
+    apply_asset_type_enhancement,
+    apply_project_enhancement,
 )
 from spritegen.enhancement import PromptEnhancer
 from spritegen.project_generation import ProjectAssetGenerator
@@ -277,3 +279,67 @@ def test_enhancer_passes_system_prompt_to_openrouter_messages(monkeypatch):
         "role": "user",
         "content": "User brief",
     }
+
+
+def test_project_and_type_enhancement_apply_structured_results():
+    project = ProjectSpec(
+        name="MyceliumTD",
+        summary="Fungal tower defense",
+        visual_style="cartoon sprites",
+        shared_context="forest floor",
+        palette=["#111111"],
+    )
+    asset_type = AssetTypeSpec(
+        name="tower",
+        shared_prompt="tower upgrades",
+        evolution=EvolutionPlan(count=3),
+    )
+    project.add_asset_type(asset_type)
+
+    planner = PromptPlanner()
+    project_brief = planner.build_project_enhancement_brief(project)
+    type_brief = planner.build_asset_type_enhancement_brief(project, asset_type)
+
+    apply_project_enhancement(
+        project,
+        {
+            "summary": "Fungal tower-defense game with readable assets",
+            "visual_style": "clean inked sprites with soft mushroom materials",
+            "shared_context": "friendly fungi defend a damp forest floor",
+            "palette": ["#222222", "#88AA66"],
+            "negative_prompt": "watermark, text",
+            "color_prompt": "Keep values easy to remap.",
+        },
+    )
+    apply_asset_type_enhancement(
+        asset_type,
+        {
+            "shared_prompt": "Each tower keeps a round fungal silhouette.",
+            "evolution_shared_prompt": "Stages add caps, spores, and glow.",
+            "evolution_labels": ["sprout", "bloom", "elder"],
+        },
+    )
+
+    assert "strict JSON" in project_brief
+    assert "strict JSON" in type_brief
+    assert project.visual_style == "clean inked sprites with soft mushroom materials"
+    assert project.palette == ["#222222", "#88AA66"]
+    assert project.color_treatment.custom_prompt == "Keep values easy to remap."
+    assert asset_type.shared_prompt == "Each tower keeps a round fungal silhouette."
+    assert asset_type.evolution.labels == ["sprout", "bloom", "elder"]
+
+
+def test_enhancer_extracts_json_from_markdown_fence(monkeypatch):
+    def fake_enhance(self, brief, provider, model, api_key=None, system_prompt=None):
+        return '```json\n{"summary": "Improved", "palette": ["#111111"]}\n```'
+
+    monkeypatch.setattr(PromptEnhancer, "enhance", fake_enhance)
+
+    result = PromptEnhancer().enhance_json(
+        "brief",
+        provider="openai",
+        model="gpt-5.5",
+        system_prompt="system",
+    )
+
+    assert result == {"summary": "Improved", "palette": ["#111111"]}

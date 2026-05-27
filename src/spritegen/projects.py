@@ -319,6 +319,110 @@ class PromptPlanner:
     def __init__(self, guide_library: PromptGuideLibrary | None = None) -> None:
         self.guide_library = guide_library or PromptGuideLibrary()
 
+    def build_project_enhancement_brief(self, project: ProjectSpec) -> str:
+        return "\n".join(
+            part
+            for part in [
+                "Improve this game-art project brief for future image generation.",
+                "Return strict JSON with these keys only: "
+                "summary, visual_style, shared_context, palette, negative_prompt, color_prompt.",
+                "Do not include markdown fences or commentary.",
+                f"Project: {project.name}",
+                f"Current summary: {project.summary}",
+                f"Current visual style: {project.visual_style}",
+                f"Current shared universe: {project.shared_context}",
+                f"Current palette: {', '.join(project.palette)}" if project.palette else "",
+                f"Current negative prompt: {project.negative_prompt}" if project.negative_prompt else "",
+                f"Current color mode: {project.color_treatment.mode}",
+                (
+                    f"Current color-mode notes: {project.color_treatment.custom_prompt}"
+                    if project.color_treatment.custom_prompt
+                    else ""
+                ),
+                "Keep the user's game idea intact. Make the style concrete and reusable.",
+            ]
+            if part
+        )
+
+    def build_project_enhancement_system_prompt(self) -> str:
+        return self.guide_library.combined(["project", "color_modes"])
+
+    def project_enhancement_fallback(self, project: ProjectSpec) -> dict[str, Any]:
+        return {
+            "summary": project.summary or f"{project.name} game-art project",
+            "visual_style": ", ".join(
+                part
+                for part in [
+                    project.visual_style,
+                    "game-ready art direction",
+                    "consistent silhouettes and readable shapes",
+                ]
+                if part
+            ),
+            "shared_context": project.shared_context,
+            "palette": project.palette,
+            "negative_prompt": project.negative_prompt,
+            "color_prompt": project.color_treatment.custom_prompt,
+        }
+
+    def build_asset_type_enhancement_brief(
+        self,
+        project: ProjectSpec,
+        asset_type: AssetTypeSpec,
+    ) -> str:
+        return "\n".join(
+            part
+            for part in [
+                "Improve these reusable rules for one game-asset family.",
+                "Return strict JSON with these keys only: "
+                "shared_prompt, evolution_shared_prompt, evolution_labels.",
+                "evolution_labels must be an array of concise labels.",
+                "Do not include markdown fences or commentary.",
+                f"Project: {project.name}",
+                f"Project context: {project.shared_context}",
+                f"Visual style: {project.visual_style}",
+                f"Color treatment: {project.color_treatment.prompt_text(project.palette)}",
+                f"Asset type: {asset_type.name}",
+                f"Current asset-type rules: {asset_type.shared_prompt}",
+                f"Evolution count: {asset_type.evolution.count}",
+                (
+                    f"Current evolution rules: {asset_type.evolution.shared_prompt}"
+                    if asset_type.evolution.shared_prompt
+                    else ""
+                ),
+                (
+                    f"Current evolution labels: {', '.join(asset_type.evolution.labels)}"
+                    if asset_type.evolution.labels
+                    else ""
+                ),
+                f"Default layout: {asset_type.default_layout}",
+                "Keep the rules reusable across many assets in this family.",
+            ]
+            if part
+        )
+
+    def build_asset_type_enhancement_system_prompt(self) -> str:
+        return self.guide_library.combined(["project", "asset_type", "color_modes"])
+
+    def asset_type_enhancement_fallback(self, asset_type: AssetTypeSpec) -> dict[str, Any]:
+        labels = [
+            asset_type.evolution.stage_label(index)
+            for index in range(1, max(asset_type.evolution.count, 1) + 1)
+        ]
+        return {
+            "shared_prompt": ", ".join(
+                part
+                for part in [
+                    asset_type.shared_prompt,
+                    "consistent family silhouette and rendering style",
+                    "readable at small game scale",
+                ]
+                if part
+            ),
+            "evolution_shared_prompt": asset_type.evolution.shared_prompt,
+            "evolution_labels": labels,
+        }
+
     def build_enhancement_brief(
         self,
         project: ProjectSpec,
@@ -559,3 +663,43 @@ class ProjectStore:
         }
         path.write_text(json.dumps(data, indent=2), encoding="utf-8")
         return path
+
+
+def apply_project_enhancement(project: ProjectSpec, data: dict[str, Any]) -> ProjectSpec:
+    project.summary = _string_value(data.get("summary"), project.summary)
+    project.visual_style = _string_value(data.get("visual_style"), project.visual_style)
+    project.shared_context = _string_value(data.get("shared_context"), project.shared_context)
+    project.negative_prompt = _string_value(data.get("negative_prompt"), project.negative_prompt)
+    project.color_treatment.custom_prompt = _string_value(
+        data.get("color_prompt"),
+        project.color_treatment.custom_prompt,
+    )
+    palette = data.get("palette")
+    if isinstance(palette, list):
+        project.palette = [str(value).strip() for value in palette if str(value).strip()]
+    elif isinstance(palette, str):
+        project.palette = [value.strip() for value in palette.split(",") if value.strip()]
+    return project
+
+
+def apply_asset_type_enhancement(
+    asset_type: AssetTypeSpec,
+    data: dict[str, Any],
+) -> AssetTypeSpec:
+    asset_type.shared_prompt = _string_value(data.get("shared_prompt"), asset_type.shared_prompt)
+    asset_type.evolution.shared_prompt = _string_value(
+        data.get("evolution_shared_prompt"),
+        asset_type.evolution.shared_prompt,
+    )
+    labels = data.get("evolution_labels")
+    if isinstance(labels, list):
+        asset_type.evolution.labels = [str(value).strip() for value in labels if str(value).strip()]
+    elif isinstance(labels, str):
+        asset_type.evolution.labels = [value.strip() for value in labels.split(",") if value.strip()]
+    return asset_type
+
+
+def _string_value(value: Any, fallback: str) -> str:
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return fallback

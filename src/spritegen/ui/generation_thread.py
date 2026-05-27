@@ -9,7 +9,77 @@ from PySide6.QtCore import QThread, Signal
 
 from ..enhancement import PromptEnhancer
 from ..project_generation import ProjectAssetGenerator
-from ..projects import AssetSpec, ProjectSpec, ProjectStore, PromptPlanner
+from ..projects import AssetSpec, AssetTypeSpec, ProjectSpec, ProjectStore, PromptPlanner
+
+
+class ProjectEnhancementThread(QThread):
+    finished = Signal(dict)
+    error = Signal(str)
+
+    def __init__(
+        self,
+        project: ProjectSpec,
+        provider: str,
+        model: str,
+        api_key: str | None,
+        parent=None,
+    ) -> None:
+        super().__init__(parent)
+        self.project = project
+        self.provider = provider
+        self.model = model
+        self.api_key = api_key
+
+    def run(self) -> None:
+        try:
+            planner = PromptPlanner()
+            result = PromptEnhancer().enhance_json(
+                planner.build_project_enhancement_brief(self.project),
+                provider=self.provider,
+                model=self.model,
+                api_key=self.api_key,
+                system_prompt=planner.build_project_enhancement_system_prompt(),
+                fallback=planner.project_enhancement_fallback(self.project),
+            )
+            self.finished.emit(result)
+        except Exception as exc:
+            self.error.emit(str(exc))
+
+
+class AssetTypeEnhancementThread(QThread):
+    finished = Signal(dict)
+    error = Signal(str)
+
+    def __init__(
+        self,
+        project: ProjectSpec,
+        asset_type: AssetTypeSpec,
+        provider: str,
+        model: str,
+        api_key: str | None,
+        parent=None,
+    ) -> None:
+        super().__init__(parent)
+        self.project = project
+        self.asset_type = asset_type
+        self.provider = provider
+        self.model = model
+        self.api_key = api_key
+
+    def run(self) -> None:
+        try:
+            planner = PromptPlanner()
+            result = PromptEnhancer().enhance_json(
+                planner.build_asset_type_enhancement_brief(self.project, self.asset_type),
+                provider=self.provider,
+                model=self.model,
+                api_key=self.api_key,
+                system_prompt=planner.build_asset_type_enhancement_system_prompt(),
+                fallback=planner.asset_type_enhancement_fallback(self.asset_type),
+            )
+            self.finished.emit(result)
+        except Exception as exc:
+            self.error.emit(str(exc))
 
 
 class EnhancementThread(QThread):

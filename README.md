@@ -41,6 +41,8 @@ improvement. For OpenRouter model IDs, use [models.dev](https://models.dev/?sear
 or OpenRouter's model list, then paste the exact model name into the matching model field.
 Saved projects and assets can be reopened from the Project and Asset selectors, so new
 generations can reuse the same universe, style, palette, color mode, and prior assets.
+Use **Improve Project**, **Improve Type Rules**, and **Enhance Asset** to run the
+prompt-improvement model at the right level of the workflow before generating images.
 
 For a distributable Windows executable:
 
@@ -78,6 +80,8 @@ spritegen project asset \
 
 # Optional: have the prompt provider rewrite the rough asset idea.
 # Use OPENAI_API_KEY or OPENROUTER_API_KEY in your environment for paid providers.
+spritegen project enhance-project --project myceliumtd
+spritegen project enhance-type --project myceliumtd --asset-type tower
 spritegen project enhance --project myceliumtd --asset puffball
 
 # Generate all prompt packets for the asset, save raw images, slice layout regions,

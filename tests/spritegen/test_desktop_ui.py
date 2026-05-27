@@ -103,3 +103,52 @@ def test_main_window_loads_saved_project_and_asset(tmp_path):
 
     window.close()
     app.processEvents()
+
+
+def test_main_window_applies_project_and_type_improvements(tmp_path):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    pytest.importorskip("PySide6")
+
+    from PySide6.QtWidgets import QApplication
+    from spritegen.ui.main_window import MainWindow
+
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow()
+    window.project_root_edit.setText(str(tmp_path / "projects"))
+    project = window._build_project_spec()
+
+    window._on_project_improved(
+        {
+            "summary": "Improved fungal defense project",
+            "visual_style": "inked tactical sprites",
+            "shared_context": "fungi defend the damp forest",
+            "palette": ["#101010", "#E0E0E0"],
+            "negative_prompt": "watermark",
+            "color_prompt": "Use remappable value bands.",
+        },
+        project,
+    )
+
+    assert window.project_summary_edit.text() == "Improved fungal defense project"
+    assert window.style_edit.toPlainText() == "inked tactical sprites"
+    assert window.palette_edit.text() == "#101010,#E0E0E0"
+    assert window.color_prompt_edit.toPlainText() == "Use remappable value bands."
+
+    updated_project = window._build_project_spec()
+    asset_type = updated_project.get_asset_type("tower")
+    window._on_asset_type_improved(
+        {
+            "shared_prompt": "Round fungal tower silhouettes.",
+            "evolution_shared_prompt": "Grow caps, spores, and glow each stage.",
+            "evolution_labels": ["sprout", "bloom", "elder", "ancient"],
+        },
+        updated_project,
+        asset_type,
+    )
+
+    assert window.asset_type_context_edit.text() == "Round fungal tower silhouettes."
+    assert window.evolution_context_edit.text() == "Grow caps, spores, and glow each stage."
+    assert window.evolution_labels_edit.text() == "sprout, bloom, elder, ancient"
+
+    window.close()
+    app.processEvents()

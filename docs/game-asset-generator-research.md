@@ -79,3 +79,19 @@ makes production color rules explicit:
 - The desktop app can now refresh and load saved projects and saved assets from
   the selected project directory, making the workflow a reusable asset library
   instead of a single-entry form.
+
+## Fourth implementation slice
+
+Prompt improvement is now layered at the same levels the user thinks about the
+project:
+
+- `spritegen project enhance-project` rewrites the saved project summary, visual
+  style, shared universe, palette, negative prompt, and color-mode notes from a
+  strict JSON response.
+- `spritegen project enhance-type` rewrites one asset type's reusable rules,
+  evolution rules, and stage labels.
+- The desktop app exposes the same levels as **Improve Project**, **Improve Type
+  Rules**, and **Enhance Asset**, keeping the image-generation model separate
+  from the prompt-improvement model.
+- Structured prompt enhancement accepts fenced or plain JSON from providers and
+  writes validated fields back to the existing project JSON.
