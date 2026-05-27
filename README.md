@@ -75,6 +75,8 @@ Use the **Variant** selector beside **Export Sprites** when you generated severa
 candidates and only want to export the chosen one. **All** exports every candidate.
 Exports copy the sliced files and a compact export manifest into
 `projects/<project>/exports/<asset>/`.
+When a specific variant is exported, later OpenRouter generations prefer that chosen
+raw atlas as the visual reference for future assets in the same project.
 
 For a distributable Windows executable:
 

@@ -285,7 +285,11 @@ class ProjectAssetGenerator:
                 / known_slug
                 / "generation_manifest.json"
             )
-            raw_image = self._first_manifest_raw_image(manifest_path)
+            preferred_variant = self._preferred_variant_index(project_slug, known_slug)
+            raw_image = self._first_manifest_raw_image(
+                manifest_path,
+                variant_index=preferred_variant,
+            )
             if raw_image is None or raw_image in seen:
                 continue
             seen.add(raw_image)
@@ -294,7 +298,27 @@ class ProjectAssetGenerator:
                 break
         return references
 
-    def _first_manifest_raw_image(self, manifest_path: Path) -> Path | None:
+    def _preferred_variant_index(self, project_slug: str, asset_slug: str) -> int | None:
+        export_manifest = (
+            self.store.project_dir(project_slug)
+            / "exports"
+            / asset_slug
+            / "asset_export_manifest.json"
+        )
+        if not export_manifest.exists():
+            return None
+        try:
+            manifest = json.loads(export_manifest.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+        selected = manifest.get("selected_variant")
+        return selected if isinstance(selected, int) and selected >= 1 else None
+
+    def _first_manifest_raw_image(
+        self,
+        manifest_path: Path,
+        variant_index: int | None = None,
+    ) -> Path | None:
         if not manifest_path.exists():
             return None
         try:
@@ -304,12 +328,26 @@ class ProjectAssetGenerator:
         for output in manifest.get("outputs", []):
             if not isinstance(output, dict):
                 continue
+            if not self._matches_variant(output, variant_index):
+                continue
             raw_image = output.get("raw_image")
             if not isinstance(raw_image, str) or not raw_image:
                 continue
             path = Path(raw_image)
+            if path.exists():
+                return path
             if not path.is_absolute():
                 path = manifest_path.parent / path
             if path.exists():
                 return path
+        if variant_index is not None:
+            return self._first_manifest_raw_image(manifest_path)
         return None
+
+    def _matches_variant(self, output: dict, variant_index: int | None) -> bool:
+        if variant_index is None:
+            return True
+        output_variant = output.get("variant_index")
+        if output_variant is None:
+            return variant_index == 1
+        return output_variant == variant_index

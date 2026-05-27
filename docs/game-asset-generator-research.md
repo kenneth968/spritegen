@@ -318,3 +318,15 @@ Variant runs can now be narrowed at export time:
 - The desktop output toolbar adds a **Variant** selector with **All** as the
   default, so users can compare generated candidates and export only the one they
   want to bring into their game.
+
+## Twenty-first implementation slice
+
+Chosen variants now feed future project coherence:
+
+- OpenRouter visual-reference collection checks each prior asset's
+  `asset_export_manifest.json` before falling back to the first generated atlas.
+- When an export records `selected_variant`, the matching raw atlas in
+  `generation_manifest.json` becomes the preferred reference image for later
+  assets in the same project.
+- This keeps the user's chosen candidate, rather than an arbitrary first variant,
+  as the visual style anchor for subsequent generations.
