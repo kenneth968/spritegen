@@ -16,6 +16,8 @@ from .project_generation import ProjectAssetGenerator
 from .projects import (
     AssetSpec,
     AssetTypeSpec,
+    COLOR_TREATMENT_MODES,
+    ColorTreatment,
     EvolutionPlan,
     ProjectSpec,
     ProjectStore,
@@ -187,6 +189,10 @@ def cmd_project(args: argparse.Namespace) -> int:
                 prompt_provider=args.prompt_provider,
                 prompt_model=args.prompt_model,
             ),
+            color_treatment=ColorTreatment(
+                mode=args.color_mode,
+                custom_prompt=args.color_prompt or "",
+            ),
         )
         project.add_asset_type(
             AssetTypeSpec(
@@ -247,6 +253,11 @@ def cmd_project(args: argparse.Namespace) -> int:
             provider=provider,
             model=model,
             api_key=args.api_key,
+            system_prompt=planner.build_enhancement_system_prompt(
+                project,
+                asset_type,
+                asset,
+            ),
         )
         asset.enhanced_prompt = enhanced
         asset_path = store.save_asset(project, asset)
@@ -541,6 +552,17 @@ def main() -> int:
     project_init.add_argument("--image-model", default="gpt-image-2")
     project_init.add_argument("--prompt-provider", default="openai")
     project_init.add_argument("--prompt-model", default="gpt-5.5")
+    project_init.add_argument(
+        "--color-mode",
+        default="full_color",
+        choices=sorted(COLOR_TREATMENT_MODES),
+        help="Color treatment carried into prompt enhancement and image generation",
+    )
+    project_init.add_argument(
+        "--color-prompt",
+        default="",
+        help="Extra color-mode instructions, such as value bands or palette rules",
+    )
     project_init.add_argument("--asset-type", default="tower")
     project_init.add_argument("--asset-type-context", default="")
     project_init.add_argument("--evolutions", type=int, default=4)

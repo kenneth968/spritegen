@@ -10,6 +10,9 @@ AI-powered sprite sheet generator for tower defense games. Generates evolution c
 - **Style consistency**: Style presets with seed tracking ensure visual coherence across generations
 - **Sprite slicing**: Extract individual sprites from sheets with metadata export
 - **Project-aware prompt planning**: Store a game project, shared style, palette, asset types, and prior assets so each new prompt carries the same universe context
+- **Separate model choices**: Use one provider/model for final image generation and another provider/model for AI prompt improvement
+- **Markdown prompt guides**: Bundled `.md` system prompts steer project, asset type, asset, layout, and color-mode prompt improvement
+- **Color production modes**: Generate full color, limited palette, black/white, grayscale value-map, or single-hue value-map assets
 - **Atlas layouts**: Define sliceable composite outputs, including a full-body character plus eight chibi emotion heads in one generated image
 
 ## Quick Start
@@ -33,6 +36,10 @@ spritegen generate --style pixel_art --sprites "red mushroom" "blue mushroom" --
 On Windows, double-click `launch_spritegen.cmd` from the project folder. The launcher creates
 a local `.venv`, installs the desktop dependencies, and opens the app.
 
+The desktop app exposes separate provider/model fields for image generation and prompt
+improvement. For OpenRouter model IDs, use [models.dev](https://models.dev/?search=minim)
+or OpenRouter's model list, then paste the exact model name into the matching model field.
+
 For a distributable Windows executable:
 
 ```powershell
@@ -53,6 +60,8 @@ spritegen project init \
   --style "clean cartoon tower defense sprites, bold outlines, bright readable shapes" \
   --context "Friendly fungal towers defending a forest floor from tiny slime enemies" \
   --palette "#8B4513,#228B22,#9932CC,#00FA9A" \
+  --color-mode limited_palette \
+  --color-prompt "Keep values readable when recolored by tower upgrade tier" \
   --asset-type tower \
   --asset-type-context "Every tower has four upgrade stages and should read clearly at small game size" \
   --evolutions 4
@@ -73,6 +82,10 @@ spritegen project enhance --project myceliumtd --asset puffball
 # and write a generation_manifest.json beside the output.
 spritegen project generate --project myceliumtd --asset puffball
 ```
+
+`spritegen project enhance` sends the user's rough asset idea as the user prompt and the
+bundled Markdown guides in `src/spritegen/prompt_guides/` as system/developer guidance
+where the selected provider supports it. The image model is only used by `project generate`.
 
 For character atlases, ask the image model for the built-in layout, then slice the result:
 

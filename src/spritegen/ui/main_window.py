@@ -32,6 +32,8 @@ from ..layouts import PRESET_LAYOUTS
 from ..projects import (
     AssetSpec,
     AssetTypeSpec,
+    COLOR_TREATMENT_MODES,
+    ColorTreatment,
     EvolutionPlan,
     ProjectSpec,
     ProjectStore,
@@ -63,6 +65,14 @@ DEFAULT_PROMPT_MODELS = {
     "pollinations": "openai",
     "openai": "gpt-5.5",
     "openrouter": "openai/gpt-5.5",
+}
+
+COLOR_MODE_LABELS = {
+    "full_color": "Full Color",
+    "limited_palette": "Limited Palette",
+    "black_white": "Black / White",
+    "grayscale_value_map": "Grayscale Value Map",
+    "single_hue_value_map": "Single-Hue Value Map",
 }
 
 
@@ -176,6 +186,18 @@ class MainWindow(QWidget):
         self.negative_prompt_edit = QLineEdit("photorealistic, watermark, text labels")
         project_layout.addRow("Avoid:", self.negative_prompt_edit)
 
+        self.color_mode_combo = QComboBox()
+        for mode in COLOR_TREATMENT_MODES:
+            self.color_mode_combo.addItem(COLOR_MODE_LABELS[mode], mode)
+        project_layout.addRow("Color Mode:", self.color_mode_combo)
+
+        self.color_prompt_edit = QTextEdit()
+        self.color_prompt_edit.setMaximumHeight(58)
+        self.color_prompt_edit.setPlaceholderText(
+            "Optional color rules, value bands, recolor map notes, etc."
+        )
+        project_layout.addRow("Color Notes:", self.color_prompt_edit)
+
         root_row = QHBoxLayout()
         self.project_root_edit = QLineEdit(self._project_root)
         root_btn = QPushButton("Browse")
@@ -229,14 +251,14 @@ class MainWindow(QWidget):
 
         self.image_provider_combo = self._provider_combo(IMAGE_PROVIDERS)
         self.image_provider_combo.currentIndexChanged.connect(self._on_image_provider_changed)
-        config_layout.addRow("Image:", self.image_provider_combo)
+        config_layout.addRow("Image Provider:", self.image_provider_combo)
 
         self.image_model_edit = QLineEdit(DEFAULT_IMAGE_MODELS["mock"])
         config_layout.addRow("Image Model:", self.image_model_edit)
 
         self.prompt_provider_combo = self._provider_combo(PROMPT_PROVIDERS)
         self.prompt_provider_combo.currentIndexChanged.connect(self._on_prompt_provider_changed)
-        config_layout.addRow("Prompt:", self.prompt_provider_combo)
+        config_layout.addRow("Prompt Provider:", self.prompt_provider_combo)
 
         self.prompt_model_edit = QLineEdit(DEFAULT_PROMPT_MODELS["mock"])
         config_layout.addRow("Prompt Model:", self.prompt_model_edit)
@@ -244,6 +266,12 @@ class MainWindow(QWidget):
         self.api_key_override = QLineEdit()
         self.api_key_override.setEchoMode(QLineEdit.Password)
         config_layout.addRow("API Key:", self.api_key_override)
+
+        model_help = QLabel(
+            '<a href="https://models.dev/?search=minim">Find provider model IDs</a>'
+        )
+        model_help.setOpenExternalLinks(True)
+        config_layout.addRow("Model Names:", model_help)
 
         layout.addWidget(config_group)
 
@@ -429,6 +457,10 @@ class MainWindow(QWidget):
                 image_model=self.image_model_edit.text().strip(),
                 prompt_provider=self.prompt_provider_combo.currentData(),
                 prompt_model=self.prompt_model_edit.text().strip(),
+            ),
+            color_treatment=ColorTreatment(
+                mode=self.color_mode_combo.currentData(),
+                custom_prompt=self.color_prompt_edit.toPlainText().strip(),
             ),
         )
         project.add_asset_type(

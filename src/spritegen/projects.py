@@ -9,9 +9,18 @@ from pathlib import Path
 from typing import Any
 
 from .layouts import AssetLayout, get_layout
+from .prompt_guidance import PromptGuideLibrary
 
 
 PROJECT_SCHEMA_VERSION = 1
+
+COLOR_TREATMENT_MODES = {
+    "full_color": "Full color",
+    "limited_palette": "Limited palette",
+    "black_white": "Black and white",
+    "grayscale_value_map": "Grayscale value map",
+    "single_hue_value_map": "Single-hue value map",
+}
 
 
 def slugify(value: str) -> str:
@@ -50,6 +59,64 @@ class ProviderDefaults:
             quality=data.get("quality", "medium"),
             size=data.get("size", "1024x1024"),
         )
+
+
+@dataclass
+class ColorTreatment:
+    mode: str = "full_color"
+    custom_prompt: str = ""
+
+    def __post_init__(self) -> None:
+        if self.mode not in COLOR_TREATMENT_MODES:
+            known = ", ".join(sorted(COLOR_TREATMENT_MODES))
+            raise ValueError(f"Unknown color treatment '{self.mode}'. Known modes: {known}")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "mode": self.mode,
+            "custom_prompt": self.custom_prompt,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> "ColorTreatment":
+        if not data:
+            return cls()
+        return cls(
+            mode=data.get("mode", "full_color"),
+            custom_prompt=data.get("custom_prompt", ""),
+        )
+
+    def prompt_text(self, palette: list[str]) -> str:
+        palette_text = ", ".join(palette)
+        if self.mode == "full_color":
+            text = "Use the project palette as full-color game art."
+        elif self.mode == "limited_palette":
+            text = (
+                "Use a limited-palette production style. "
+                f"Restrict hues to the project palette: {palette_text or 'the listed palette'}."
+            )
+        elif self.mode == "black_white":
+            text = (
+                "Render as black-and-white game art: clear inked silhouette, white fills, "
+                "strong readable value separation, no color hue."
+            )
+        elif self.mode == "grayscale_value_map":
+            text = (
+                "Render as a grayscale value-map asset. Use stepped gray values as coded "
+                "material or lighting indices, with clean separable bands and no hue."
+            )
+        elif self.mode == "single_hue_value_map":
+            hue = palette[0] if palette else "one chosen hue"
+            text = (
+                f"Render as a single-hue value-map asset based on {hue}. Use controlled "
+                "tints and shades so the image can be recolored or shader-mapped later."
+            )
+        else:
+            text = "Use the project color treatment."
+
+        if self.custom_prompt:
+            text = f"{text} {self.custom_prompt}"
+        return text
 
 
 @dataclass
@@ -121,6 +188,7 @@ class ProjectSpec:
     palette: list[str] = field(default_factory=list)
     negative_prompt: str = ""
     provider_defaults: ProviderDefaults = field(default_factory=ProviderDefaults)
+    color_treatment: ColorTreatment = field(default_factory=ColorTreatment)
     asset_types: dict[str, AssetTypeSpec] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -148,6 +216,7 @@ class ProjectSpec:
             "palette": self.palette,
             "negative_prompt": self.negative_prompt,
             "provider_defaults": self.provider_defaults.to_dict(),
+            "color_treatment": self.color_treatment.to_dict(),
             "asset_types": {
                 name: asset_type.to_dict()
                 for name, asset_type in sorted(self.asset_types.items())
@@ -167,6 +236,7 @@ class ProjectSpec:
             palette=list(data.get("palette", [])),
             negative_prompt=data.get("negative_prompt", ""),
             provider_defaults=ProviderDefaults.from_dict(data.get("provider_defaults")),
+            color_treatment=ColorTreatment.from_dict(data.get("color_treatment")),
         )
         for asset_type_data in data.get("asset_types", {}).values():
             project.add_asset_type(AssetTypeSpec.from_dict(asset_type_data))
@@ -246,6 +316,9 @@ class PromptPacket:
 class PromptPlanner:
     """Build image-generator-ready prompts from project context."""
 
+    def __init__(self, guide_library: PromptGuideLibrary | None = None) -> None:
+        self.guide_library = guide_library or PromptGuideLibrary()
+
     def build_enhancement_brief(
         self,
         project: ProjectSpec,
@@ -254,6 +327,7 @@ class PromptPlanner:
         known_assets: list[AssetSpec] | None = None,
     ) -> str:
         known = self._known_asset_context(known_assets or [], exclude_slug=asset.slug)
+        layout = get_layout(asset.layout or asset_type.default_layout)
         return "\n".join(
             part
             for part in [
@@ -263,14 +337,32 @@ class PromptPlanner:
                 f"Project context: {project.shared_context}",
                 f"Visual style: {project.visual_style}",
                 f"Palette: {', '.join(project.palette)}" if project.palette else "",
+                f"Color treatment: {project.color_treatment.prompt_text(project.palette)}",
                 f"Asset type rules: {asset_type.shared_prompt}",
                 f"Existing universe assets to harmonize with: {known}" if known else "",
                 f"Raw asset idea: {asset.description}",
                 f"Extra details: {asset.details}" if asset.details else "",
+                f"Output layout: {layout.name}. {layout.prompt_instructions}",
                 "Return only the improved prompt text.",
             ]
             if part
         )
+
+    def build_enhancement_system_prompt(
+        self,
+        project: ProjectSpec,
+        asset_type: AssetTypeSpec,
+        asset: AssetSpec,
+    ) -> str:
+        layout = get_layout(asset.layout or asset_type.default_layout)
+        guide_names = [
+            "project",
+            "asset_type",
+            "asset",
+            "color_modes",
+            f"layout_{layout.name}",
+        ]
+        return self.guide_library.combined(guide_names)
 
     def build_prompt_packets(
         self,
@@ -320,6 +412,7 @@ class PromptPlanner:
             f"Shared universe: {project.shared_context}",
             f"Visual style: {project.visual_style}",
             f"Color palette: {', '.join(project.palette)}" if project.palette else "",
+            f"Color treatment: {project.color_treatment.prompt_text(project.palette)}",
             f"Asset type: {asset_type.name}. {asset_type.shared_prompt}",
             f"Existing related assets: {known_context}" if known_context else "",
             f"Current asset: {asset.name}. {asset.enhanced_prompt or asset.description}",
@@ -346,6 +439,7 @@ class PromptPlanner:
             negative_prompt=project.negative_prompt,
             metadata={
                 "provider_defaults": project.provider_defaults.to_dict(),
+                "color_treatment": project.color_treatment.to_dict(),
                 "layout": layout.to_dict(),
             },
         )
@@ -425,6 +519,26 @@ class ProjectStore:
         for path in sorted(root.glob("*.json")):
             assets.append(AssetSpec.from_dict(json.loads(path.read_text(encoding="utf-8"))))
         return assets
+
+    def load_assets_for_slug(self, project_slug: str) -> list[AssetSpec]:
+        root = self.asset_dir(project_slug)
+        if not root.exists():
+            return []
+        assets: list[AssetSpec] = []
+        for path in sorted(root.glob("*.json")):
+            assets.append(AssetSpec.from_dict(json.loads(path.read_text(encoding="utf-8"))))
+        return assets
+
+    def list_projects(self) -> list[ProjectSpec]:
+        if not self.root.exists():
+            return []
+        projects: list[ProjectSpec] = []
+        for path in sorted(self.root.glob("*/project.json")):
+            try:
+                projects.append(ProjectSpec.from_dict(json.loads(path.read_text(encoding="utf-8"))))
+            except (OSError, ValueError, json.JSONDecodeError, KeyError):
+                continue
+        return projects
 
     def save_prompt_plan(
         self,

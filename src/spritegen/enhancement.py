@@ -22,15 +22,16 @@ class PromptEnhancer:
         provider: str,
         model: str,
         api_key: str | None = None,
+        system_prompt: str | None = None,
     ) -> str:
         if provider == "mock":
             return self._enhance_mock(brief)
         if provider == "pollinations":
-            return self._enhance_pollinations(brief)
+            return self._enhance_pollinations(brief, system_prompt)
         if provider == "openai":
-            return self._enhance_openai(brief, model, api_key)
+            return self._enhance_openai(brief, model, api_key, system_prompt)
         if provider == "openrouter":
-            return self._enhance_openrouter(brief, model, api_key)
+            return self._enhance_openrouter(brief, model, api_key, system_prompt)
         raise PromptEnhancementError(f"Unsupported prompt provider: {provider}")
 
     def _enhance_mock(self, brief: str) -> str:
@@ -46,8 +47,9 @@ class PromptEnhancer:
         ]
         return ", ".join(part for part in parts if part)
 
-    def _enhance_pollinations(self, brief: str) -> str:
-        encoded = urllib.parse.quote(brief)
+    def _enhance_pollinations(self, brief: str, system_prompt: str | None) -> str:
+        prompt = f"{system_prompt}\n\nUser request:\n{brief}" if system_prompt else brief
+        encoded = urllib.parse.quote(prompt)
         url = f"https://text.pollinations.ai/{encoded}?model=openai"
         try:
             with urllib.request.urlopen(url, timeout=ENHANCEMENT_TIMEOUT_SECONDS) as resp:
@@ -60,6 +62,7 @@ class PromptEnhancer:
         brief: str,
         model: str,
         api_key: str | None,
+        system_prompt: str | None,
     ) -> str:
         token = api_key or os.environ.get("OPENAI_API_KEY", "")
         if not token:
@@ -69,6 +72,8 @@ class PromptEnhancer:
             "model": model,
             "input": brief,
         }
+        if system_prompt:
+            payload["instructions"] = system_prompt
         result = self._post_json(
             url="https://api.openai.com/v1/responses",
             payload=payload,
@@ -84,19 +89,29 @@ class PromptEnhancer:
         brief: str,
         model: str,
         api_key: str | None,
+        system_prompt: str | None,
     ) -> str:
         token = api_key or os.environ.get("OPENROUTER_API_KEY", "")
         if not token:
             raise PromptEnhancementError("OPENROUTER_API_KEY is required for prompt enhancement")
 
+        messages = []
+        if system_prompt:
+            messages.append(
+                {
+                    "role": "system",
+                    "content": system_prompt,
+                }
+            )
+        messages.append(
+            {
+                "role": "user",
+                "content": brief,
+            }
+        )
         payload = {
             "model": model,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": brief,
-                }
-            ],
+            "messages": messages,
         }
         result = self._post_json(
             url="https://openrouter.ai/api/v1/chat/completions",

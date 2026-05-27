@@ -57,3 +57,22 @@ The follow-up commit makes saved project assets executable:
   provider. `--dry-run` updates and prints the plan without making image calls.
 - OpenAI image generation now uses direct HTTPS with `OPENAI_API_KEY`, so the CLI
   no longer requires users to install the OpenAI Python package separately.
+
+## Third implementation slice
+
+The next usability layer separates prompt intelligence from image generation and
+makes production color rules explicit:
+
+- Projects already store separate image-provider/model and prompt-provider/model
+  defaults; the desktop UI now labels those paths separately.
+- Prompt enhancement now accepts Markdown-backed system guidance. Built-in guides
+  live under `src/spritegen/prompt_guides/` for project context, asset families,
+  individual assets, layouts, and color modes.
+- OpenAI prompt enhancement passes those guides through the Responses API
+  `instructions` field, and OpenRouter prompt enhancement sends them as a system
+  message before the user's rough asset brief.
+- Project specs now carry a color treatment: full color, limited palette,
+  black/white, grayscale value map, or single-hue value map. The planner injects
+  this into both the prompt-improvement brief and the final image prompt.
+- The desktop provider area links to `https://models.dev/?search=minim` so users
+  can find exact model IDs for providers such as OpenRouter.

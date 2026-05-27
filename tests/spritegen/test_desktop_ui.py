@@ -19,11 +19,16 @@ def test_main_window_saves_project_plan(tmp_path):
     window.project_root_edit.setText(str(tmp_path / "projects"))
     window.project_name_edit.setText("MyceliumTD")
     window.asset_name_edit.setText("Puffball")
+    window.color_mode_combo.setCurrentIndex(
+        window.color_mode_combo.findData("single_hue_value_map")
+    )
+    window.color_prompt_edit.setPlainText("Use cap color as tint band 3.")
 
     project, asset = window._save_current_specs()
 
     assert project.slug == "myceliumtd"
     assert asset.slug == "puffball"
+    assert project.color_treatment.mode == "single_hue_value_map"
     assert (tmp_path / "projects" / "myceliumtd" / "project.json").exists()
     assert (tmp_path / "projects" / "myceliumtd" / "assets" / "puffball.json").exists()
 

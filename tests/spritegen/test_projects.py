@@ -6,6 +6,7 @@ from spritegen.layouts import AssetLayout, get_layout
 from spritegen.projects import (
     AssetSpec,
     AssetTypeSpec,
+    ColorTreatment,
     EvolutionPlan,
     ProjectSpec,
     ProjectStore,
@@ -185,3 +186,94 @@ def test_project_generator_saves_manifest_and_slices(tmp_path):
     assert result.outputs[0].raw_image.exists()
     assert result.outputs[0].slices
     assert result.outputs[0].slices[0].exists()
+
+
+def test_prompt_guides_and_color_treatment_feed_prompting():
+    project = ProjectSpec(
+        name="MyceliumTD",
+        summary="Fungal tower defense game",
+        visual_style="clean cartoon tower defense sprites with bold outlines",
+        shared_context="A forest floor world of friendly fungal towers.",
+        palette=["#111111", "#777777", "#EEEEEE"],
+        negative_prompt="watermark",
+        color_treatment=ColorTreatment(
+            mode="grayscale_value_map",
+            custom_prompt="Use four clear value bands for shader recoloring.",
+        ),
+    )
+    project.add_asset_type(
+        AssetTypeSpec(
+            name="tower",
+            shared_prompt="Each tower has readable upgrade stages.",
+            default_layout="four_stage_grid",
+        )
+    )
+    asset = AssetSpec(
+        name="Puffball",
+        asset_type="tower",
+        description="A mushroom that attacks with spore clouds.",
+    )
+
+    planner = PromptPlanner()
+    asset_type = project.get_asset_type("tower")
+    brief = planner.build_enhancement_brief(project, asset_type, asset)
+    system_prompt = planner.build_enhancement_system_prompt(project, asset_type, asset)
+    packet = planner.build_prompt_packets(project, asset)[0]
+
+    assert "grayscale value-map" in brief
+    assert "four clear value bands" in packet.prompt
+    assert "Project Prompt Guide" in system_prompt
+    assert "Four Stage Grid Layout Guide" in system_prompt
+    assert packet.metadata["color_treatment"]["mode"] == "grayscale_value_map"
+
+
+def test_enhancer_passes_system_prompt_to_openai_payload(monkeypatch):
+    captured = {}
+
+    def fake_post_json(self, url, payload, headers):
+        captured["url"] = url
+        captured["payload"] = payload
+        captured["headers"] = headers
+        return {"output_text": "improved prompt"}
+
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(PromptEnhancer, "_post_json", fake_post_json)
+
+    result = PromptEnhancer().enhance(
+        "User brief",
+        provider="openai",
+        model="gpt-5.5",
+        system_prompt="System guide",
+    )
+
+    assert result == "improved prompt"
+    assert captured["payload"]["instructions"] == "System guide"
+    assert captured["payload"]["input"] == "User brief"
+
+
+def test_enhancer_passes_system_prompt_to_openrouter_messages(monkeypatch):
+    captured = {}
+
+    def fake_post_json(self, url, payload, headers):
+        captured["payload"] = payload
+        return {"choices": [{"message": {"content": "improved prompt"}}]}
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setattr(PromptEnhancer, "_post_json", fake_post_json)
+
+    result = PromptEnhancer().enhance(
+        "User brief",
+        provider="openrouter",
+        model="openai/gpt-5.5",
+        system_prompt="System guide",
+    )
+
+    assert result == "improved prompt"
+    assert captured["payload"]["messages"][0] == {
+        "role": "system",
+        "content": "System guide",
+    }
+    assert captured["payload"]["messages"][1] == {
+        "role": "user",
+        "content": "User brief",
+    }

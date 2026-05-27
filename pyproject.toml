@@ -18,6 +18,9 @@ build = ["PyInstaller>=6.0"]
 spritegen = "spritegen.cli:main"
 spritegen-desktop = "spritegen.desktop:main"
 
+[tool.setuptools.package-data]
+spritegen = ["prompt_guides/*.md"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]

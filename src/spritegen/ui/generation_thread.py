@@ -51,6 +51,11 @@ class EnhancementThread(QThread):
                 provider=self.provider,
                 model=self.model,
                 api_key=self.api_key,
+                system_prompt=planner.build_enhancement_system_prompt(
+                    self.project,
+                    asset_type,
+                    self.asset,
+                ),
             )
             self.finished.emit(enhanced)
         except Exception as exc:
