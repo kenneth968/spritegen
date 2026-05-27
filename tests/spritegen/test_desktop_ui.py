@@ -13,10 +13,11 @@ def test_main_window_saves_project_plan(tmp_path):
     pytest.importorskip("PySide6")
 
     from PySide6.QtWidgets import QApplication
+    from spritegen.user_settings import UserSettingsStore
     from spritegen.ui.main_window import MainWindow
 
     app = QApplication.instance() or QApplication([])
-    window = MainWindow()
+    window = MainWindow(settings_store=UserSettingsStore(tmp_path / "settings.json"))
     window.project_root_edit.setText(str(tmp_path / "projects"))
     window.project_name_edit.setText("MyceliumTD")
     window.asset_name_edit.setText("Puffball")
@@ -54,6 +55,7 @@ def test_main_window_loads_saved_project_and_asset(tmp_path):
         ProjectStore,
     )
     from spritegen.layouts import AssetLayout
+    from spritegen.user_settings import UserSettingsStore
     from spritegen.ui.main_window import MainWindow
 
     store = ProjectStore(tmp_path / "projects")
@@ -124,7 +126,7 @@ def test_main_window_loads_saved_project_and_asset(tmp_path):
     )
 
     app = QApplication.instance() or QApplication([])
-    window = MainWindow()
+    window = MainWindow(settings_store=UserSettingsStore(tmp_path / "settings.json"))
     window.project_root_edit.setText(str(tmp_path / "projects"))
     window._refresh_project_list()
 
@@ -192,10 +194,11 @@ def test_main_window_applies_project_and_type_improvements(tmp_path):
     pytest.importorskip("PySide6")
 
     from PySide6.QtWidgets import QApplication
+    from spritegen.user_settings import UserSettingsStore
     from spritegen.ui.main_window import MainWindow
 
     app = QApplication.instance() or QApplication([])
-    window = MainWindow()
+    window = MainWindow(settings_store=UserSettingsStore(tmp_path / "settings.json"))
     window.project_root_edit.setText(str(tmp_path / "projects"))
     project = window._build_project_spec()
 
@@ -231,6 +234,124 @@ def test_main_window_applies_project_and_type_improvements(tmp_path):
     assert window.asset_type_context_edit.text() == "Round fungal tower silhouettes."
     assert window.evolution_context_edit.text() == "Grow caps, spores, and glow each stage."
     assert window.evolution_labels_edit.text() == "sprout, bloom, elder, ancient"
+
+    window.close()
+    app.processEvents()
+
+
+def test_main_window_saves_local_provider_setup(tmp_path, monkeypatch):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    pytest.importorskip("PySide6")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+
+    from PySide6.QtWidgets import QApplication
+    from spritegen.user_settings import UserSettings, UserSettingsStore
+    from spritegen.ui.main_window import MainWindow
+
+    settings_store = UserSettingsStore(tmp_path / "settings.json")
+    settings_store.save(
+        UserSettings(
+            image_provider="openrouter",
+            image_model="google/gemini-3.1-flash-image-preview",
+            prompt_provider="openai",
+            prompt_model="gpt-5.5",
+            api_keys={
+                "openrouter": "saved-openrouter-key",
+                "openai": "saved-openai-key",
+            },
+        )
+    )
+
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow(settings_store=settings_store)
+
+    assert window.image_provider_combo.currentData() == "openrouter"
+    assert window.prompt_provider_combo.currentData() == "openai"
+    assert window.image_model_edit.text() == "google/gemini-3.1-flash-image-preview"
+    assert window.prompt_model_edit.text() == "gpt-5.5"
+    assert window.image_api_key_edit.text() == "saved-openrouter-key"
+    assert window.prompt_api_key_edit.text() == "saved-openai-key"
+    assert window._api_key_for("openrouter", "image") == "saved-openrouter-key"
+    assert window._api_key_for("openai", "prompt") == "saved-openai-key"
+
+    window.image_model_edit.setText("openrouter/image-model")
+    window.prompt_model_edit.setText("openai/prompt-model")
+    window.image_api_key_edit.setText("new-openrouter-key")
+    window.prompt_api_key_edit.setText("new-openai-key")
+    window._on_save_provider_settings()
+
+    saved = settings_store.load()
+    assert saved.image_provider == "openrouter"
+    assert saved.image_model == "openrouter/image-model"
+    assert saved.prompt_provider == "openai"
+    assert saved.prompt_model == "openai/prompt-model"
+    assert saved.api_key_for("openrouter") == "new-openrouter-key"
+    assert saved.api_key_for("openai") == "new-openai-key"
+    assert "Saved local provider setup" in window.status_label.text()
+
+    window._on_clear_saved_keys()
+    assert settings_store.load().api_keys == {}
+    assert window.image_api_key_edit.text() == ""
+    assert window.prompt_api_key_edit.text() == ""
+
+    window.close()
+    app.processEvents()
+
+
+def test_main_window_checks_provider_setup_without_network(tmp_path, monkeypatch):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    pytest.importorskip("PySide6")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+
+    from PySide6.QtWidgets import QApplication
+    from spritegen.user_settings import UserSettingsStore
+    from spritegen.ui.main_window import MainWindow
+
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow(settings_store=UserSettingsStore(tmp_path / "settings.json"))
+    window._set_combo_value(window.image_provider_combo, "openrouter")
+    window._set_combo_value(window.prompt_provider_combo, "openai")
+    window.image_api_key_edit.clear()
+    window.prompt_api_key_edit.clear()
+
+    window._on_check_provider_setup()
+
+    assert "OpenRouter image key" in window.status_label.text()
+    assert "OpenAI prompt key" in window.status_label.text()
+
+    window.image_api_key_edit.setText("openrouter-key")
+    window.prompt_api_key_edit.setText("openai-key")
+    window._on_check_provider_setup()
+
+    assert window.status_label.text() == "Provider setup ready: image OpenRouter / prompt OpenAI"
+
+    window.close()
+    app.processEvents()
+
+
+def test_main_window_saves_shared_provider_key_once(tmp_path, monkeypatch):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    pytest.importorskip("PySide6")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+
+    from PySide6.QtWidgets import QApplication
+    from spritegen.user_settings import UserSettingsStore
+    from spritegen.ui.main_window import MainWindow
+
+    settings_store = UserSettingsStore(tmp_path / "settings.json")
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow(settings_store=settings_store)
+    window._set_combo_value(window.image_provider_combo, "openrouter")
+    window._set_combo_value(window.prompt_provider_combo, "openrouter")
+    window.image_api_key_edit.setText("shared-openrouter-key")
+    window.prompt_api_key_edit.clear()
+
+    window._on_save_provider_settings()
+
+    assert settings_store.load().api_key_for("openrouter") == "shared-openrouter-key"
 
     window.close()
     app.processEvents()

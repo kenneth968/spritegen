@@ -147,3 +147,16 @@ Desktop output inspection now matches the files game users actually consume:
   images, including manifests that store relative paths.
 - The preview panel clear path now resets all prior widgets before showing the
   empty-state message again.
+
+## Ninth implementation slice
+
+Provider setup is now closer to a normal desktop app:
+
+- Desktop settings can remember the selected image provider/model, prompt
+  provider/model, and provider API keys in a local user settings file.
+- Image generation and prompt improvement have separate API key fields, so users
+  can combine providers such as OpenRouter for images and OpenAI for prompt
+  rewriting.
+- **Check Setup** validates required model/key fields without making a network
+  request.
+- Saved API keys stay out of project JSON and can be cleared from the app.

@@ -47,6 +47,7 @@ from ..projects import (
     apply_project_enhancement,
     slugify,
 )
+from ..user_settings import UserSettings, UserSettingsStore
 from .generation_thread import (
     AssetTypeEnhancementThread,
     EnhancementThread,
@@ -57,6 +58,7 @@ from .generation_thread import (
 
 IMAGE_PROVIDERS = ["mock", "pollinations", "openai", "openrouter"]
 PROMPT_PROVIDERS = ["mock", "pollinations", "openai", "openrouter"]
+KEYED_PROVIDERS = {"openai", "openrouter"}
 
 PROVIDER_LABELS = {
     "mock": "Mock",
@@ -224,13 +226,16 @@ class PreviewPanel(QWidget):
 
 
 class MainWindow(QWidget):
-    def __init__(self) -> None:
+    def __init__(self, settings_store: UserSettingsStore | None = None) -> None:
         super().__init__()
         self._thread = None
         self._current_project: ProjectSpec | None = None
+        self._settings_store = settings_store or UserSettingsStore()
+        self._user_settings = self._settings_store.load()
         self._project_root = str(Path("projects").absolute())
         self._last_output_dir = str(Path("projects").absolute())
         self._setup_ui()
+        self._apply_user_settings()
         self._refresh_project_list()
 
     def _setup_ui(self) -> None:
@@ -406,15 +411,34 @@ class MainWindow(QWidget):
         self.prompt_model_edit = QLineEdit(DEFAULT_PROMPT_MODELS["mock"])
         config_layout.addRow("Prompt Model:", self.prompt_model_edit)
 
-        self.api_key_override = QLineEdit()
-        self.api_key_override.setEchoMode(QLineEdit.Password)
-        config_layout.addRow("Session API Key:", self.api_key_override)
+        self.image_api_key_edit = QLineEdit()
+        self.image_api_key_edit.setEchoMode(QLineEdit.Password)
+        self.image_api_key_edit.setPlaceholderText("Paste image provider key")
+        self.api_key_override = self.image_api_key_edit
+        config_layout.addRow("Image API Key:", self.image_api_key_edit)
+
+        self.prompt_api_key_edit = QLineEdit()
+        self.prompt_api_key_edit.setEchoMode(QLineEdit.Password)
+        self.prompt_api_key_edit.setPlaceholderText("Paste prompt provider key")
+        config_layout.addRow("Prompt API Key:", self.prompt_api_key_edit)
 
         model_help = QLabel(
             '<a href="https://models.dev/?search=minim">Find provider model IDs</a>'
         )
         model_help.setOpenExternalLinks(True)
         config_layout.addRow("Model Names:", model_help)
+
+        provider_actions = QHBoxLayout()
+        self.check_provider_setup_btn = QPushButton("Check Setup")
+        self.check_provider_setup_btn.clicked.connect(self._on_check_provider_setup)
+        self.save_provider_settings_btn = QPushButton("Save Local Setup")
+        self.save_provider_settings_btn.clicked.connect(self._on_save_provider_settings)
+        self.clear_saved_keys_btn = QPushButton("Clear Saved Keys")
+        self.clear_saved_keys_btn.clicked.connect(self._on_clear_saved_keys)
+        provider_actions.addWidget(self.check_provider_setup_btn)
+        provider_actions.addWidget(self.save_provider_settings_btn)
+        provider_actions.addWidget(self.clear_saved_keys_btn)
+        config_layout.addRow("Local Setup:", provider_actions)
 
         layout.addWidget(config_group)
 
@@ -469,10 +493,46 @@ class MainWindow(QWidget):
     def _on_image_provider_changed(self, *_args) -> None:
         provider = self.image_provider_combo.currentData()
         self.image_model_edit.setText(DEFAULT_IMAGE_MODELS.get(provider, ""))
+        self._refresh_api_key_field("image")
 
     def _on_prompt_provider_changed(self, *_args) -> None:
         provider = self.prompt_provider_combo.currentData()
         self.prompt_model_edit.setText(DEFAULT_PROMPT_MODELS.get(provider, ""))
+        self._refresh_api_key_field("prompt")
+
+    def _apply_user_settings(self) -> None:
+        self._set_combo_value(self.image_provider_combo, self._user_settings.image_provider)
+        self.image_model_edit.setText(
+            self._user_settings.image_model
+            or DEFAULT_IMAGE_MODELS.get(self.image_provider_combo.currentData(), "")
+        )
+        self._set_combo_value(self.prompt_provider_combo, self._user_settings.prompt_provider)
+        self.prompt_model_edit.setText(
+            self._user_settings.prompt_model
+            or DEFAULT_PROMPT_MODELS.get(self.prompt_provider_combo.currentData(), "")
+        )
+        self._refresh_api_key_fields()
+
+    def _refresh_api_key_fields(self) -> None:
+        self._refresh_api_key_field("image")
+        self._refresh_api_key_field("prompt")
+
+    def _refresh_api_key_field(self, purpose: str) -> None:
+        if not hasattr(self, "image_api_key_edit"):
+            return
+        if purpose == "prompt":
+            provider = self.prompt_provider_combo.currentData()
+            edit = self.prompt_api_key_edit
+        else:
+            provider = self.image_provider_combo.currentData()
+            edit = self.image_api_key_edit
+        needs_key = provider in KEYED_PROVIDERS
+        edit.setEnabled(needs_key)
+        edit.setPlaceholderText("Paste provider API key" if needs_key else "No key needed")
+        if needs_key:
+            edit.setText(self._configured_api_key_for(provider))
+        else:
+            edit.clear()
 
     def _browse_project_root(self) -> None:
         folder = QFileDialog.getExistingDirectory(
@@ -576,6 +636,51 @@ class MainWindow(QWidget):
         except Exception as exc:
             QMessageBox.warning(self, "Save Failed", str(exc))
 
+    def _on_check_provider_setup(self) -> None:
+        missing = []
+        if not self.image_model_edit.text().strip():
+            missing.append("image model")
+        if not self.prompt_model_edit.text().strip():
+            missing.append("prompt model")
+        image_provider = self.image_provider_combo.currentData()
+        prompt_provider = self.prompt_provider_combo.currentData()
+        if image_provider in KEYED_PROVIDERS and not self._api_key_for(image_provider, "image"):
+            missing.append(f"{PROVIDER_LABELS[image_provider]} image key")
+        if prompt_provider in KEYED_PROVIDERS and not self._api_key_for(prompt_provider, "prompt"):
+            missing.append(f"{PROVIDER_LABELS[prompt_provider]} prompt key")
+        if missing:
+            self.status_label.setText("Provider setup needs: " + ", ".join(missing))
+            return
+        self.status_label.setText(
+            "Provider setup ready: "
+            f"image {PROVIDER_LABELS[image_provider]} / prompt {PROVIDER_LABELS[prompt_provider]}"
+        )
+
+    def _on_save_provider_settings(self) -> None:
+        settings = UserSettings(
+            image_provider=self.image_provider_combo.currentData(),
+            image_model=self.image_model_edit.text().strip(),
+            prompt_provider=self.prompt_provider_combo.currentData(),
+            prompt_model=self.prompt_model_edit.text().strip(),
+            api_keys=dict(self._user_settings.api_keys),
+        )
+        image_key = self.image_api_key_edit.text()
+        prompt_key = self.prompt_api_key_edit.text()
+        if settings.image_provider == settings.prompt_provider:
+            settings.set_api_key(settings.image_provider, prompt_key or image_key)
+        else:
+            settings.set_api_key(settings.image_provider, image_key)
+            settings.set_api_key(settings.prompt_provider, prompt_key)
+        path = self._settings_store.save(settings)
+        self._user_settings = settings
+        self.status_label.setText(f"Saved local provider setup to {path}")
+
+    def _on_clear_saved_keys(self) -> None:
+        self._user_settings.api_keys.clear()
+        self._settings_store.save(self._user_settings)
+        self._refresh_api_key_fields()
+        self.status_label.setText("Cleared saved local API keys")
+
     def _on_improve_project(self) -> None:
         try:
             project = self._build_project_spec()
@@ -584,7 +689,7 @@ class MainWindow(QWidget):
             return
 
         provider = self.prompt_provider_combo.currentData()
-        api_key = self._api_key_for(provider)
+        api_key = self._api_key_for(provider, "prompt")
         if not self._provider_can_run(provider, api_key):
             return
 
@@ -617,7 +722,7 @@ class MainWindow(QWidget):
             return
 
         provider = self.prompt_provider_combo.currentData()
-        api_key = self._api_key_for(provider)
+        api_key = self._api_key_for(provider, "prompt")
         if not self._provider_can_run(provider, api_key):
             return
 
@@ -657,7 +762,7 @@ class MainWindow(QWidget):
             return
 
         provider = self.prompt_provider_combo.currentData()
-        api_key = self._api_key_for(provider)
+        api_key = self._api_key_for(provider, "prompt")
         if not self._provider_can_run(provider, api_key):
             return
 
@@ -694,7 +799,7 @@ class MainWindow(QWidget):
             return
 
         provider = self.image_provider_combo.currentData()
-        api_key = self._api_key_for(provider)
+        api_key = self._api_key_for(provider, "image")
         if not self._provider_can_run(provider, api_key):
             return
 
@@ -946,10 +1051,29 @@ class MainWindow(QWidget):
             return f"Stage {stage_index} ({layout})"
         return f"Generated asset ({layout})"
 
-    def _api_key_for(self, provider: str) -> str:
-        override = self.api_key_override.text().strip()
-        if override:
-            return override
+    def _api_key_for(self, provider: str, purpose: str = "image") -> str:
+        primary = self.prompt_api_key_edit if purpose == "prompt" else self.image_api_key_edit
+        primary_key = primary.text().strip()
+        if primary_key:
+            return primary_key
+        secondary = self.image_api_key_edit if purpose == "prompt" else self.prompt_api_key_edit
+        secondary_provider = (
+            self.image_provider_combo.currentData()
+            if purpose == "prompt"
+            else self.prompt_provider_combo.currentData()
+        )
+        secondary_key = secondary.text().strip()
+        if secondary_provider == provider and secondary_key:
+            return secondary_key
+        configured = self._configured_api_key_for(provider)
+        if configured:
+            return configured
+        return ""
+
+    def _configured_api_key_for(self, provider: str) -> str:
+        configured = self._user_settings.api_key_for(provider)
+        if configured:
+            return configured
         if provider == "openai":
             return os.environ.get("OPENAI_API_KEY", "")
         if provider == "openrouter":
@@ -974,6 +1098,9 @@ class MainWindow(QWidget):
         self.improve_type_btn.setEnabled(not busy)
         self.enhance_btn.setEnabled(not busy)
         self.generate_btn.setEnabled(not busy)
+        self.check_provider_setup_btn.setEnabled(not busy)
+        self.save_provider_settings_btn.setEnabled(not busy)
+        self.clear_saved_keys_btn.setEnabled(not busy)
         self.progress_bar.setRange(0, 0 if busy else 1)
         self.progress_bar.setValue(0 if busy else 1)
         self.status_label.setText(status)
