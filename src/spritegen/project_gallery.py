@@ -150,6 +150,12 @@ class ProjectGalleryWriter:
         if not asset_cards:
             asset_cards = '<p class="empty">No saved assets yet.</p>'
         project_json = self._href(self.store.project_path(project.slug or slugify(project.name)), project_dir)
+        pack_manifest = project_dir / "exports" / "_project_pack" / "project_export_manifest.json"
+        pack_link = (
+            f' | <a href="{self._href(pack_manifest, project_dir)}">Project Export Manifest</a>'
+            if pack_manifest.exists()
+            else ""
+        )
         return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -194,7 +200,7 @@ class ProjectGalleryWriter:
       <span class="pill">Prompt: {escape(project.provider_defaults.prompt_provider)} / {escape(project.provider_defaults.prompt_model)}</span>
     </div>
     <div class="palette">{palette}</div>
-    <p><a href="{project_json}">Project JSON</a></p>
+    <p><a href="{project_json}">Project JSON</a>{pack_link}</p>
   </header>
   <main>
     <h2>Assets</h2>

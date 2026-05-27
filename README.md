@@ -17,6 +17,7 @@ AI-powered sprite sheet generator for tower defense games. Generates evolution c
 - **Post-processing control**: Save whether layout slices should remove simple backgrounds or keep the generated frame/background
 - **Atlas layouts**: Define sliceable composite outputs, including a full-body character plus eight chibi emotion heads in one generated image
 - **Project custom layouts**: Save reusable project-specific atlas grids and slice generated images with them
+- **Project export packs**: Copy every generated asset in a project into one engine-friendly folder while respecting chosen variants
 - **Project browser gallery**: Open one HTML index for a project that links saved assets, run galleries, manifests, exports, and previews
 
 ## Quick Start
@@ -82,6 +83,8 @@ Exports copy the sliced files and a compact export manifest into
 `projects/<project>/exports/<asset>/`.
 When a specific variant is exported, later OpenRouter and OpenAI generations prefer
 that chosen raw atlas as the visual reference for future assets in the same project.
+Use **Export Project** when you want one `exports/_project_pack/` folder containing
+every generated asset in the project. It respects chosen variants by default.
 
 For a distributable Windows executable:
 
@@ -144,6 +147,9 @@ spritegen project generate --project myceliumtd --asset puffball --variants 2
 # Add --variant when you only want the chosen candidate from a variant run.
 spritegen project export --project myceliumtd --asset puffball --variant 2
 
+# Copy every generated project asset into one engine-ready folder.
+spritegen project export-project --project myceliumtd
+
 # Write a browser index for the whole project.
 spritegen project gallery --project myceliumtd
 ```
@@ -159,6 +165,9 @@ background is intentional, or pass `--remove-background` / `--no-remove-backgrou
 to `project generate` to override the project setting for one run.
 Use `spritegen project export --include-raw` when you also want the original generated
 atlases copied beside the sliced sprites.
+Use `spritegen project export-project --all-variants` when a project pack should
+include every generated variant instead of preferring the variants already selected
+through per-asset export manifests.
 
 `spritegen project enhance` sends the user's rough asset idea as the user prompt and the
 bundled Markdown guides in `src/spritegen/prompt_guides/` as system/developer guidance

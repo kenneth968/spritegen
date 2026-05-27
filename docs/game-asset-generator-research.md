@@ -372,3 +372,15 @@ Project organization now has a browser-level home page:
   path after writing generation or export artifacts.
 - The desktop app adds **Project Gallery** so a double-click user can open the
   whole project in a browser without digging through generated folders.
+
+## Twenty-fifth implementation slice
+
+Project output can now be handed off as one pack:
+
+- `ProjectAssetExporter.export_project` walks the saved assets in a project and
+  copies generated slices into `exports/_project_pack/assets/<type>/<asset>/`.
+- The project pack writes `project_export_manifest.json`, records skipped assets
+  that have not been generated yet, and respects each asset's selected variant
+  from `asset_export_manifest.json` unless the caller asks for all variants.
+- `spritegen project export-project` / `export-all` exposes the pack flow for
+  CLI users, and the desktop app adds **Export Project** for the same operation.

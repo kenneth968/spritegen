@@ -12,6 +12,7 @@ from .projects import AssetSpec, ProjectSpec, ProjectStore, slugify
 
 
 EXPORT_MANIFEST_VERSION = 1
+PROJECT_EXPORT_MANIFEST_VERSION = 1
 
 
 @dataclass
@@ -52,6 +53,51 @@ class ProjectExportResult:
         }
 
 
+@dataclass
+class ProjectPackAsset:
+    asset: AssetSpec
+    result: ProjectExportResult
+    selected_variant: int | None = None
+
+    def to_dict(self, base_dir: Path) -> dict[str, Any]:
+        return {
+            "asset": self.asset.to_dict(),
+            "output_dir": self.result.output_dir.relative_to(base_dir).as_posix(),
+            "manifest": self.result.manifest_path.relative_to(base_dir).as_posix(),
+            "selected_variant": self.selected_variant,
+            "sprites": [sprite.to_dict(base_dir) for sprite in self.result.sprites],
+            "raw_images": [raw.to_dict(base_dir) for raw in self.result.raw_images],
+        }
+
+
+@dataclass
+class ProjectPackSkippedAsset:
+    asset: AssetSpec
+    reason: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "asset": self.asset.to_dict(),
+            "reason": self.reason,
+        }
+
+
+@dataclass
+class ProjectPackExportResult:
+    output_dir: Path
+    manifest_path: Path
+    assets: list[ProjectPackAsset] = field(default_factory=list)
+    skipped: list[ProjectPackSkippedAsset] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "output_dir": str(self.output_dir),
+            "manifest_path": str(self.manifest_path),
+            "assets": [asset.to_dict(self.output_dir) for asset in self.assets],
+            "skipped": [item.to_dict() for item in self.skipped],
+        }
+
+
 class ProjectAssetExporter:
     def __init__(self, store: ProjectStore | None = None) -> None:
         self.store = store or ProjectStore()
@@ -79,6 +125,71 @@ class ProjectAssetExporter:
             target,
             include_raw=include_raw,
             variant_index=variant_index,
+        )
+
+    def export_project(
+        self,
+        project: ProjectSpec,
+        assets: list[AssetSpec] | None = None,
+        output_dir: Path | str | None = None,
+        include_raw: bool = False,
+        prefer_selected_variant: bool = True,
+    ) -> ProjectPackExportResult:
+        project_slug = project.slug or slugify(project.name)
+        assets = assets if assets is not None else self.store.load_assets(project)
+        target = (
+            Path(output_dir)
+            if output_dir
+            else self.store.project_dir(project_slug) / "exports" / "_project_pack"
+        )
+        target.mkdir(parents=True, exist_ok=True)
+
+        exported_assets: list[ProjectPackAsset] = []
+        skipped_assets: list[ProjectPackSkippedAsset] = []
+        for asset in sorted(assets, key=lambda item: (item.asset_type, item.name)):
+            selected_variant = (
+                self._selected_export_variant(project_slug, asset.slug or slugify(asset.name))
+                if prefer_selected_variant
+                else None
+            )
+            asset_target = target / "assets" / asset.asset_type / (asset.slug or slugify(asset.name))
+            try:
+                result = self.export_saved_asset(
+                    project=project,
+                    asset=asset,
+                    output_dir=asset_target,
+                    include_raw=include_raw,
+                    variant_index=selected_variant,
+                )
+            except (FileNotFoundError, ValueError) as exc:
+                skipped_assets.append(ProjectPackSkippedAsset(asset=asset, reason=str(exc)))
+                continue
+            exported_assets.append(
+                ProjectPackAsset(
+                    asset=asset,
+                    result=result,
+                    selected_variant=selected_variant,
+                )
+            )
+
+        if not exported_assets:
+            raise ValueError("No generated assets were available to export for this project")
+
+        manifest_path = target / "project_export_manifest.json"
+        manifest = {
+            "version": PROJECT_EXPORT_MANIFEST_VERSION,
+            "project": project.to_dict(),
+            "include_raw": include_raw,
+            "variant_policy": "selected_or_all" if prefer_selected_variant else "all",
+            "assets": [asset.to_dict(target) for asset in exported_assets],
+            "skipped": [item.to_dict() for item in skipped_assets],
+        }
+        manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        return ProjectPackExportResult(
+            output_dir=target,
+            manifest_path=manifest_path,
+            assets=exported_assets,
+            skipped=skipped_assets,
         )
 
     def export_manifest(
@@ -169,6 +280,22 @@ class ProjectAssetExporter:
         if output_variant is None:
             return variant_index == 1
         return output_variant == variant_index
+
+    def _selected_export_variant(self, project_slug: str, asset_slug: str) -> int | None:
+        manifest_path = (
+            self.store.project_dir(project_slug)
+            / "exports"
+            / asset_slug
+            / "asset_export_manifest.json"
+        )
+        if not manifest_path.exists():
+            return None
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+        selected = manifest.get("selected_variant")
+        return selected if isinstance(selected, int) and selected >= 1 else None
 
     def _resolve_source(self, value: object, source_dir: Path) -> Path | None:
         if not isinstance(value, str) or not value:

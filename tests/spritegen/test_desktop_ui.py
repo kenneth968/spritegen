@@ -342,6 +342,51 @@ def test_main_window_exports_selected_variant(tmp_path):
     app.processEvents()
 
 
+def test_main_window_exports_project_pack(tmp_path):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    pytest.importorskip("PySide6")
+
+    from PySide6.QtWidgets import QApplication
+    from spritegen.user_settings import UserSettingsStore
+    from spritegen.ui.main_window import MainWindow
+
+    project_root = tmp_path / "projects"
+    generated_dir = project_root / "myceliumtd" / "generated" / "puffball"
+    generated_dir.mkdir(parents=True)
+    sprite_path = generated_dir / "single_sprite.png"
+    sprite_path.write_bytes(b"sprite")
+    (generated_dir / "generation_manifest.json").write_text(
+        json.dumps(
+            {
+                "outputs": [
+                    {
+                        "stage_index": None,
+                        "stage_label": None,
+                        "layout_name": "single_sprite",
+                        "slices": [sprite_path.name],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow(settings_store=UserSettingsStore(tmp_path / "settings.json"))
+    window.project_root_edit.setText(str(project_root))
+
+    window._on_export_project()
+
+    pack_dir = project_root / "myceliumtd" / "exports" / "_project_pack"
+    assert (pack_dir / "project_export_manifest.json").exists()
+    assert (pack_dir / "assets" / "tower" / "puffball" / "sprites" / sprite_path.name).exists()
+    assert window._last_output_dir == str(pack_dir)
+    assert "Exported project pack with 1 asset" in window.status_label.text()
+
+    window.close()
+    app.processEvents()
+
+
 def test_preview_panel_displays_raw_and_sliced_outputs(tmp_path):
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     pytest.importorskip("PySide6")

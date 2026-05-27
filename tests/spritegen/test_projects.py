@@ -791,6 +791,150 @@ def test_project_export_cli_can_filter_to_selected_variant(monkeypatch, tmp_path
     assert not (export_dir / "sprites" / variant_1.name).exists()
 
 
+def test_project_exporter_creates_project_pack_with_selected_variants(tmp_path):
+    store = ProjectStore(tmp_path / "projects")
+    project = ProjectSpec(
+        name="MyceliumTD",
+        summary="Fungal tower defense game",
+        visual_style="clean cartoon sprites",
+        shared_context="Forest floor fungi.",
+    )
+    project.add_asset_type(AssetTypeSpec(name="tower"))
+    generated_asset = AssetSpec(
+        name="Puffball",
+        asset_type="tower",
+        description="Spore cloud tower.",
+    )
+    missing_asset = AssetSpec(
+        name="Amanita",
+        asset_type="tower",
+        description="Poison mushroom tower.",
+    )
+    store.save_project(project)
+    store.save_asset(project, generated_asset)
+    store.save_asset(project, missing_asset)
+
+    generated_dir = store.generated_dir(project.slug) / generated_asset.slug
+    generated_dir.mkdir(parents=True)
+    variant_1 = generated_dir / "single-v01_sprite.png"
+    variant_2 = generated_dir / "single-v02_sprite.png"
+    variant_1.write_bytes(b"variant-1")
+    variant_2.write_bytes(b"variant-2")
+    (generated_dir / "generation_manifest.json").write_text(
+        json.dumps(
+            {
+                "project": project.to_dict(),
+                "asset": generated_asset.to_dict(),
+                "outputs": [
+                    {
+                        "variant_index": 1,
+                        "variant_count": 2,
+                        "layout_name": "single_sprite",
+                        "slices": [variant_1.name],
+                    },
+                    {
+                        "variant_index": 2,
+                        "variant_count": 2,
+                        "layout_name": "single_sprite",
+                        "slices": [variant_2.name],
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    selected_export = store.project_dir(project.slug) / "exports" / generated_asset.slug
+    selected_export.mkdir(parents=True)
+    (selected_export / "asset_export_manifest.json").write_text(
+        json.dumps({"selected_variant": 2}),
+        encoding="utf-8",
+    )
+
+    result = ProjectAssetExporter(store).export_project(project)
+    manifest = json.loads(result.manifest_path.read_text(encoding="utf-8"))
+    packed_asset_dir = (
+        tmp_path
+        / "projects"
+        / "myceliumtd"
+        / "exports"
+        / "_project_pack"
+        / "assets"
+        / "tower"
+        / "puffball"
+    )
+
+    assert len(result.assets) == 1
+    assert len(result.skipped) == 1
+    assert result.assets[0].selected_variant == 2
+    assert result.skipped[0].asset.name == "Amanita"
+    assert (packed_asset_dir / "sprites" / variant_2.name).exists()
+    assert not (packed_asset_dir / "sprites" / variant_1.name).exists()
+    assert manifest["variant_policy"] == "selected_or_all"
+    assert manifest["assets"][0]["selected_variant"] == 2
+    assert manifest["assets"][0]["sprites"][0]["file"].endswith(variant_2.name)
+    assert manifest["skipped"][0]["asset"]["name"] == "Amanita"
+
+
+def test_project_export_cli_creates_project_pack(monkeypatch, tmp_path, capsys):
+    import sys
+    from spritegen.cli import main
+
+    store = ProjectStore(tmp_path / "projects")
+    project = ProjectSpec(
+        name="MyceliumTD",
+        summary="Fungal tower defense game",
+        visual_style="clean cartoon sprites",
+        shared_context="Forest floor fungi.",
+    )
+    project.add_asset_type(AssetTypeSpec(name="tower"))
+    asset = AssetSpec(
+        name="Puffball",
+        asset_type="tower",
+        description="Spore cloud tower.",
+    )
+    store.save_project(project)
+    store.save_asset(project, asset)
+    generated_dir = store.generated_dir(project.slug) / asset.slug
+    generated_dir.mkdir(parents=True)
+    sprite = generated_dir / "single_sprite.png"
+    sprite.write_bytes(b"sprite")
+    (generated_dir / "generation_manifest.json").write_text(
+        json.dumps(
+            {
+                "project": project.to_dict(),
+                "asset": asset.to_dict(),
+                "outputs": [{"layout_name": "single_sprite", "slices": [sprite.name]}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "spritegen",
+            "project",
+            "--project-root",
+            str(tmp_path / "projects"),
+            "export-project",
+            "--project",
+            "myceliumtd",
+        ],
+    )
+
+    assert main() == 0
+    output = capsys.readouterr().out
+    pack_dir = tmp_path / "projects" / "myceliumtd" / "exports" / "_project_pack"
+    assert f"Exported project: {pack_dir}" in output
+    assert (pack_dir / "project_export_manifest.json").exists()
+    gallery = tmp_path / "projects" / "myceliumtd" / "project_gallery.html"
+    assert gallery.exists()
+    assert "exports/_project_pack/project_export_manifest.json" in gallery.read_text(
+        encoding="utf-8"
+    )
+
+
 def test_project_gallery_indexes_assets_generations_and_exports(tmp_path):
     from PIL import Image
 

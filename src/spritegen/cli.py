@@ -631,6 +631,25 @@ def cmd_project(args: argparse.Namespace) -> int:
         print(f"Project gallery: {project_gallery}")
         return 0
 
+    if args.project_command in {"export-project", "export-all"}:
+        project = store.load_project(args.project)
+        result = ProjectAssetExporter(store=store).export_project(
+            project=project,
+            output_dir=args.output,
+            include_raw=args.include_raw,
+            prefer_selected_variant=not args.all_variants,
+        )
+        print(f"Exported project: {result.output_dir}")
+        print(f"Project export manifest: {result.manifest_path}")
+        print(f"Assets: {len(result.assets)}")
+        if result.skipped:
+            print(f"Skipped: {len(result.skipped)}")
+            for skipped in result.skipped:
+                print(f"  - {skipped.asset.name}: {skipped.reason}")
+        project_gallery = ProjectGalleryWriter(store=store).write(project)
+        print(f"Project gallery: {project_gallery}")
+        return 0
+
     if args.project_command == "gallery":
         project = store.load_project(args.project)
         gallery_path = ProjectGalleryWriter(store=store).write(project)
@@ -1146,6 +1165,27 @@ def main() -> int:
         action="store_true",
         help="Also copy raw generated atlases into the export folder",
     )
+
+    for export_project_command, export_project_help in (
+        ("export-project", "Copy every generated project asset into one engine-ready pack"),
+        ("export-all", "Alias for export-project"),
+    ):
+        project_export_all = project_subparsers.add_parser(
+            export_project_command,
+            help=export_project_help,
+        )
+        project_export_all.add_argument("--project", required=True, help="Project slug or JSON path")
+        project_export_all.add_argument("--output", help="Project pack output directory")
+        project_export_all.add_argument(
+            "--include-raw",
+            action="store_true",
+            help="Also copy raw generated atlases into each packed asset folder",
+        )
+        project_export_all.add_argument(
+            "--all-variants",
+            action="store_true",
+            help="Ignore chosen variant exports and pack every generated variant",
+        )
 
     project_gallery = project_subparsers.add_parser(
         "gallery",

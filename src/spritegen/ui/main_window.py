@@ -582,10 +582,13 @@ class MainWindow(QWidget):
         self.preview_prompts_btn.clicked.connect(self._on_preview_prompts)
         self.open_project_gallery_btn = QPushButton("Project Gallery")
         self.open_project_gallery_btn.clicked.connect(self._on_open_project_gallery)
+        self.export_project_btn = QPushButton("Export Project")
+        self.export_project_btn.clicked.connect(self._on_export_project)
         prompt_header.addWidget(prompt_label)
         prompt_header.addStretch()
         prompt_header.addWidget(self.preview_prompts_btn)
         prompt_header.addWidget(self.open_project_gallery_btn)
+        prompt_header.addWidget(self.export_project_btn)
         layout.addLayout(prompt_header)
 
         self.prompt_preview_edit = QTextEdit()
@@ -1227,6 +1230,22 @@ class MainWindow(QWidget):
         except Exception as exc:
             QMessageBox.warning(self, "Export Failed", str(exc))
 
+    def _on_export_project(self) -> None:
+        try:
+            project, _asset = self._save_current_specs()
+            store = ProjectStore(self.project_root_edit.text())
+            result = ProjectAssetExporter(store).export_project(project=project)
+            self._last_output_dir = str(result.output_dir)
+            self._last_project_gallery_path = self._write_project_gallery(project)
+            self._refresh_project_list(project.slug)
+            skipped = f", skipped {len(result.skipped)}" if result.skipped else ""
+            self.status_label.setText(
+                f"Exported project pack with {len(result.assets)} asset(s){skipped} "
+                f"to {result.output_dir}"
+            )
+        except Exception as exc:
+            QMessageBox.warning(self, "Export Project Failed", str(exc))
+
     def _on_open_project_gallery(self) -> None:
         try:
             project, _asset = self._save_current_specs()
@@ -1510,6 +1529,7 @@ class MainWindow(QWidget):
         self.apply_workflow_preset_btn.setEnabled(not busy)
         self.preview_prompts_btn.setEnabled(not busy)
         self.open_project_gallery_btn.setEnabled(not busy)
+        self.export_project_btn.setEnabled(not busy)
         self.add_grid_layout_btn.setEnabled(not busy)
         self.add_hero_grid_layout_btn.setEnabled(not busy)
         self.export_sprites_btn.setEnabled(not busy)
