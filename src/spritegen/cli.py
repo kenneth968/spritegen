@@ -25,6 +25,7 @@ from .provider_models import (
     model_source_urls,
 )
 from .project_export import ProjectAssetExporter
+from .project_gallery import ProjectGalleryWriter
 from .project_generation import ProjectAssetGenerator
 from .project_starters import get_project_starter, list_project_starters
 from .projects import (
@@ -599,6 +600,8 @@ def cmd_project(args: argparse.Namespace) -> int:
         print(f"Generated asset: {result.output_dir}")
         print(f"Manifest: {result.manifest_path}")
         print(f"Gallery: {result.gallery_path}")
+        project_gallery = ProjectGalleryWriter(store=store).write(project)
+        print(f"Project gallery: {project_gallery}")
         for output in result.outputs:
             label = output.stage_label or "single"
             if output.variant_index:
@@ -624,6 +627,14 @@ def cmd_project(args: argparse.Namespace) -> int:
         print(f"Sprites: {len(result.sprites)}")
         if result.raw_images:
             print(f"Raw images: {len(result.raw_images)}")
+        project_gallery = ProjectGalleryWriter(store=store).write(project)
+        print(f"Project gallery: {project_gallery}")
+        return 0
+
+    if args.project_command == "gallery":
+        project = store.load_project(args.project)
+        gallery_path = ProjectGalleryWriter(store=store).write(project)
+        print(f"Project gallery: {gallery_path}")
         return 0
 
     return 1
@@ -1135,6 +1146,12 @@ def main() -> int:
         action="store_true",
         help="Also copy raw generated atlases into the export folder",
     )
+
+    project_gallery = project_subparsers.add_parser(
+        "gallery",
+        help="Write a browser project gallery that links saved assets, runs, and exports",
+    )
+    project_gallery.add_argument("--project", required=True, help="Project slug or JSON path")
 
     args = parser.parse_args()
 

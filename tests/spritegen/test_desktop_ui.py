@@ -40,6 +40,37 @@ def test_main_window_saves_project_plan(tmp_path):
     app.processEvents()
 
 
+def test_main_window_writes_and_opens_project_gallery(tmp_path, monkeypatch):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    pytest.importorskip("PySide6")
+
+    from PySide6.QtWidgets import QApplication
+    from spritegen.user_settings import UserSettingsStore
+    from spritegen.ui.main_window import MainWindow
+
+    opened = {}
+
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow(settings_store=UserSettingsStore(tmp_path / "settings.json"))
+    window.project_root_edit.setText(str(tmp_path / "projects"))
+    monkeypatch.setattr(
+        window,
+        "_open_local_path",
+        lambda path: opened.setdefault("path", str(path)),
+    )
+
+    window._on_open_project_gallery()
+
+    gallery_path = tmp_path / "projects" / "myceliumtd" / "project_gallery.html"
+    assert gallery_path.exists()
+    assert opened["path"] == str(gallery_path)
+    assert window._last_project_gallery_path == str(gallery_path)
+    assert "Opened project gallery" in window.status_label.text()
+
+    window.close()
+    app.processEvents()
+
+
 def test_main_window_loads_saved_project_and_asset(tmp_path):
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     pytest.importorskip("PySide6")

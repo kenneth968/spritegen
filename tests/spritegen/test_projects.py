@@ -19,6 +19,7 @@ from spritegen.projects import (
 )
 from spritegen.enhancement import PromptEnhancer
 from spritegen.project_export import ProjectAssetExporter
+from spritegen.project_gallery import ProjectGalleryWriter
 from spritegen.project_generation import ProjectAssetGenerator
 from spritegen.project_starters import get_project_starter, list_project_starters
 from spritegen.slicer import Slicer
@@ -788,6 +789,119 @@ def test_project_export_cli_can_filter_to_selected_variant(monkeypatch, tmp_path
     assert [sprite["variant_index"] for sprite in export_manifest["sprites"]] == [2]
     assert (export_dir / "sprites" / variant_2.name).exists()
     assert not (export_dir / "sprites" / variant_1.name).exists()
+
+
+def test_project_gallery_indexes_assets_generations_and_exports(tmp_path):
+    from PIL import Image
+
+    store = ProjectStore(tmp_path / "projects")
+    project = ProjectSpec(
+        name="MyceliumTD",
+        summary="Fungal tower defense game",
+        visual_style="clean cartoon sprites",
+        shared_context="Forest floor fungi.",
+        palette=["#228B22", "#F7E7CE"],
+    )
+    project.add_asset_type(AssetTypeSpec(name="tower"))
+    asset = AssetSpec(
+        name="Puffball",
+        asset_type="tower",
+        description="Spore cloud tower.",
+        details="Soft white cap.",
+    )
+    store.save_project(project)
+    store.save_asset(project, asset)
+
+    output_dir = store.generated_dir(project.slug) / asset.slug
+    slice_dir = output_dir / "single"
+    slice_dir.mkdir(parents=True)
+    raw_path = output_dir / "single-v02.png"
+    slice_path = slice_dir / "single-v02_sprite.png"
+    reference_path = output_dir / "reference.png"
+    Image.new("RGBA", (32, 32), (255, 0, 0, 255)).save(raw_path)
+    Image.new("RGBA", (16, 16), (0, 255, 0, 255)).save(slice_path)
+    Image.new("RGBA", (16, 16), (0, 0, 255, 255)).save(reference_path)
+    (output_dir / "asset_gallery.html").write_text("<html>asset</html>", encoding="utf-8")
+    (output_dir / "generation_manifest.json").write_text(
+        json.dumps(
+            {
+                "provider": "mock",
+                "model": "mock",
+                "variants_per_packet": 2,
+                "reference_images": [str(reference_path)],
+                "outputs": [
+                    {
+                        "variant_index": 2,
+                        "variant_count": 2,
+                        "layout_name": "single_sprite",
+                        "raw_image": str(raw_path),
+                        "slices": [str(slice_path)],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    export_dir = store.project_dir(project.slug) / "exports" / asset.slug
+    export_dir.mkdir(parents=True)
+    (export_dir / "asset_export_manifest.json").write_text(
+        json.dumps(
+            {
+                "selected_variant": 2,
+                "sprites": [{"file": "sprites/single-v02_sprite.png"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    gallery_path = ProjectGalleryWriter(store).write(project)
+
+    html = gallery_path.read_text(encoding="utf-8")
+    assert gallery_path == tmp_path / "projects" / "myceliumtd" / "project_gallery.html"
+    assert "MyceliumTD" in html
+    assert "Puffball" in html
+    assert "selected variant 2" in html
+    assert "1 output(s)" in html
+    assert "1 slice(s)" in html
+    assert "1 reference(s)" in html
+    assert "generated/puffball/asset_gallery.html" in html
+    assert "generated/puffball/generation_manifest.json" in html
+    assert "exports/puffball/asset_export_manifest.json" in html
+
+
+def test_cli_writes_project_gallery(tmp_path, monkeypatch, capsys):
+    import sys
+    from spritegen.cli import main
+
+    store = ProjectStore(tmp_path / "projects")
+    project = ProjectSpec(
+        name="MyceliumTD",
+        summary="Fungal tower defense game",
+        visual_style="clean cartoon sprites",
+        shared_context="Forest floor fungi.",
+    )
+    project.add_asset_type(AssetTypeSpec(name="tower"))
+    store.save_project(project)
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "spritegen",
+            "project",
+            "--project-root",
+            str(tmp_path / "projects"),
+            "gallery",
+            "--project",
+            "myceliumtd",
+        ],
+    )
+
+    assert main() == 0
+    output = capsys.readouterr().out
+    gallery_path = tmp_path / "projects" / "myceliumtd" / "project_gallery.html"
+    assert f"Project gallery: {gallery_path}" in output
+    assert gallery_path.exists()
 
 
 def test_project_generator_passes_session_api_key_to_image_generator(tmp_path, monkeypatch):

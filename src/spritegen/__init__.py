@@ -49,6 +49,7 @@ from .provider_models import (
     model_suggestions,
 )
 from .project_export import ProjectAssetExporter, ProjectExportResult
+from .project_gallery import ProjectGalleryWriter
 from .project_generation import ProjectAssetGenerator, ProjectGenerationResult
 from .project_starters import ProjectStarter, get_project_starter, list_project_starters
 from .workflow_presets import WorkflowPreset, get_workflow_preset, list_workflow_presets
@@ -88,6 +89,7 @@ __all__ = [
     "model_suggestions",
     "ProjectAssetExporter",
     "ProjectExportResult",
+    "ProjectGalleryWriter",
     "ProjectAssetGenerator",
     "ProjectGenerationResult",
     "ProjectStarter",

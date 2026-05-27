@@ -17,6 +17,7 @@ AI-powered sprite sheet generator for tower defense games. Generates evolution c
 - **Post-processing control**: Save whether layout slices should remove simple backgrounds or keep the generated frame/background
 - **Atlas layouts**: Define sliceable composite outputs, including a full-body character plus eight chibi emotion heads in one generated image
 - **Project custom layouts**: Save reusable project-specific atlas grids and slice generated images with them
+- **Project browser gallery**: Open one HTML index for a project that links saved assets, run galleries, manifests, exports, and previews
 
 ## Quick Start
 
@@ -72,7 +73,9 @@ current project without leaving the app.
 The output panel previews both the raw generated atlas and the sliced sprite files from
 `generation_manifest.json`, so desktop users can inspect the game-ready files directly.
 Each run also writes `asset_gallery.html`; use **Open Gallery** to compare raw atlases,
-slices, variants, and prompts in the browser.
+slices, variants, and prompts in the browser. Use **Project Gallery** to open a
+project-level browser index for every saved asset, generated run, export manifest,
+and preview thumbnail in the current project.
 Use the **Variant** selector beside **Export Sprites** when you generated several
 candidates and only want to export the chosen one. **All** exports every candidate.
 Exports copy the sliced files and a compact export manifest into
@@ -140,6 +143,9 @@ spritegen project generate --project myceliumtd --asset puffball --variants 2
 # Copy the sliced, game-ready PNGs into a clean export folder for an engine.
 # Add --variant when you only want the chosen candidate from a variant run.
 spritegen project export --project myceliumtd --asset puffball --variant 2
+
+# Write a browser index for the whole project.
+spritegen project gallery --project myceliumtd
 ```
 
 For one-off CLI runs without environment variables, pass a session-only key:

@@ -358,3 +358,17 @@ evenly:
   API path for normal text-only calls.
 - Project manifests now reflect the same prior-asset reference list for OpenAI
   and OpenRouter runs, including the user's exported variant preference.
+
+## Twenty-fourth implementation slice
+
+Project organization now has a browser-level home page:
+
+- `spritegen.project_gallery.ProjectGalleryWriter` writes `project_gallery.html`
+  in the project folder, linking project JSON, asset JSON, prompt plans,
+  generation manifests, per-asset run galleries, export manifests, and preview
+  thumbnails.
+- `spritegen project gallery --project ...` lets CLI users refresh that index on
+  demand, while `project generate` and `project export` print the project gallery
+  path after writing generation or export artifacts.
+- The desktop app adds **Project Gallery** so a double-click user can open the
+  whole project in a browser without digging through generated folders.

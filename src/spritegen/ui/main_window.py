@@ -40,6 +40,7 @@ from ..provider_models import (
     default_model,
 )
 from ..project_export import ProjectAssetExporter
+from ..project_gallery import ProjectGalleryWriter
 from ..project_starters import get_project_starter, list_project_starters
 from ..projects import (
     AssetSpec,
@@ -233,6 +234,7 @@ class MainWindow(QWidget):
         self._project_root = str(Path("projects").absolute())
         self._last_output_dir = str(Path("projects").absolute())
         self._last_gallery_path = ""
+        self._last_project_gallery_path = ""
         self._setup_ui()
         self._apply_user_settings()
         self._refresh_project_list()
@@ -578,9 +580,12 @@ class MainWindow(QWidget):
         prompt_label.setStyleSheet("font-size: 18px; font-weight: bold;")
         self.preview_prompts_btn = QPushButton("Preview Prompts")
         self.preview_prompts_btn.clicked.connect(self._on_preview_prompts)
+        self.open_project_gallery_btn = QPushButton("Project Gallery")
+        self.open_project_gallery_btn.clicked.connect(self._on_open_project_gallery)
         prompt_header.addWidget(prompt_label)
         prompt_header.addStretch()
         prompt_header.addWidget(self.preview_prompts_btn)
+        prompt_header.addWidget(self.open_project_gallery_btn)
         layout.addLayout(prompt_header)
 
         self.prompt_preview_edit = QTextEdit()
@@ -1185,6 +1190,7 @@ class MainWindow(QWidget):
     def _on_generation_finished(self, result) -> None:
         self._last_output_dir = str(result.output_dir)
         self._last_gallery_path = str(result.gallery_path)
+        self._last_project_gallery_path = self._write_project_gallery()
         max_variant_count = max((output.variant_count for output in result.outputs), default=1)
         self.export_variant_spin.setMaximum(max(8, max_variant_count))
         for output in result.outputs:
@@ -1213,12 +1219,31 @@ class MainWindow(QWidget):
                 variant_index=variant_index,
             )
             self._last_output_dir = str(result.output_dir)
+            self._last_project_gallery_path = self._write_project_gallery(project)
             variant_label = f" from variant {variant_index}" if variant_index else ""
             self.status_label.setText(
                 f"Exported {len(result.sprites)} sprite(s){variant_label} to {result.output_dir}"
             )
         except Exception as exc:
             QMessageBox.warning(self, "Export Failed", str(exc))
+
+    def _on_open_project_gallery(self) -> None:
+        try:
+            project, _asset = self._save_current_specs()
+            gallery_path = self._write_project_gallery(project)
+            self._last_project_gallery_path = str(gallery_path)
+            self._refresh_project_list(project.slug)
+            self._open_local_path(gallery_path)
+            self.status_label.setText(f"Opened project gallery: {gallery_path}")
+        except Exception as exc:
+            QMessageBox.warning(self, "Project Gallery Failed", str(exc))
+
+    def _write_project_gallery(self, project: ProjectSpec | None = None) -> str:
+        store = ProjectStore(self.project_root_edit.text())
+        if project is None:
+            project = self._current_project or store.load_project(self._project_slug_from_fields())
+        gallery_path = ProjectGalleryWriter(store=store).write(project)
+        return str(gallery_path)
 
     def _on_thread_error(self, message: str) -> None:
         self._set_busy(False, f"Error: {message}")
@@ -1484,6 +1509,7 @@ class MainWindow(QWidget):
         self.create_project_starter_btn.setEnabled(not busy)
         self.apply_workflow_preset_btn.setEnabled(not busy)
         self.preview_prompts_btn.setEnabled(not busy)
+        self.open_project_gallery_btn.setEnabled(not busy)
         self.add_grid_layout_btn.setEnabled(not busy)
         self.add_hero_grid_layout_btn.setEnabled(not busy)
         self.export_sprites_btn.setEnabled(not busy)
@@ -1498,13 +1524,16 @@ class MainWindow(QWidget):
         self.status_label.setText(status)
 
     def _open_output_folder(self) -> None:
-        folder = self._last_output_dir
+        self._open_local_path(self._last_output_dir)
+
+    def _open_local_path(self, path: str | Path) -> None:
+        path = str(path)
         if os.name == "nt":
-            os.startfile(folder)
+            os.startfile(path)
         elif os.name == "posix":
             import subprocess
 
-            subprocess.run(["open", folder] if sys.platform == "darwin" else ["xdg-open", folder])
+            subprocess.run(["open", path] if sys.platform == "darwin" else ["xdg-open", path])
 
     def _open_gallery(self) -> None:
         if not self._last_gallery_path:
@@ -1514,16 +1543,7 @@ class MainWindow(QWidget):
         if not gallery_path.exists():
             self.status_label.setText(f"Gallery not found: {gallery_path}")
             return
-        if os.name == "nt":
-            os.startfile(gallery_path)
-        elif os.name == "posix":
-            import subprocess
-
-            subprocess.run(
-                ["open", str(gallery_path)]
-                if sys.platform == "darwin"
-                else ["xdg-open", str(gallery_path)]
-            )
+        self._open_local_path(gallery_path)
 
 
 def main() -> None:
