@@ -50,6 +50,8 @@ Saved projects and assets can be reopened from the Project and Asset selectors, 
 generations can reuse the same universe, style, palette, color mode, and prior assets.
 Use **Improve Project**, **Improve Type Rules**, and **Enhance Asset** to run the
 prompt-improvement model at the right level of the workflow before generating images.
+Use **Preview Prompts** to inspect the exact image prompts, including prior saved
+assets that will be used as style and universe anchors, before spending image tokens.
 Use **Custom Layout** to add reusable equal-cell atlases, contact sheets, tile grids,
 or pose sheets to the current project without leaving the app.
 The output panel previews both the raw generated atlas and the sliced sprite files from

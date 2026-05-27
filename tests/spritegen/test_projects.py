@@ -144,6 +144,8 @@ def test_prompt_uses_known_assets_for_universe_coherence():
         name="Vera",
         asset_type="character",
         description="An archer with a crescent hood.",
+        details="Moon-silver trim and smoky purple shadows.",
+        layout="character_full_plus_8_emotions",
     )
     asset = AssetSpec(
         name="Rook",
@@ -153,7 +155,13 @@ def test_prompt_uses_known_assets_for_universe_coherence():
 
     packet = PromptPlanner().build_prompt_packets(project, asset, known_assets=[existing])[0]
 
-    assert "Vera: An archer with a crescent hood" in packet.prompt
+    assert "Vera [character]: An archer with a crescent hood" in packet.prompt
+    assert "details: Moon-silver trim and smoky purple shadows" in packet.prompt
+    assert packet.metadata["known_assets"][0]["slug"] == "vera"
+    assert packet.metadata["known_assets"][0]["details"] == (
+        "Moon-silver trim and smoky purple shadows."
+    )
+    assert packet.metadata["known_assets"][0]["layout"] == "character_full_plus_8_emotions"
     assert "character_full_plus_8_emotions" == packet.layout_name
     assert "left 512x1024" in packet.prompt
     assert "right 512x1024" in packet.prompt

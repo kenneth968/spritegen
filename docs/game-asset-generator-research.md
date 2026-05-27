@@ -183,3 +183,15 @@ Generated assets can now be exported as game-ready files:
   copy raw generated atlases with `--include-raw`.
 - The desktop **Export Sprites** button saves the current asset plan, exports the
   latest generated slices, and points **Open Folder** at the export directory.
+
+## Twelfth implementation slice
+
+Project coherence is now easier to inspect before generation:
+
+- Prior saved assets are represented as structured prompt anchors with name,
+  asset type, prompt summary, details, and layout.
+- Prompt packet metadata records those known assets so saved prompt plans explain
+  which existing assets influenced a generation.
+- The desktop **Preview Prompts** button writes the current prompt plan and shows
+  the exact prompts, including prior-asset anchors, before a user spends image
+  generation tokens.

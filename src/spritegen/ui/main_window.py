@@ -518,6 +518,21 @@ class MainWindow(QWidget):
         panel = QWidget()
         layout = QVBoxLayout(panel)
 
+        prompt_header = QHBoxLayout()
+        prompt_label = QLabel("Prompt Plan")
+        prompt_label.setStyleSheet("font-size: 18px; font-weight: bold;")
+        self.preview_prompts_btn = QPushButton("Preview Prompts")
+        self.preview_prompts_btn.clicked.connect(self._on_preview_prompts)
+        prompt_header.addWidget(prompt_label)
+        prompt_header.addStretch()
+        prompt_header.addWidget(self.preview_prompts_btn)
+        layout.addLayout(prompt_header)
+
+        self.prompt_preview_edit = QTextEdit()
+        self.prompt_preview_edit.setReadOnly(True)
+        self.prompt_preview_edit.setMaximumHeight(220)
+        layout.addWidget(self.prompt_preview_edit)
+
         header = QHBoxLayout()
         header_label = QLabel("Generated Output")
         header_label.setStyleSheet("font-size: 18px; font-weight: bold;")
@@ -686,6 +701,40 @@ class MainWindow(QWidget):
             self.status_label.setText(f"Saved {project.name} / {asset.name}")
         except Exception as exc:
             QMessageBox.warning(self, "Save Failed", str(exc))
+
+    def _on_preview_prompts(self) -> None:
+        try:
+            project, asset = self._save_current_specs()
+            store = ProjectStore(self.project_root_edit.text())
+            known_assets = store.load_assets(project)
+            packets = PromptPlanner().build_prompt_packets(
+                project,
+                asset,
+                known_assets=known_assets,
+            )
+            plan_path = store.save_prompt_plan(project, asset, packets)
+            self.prompt_preview_edit.setPlainText(self._format_prompt_packets(packets))
+            self._refresh_project_list(project.slug)
+            self._refresh_asset_list(asset.slug)
+            self.status_label.setText(f"Previewed {len(packets)} prompt(s): {plan_path}")
+        except Exception as exc:
+            QMessageBox.warning(self, "Prompt Preview Failed", str(exc))
+
+    def _format_prompt_packets(self, packets) -> str:
+        sections = []
+        for packet in packets:
+            label = packet.stage_label or "single"
+            sections.append(
+                "\n".join(
+                    [
+                        f"--- {label} / {packet.layout_name} ---",
+                        packet.prompt,
+                        "",
+                        f"Negative: {packet.negative_prompt}",
+                    ]
+                )
+            )
+        return "\n\n".join(sections)
 
     def _on_add_grid_layout(self) -> None:
         try:
@@ -1211,6 +1260,7 @@ class MainWindow(QWidget):
         self.improve_type_btn.setEnabled(not busy)
         self.enhance_btn.setEnabled(not busy)
         self.generate_btn.setEnabled(not busy)
+        self.preview_prompts_btn.setEnabled(not busy)
         self.add_grid_layout_btn.setEnabled(not busy)
         self.export_sprites_btn.setEnabled(not busy)
         self.check_provider_setup_btn.setEnabled(not busy)

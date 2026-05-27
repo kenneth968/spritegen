@@ -560,6 +560,7 @@ class PromptPlanner:
         stage_label: str | None,
     ) -> PromptPacket:
         known_context = self._known_asset_context(known_assets, exclude_slug=asset.slug)
+        known_summaries = self._known_asset_summaries(known_assets, exclude_slug=asset.slug)
         stage_context = ""
         if stage_index is not None and stage_label:
             stage_context = (
@@ -603,6 +604,7 @@ class PromptPlanner:
                 "color_treatment": project.color_treatment.to_dict(),
                 "postprocess": project.postprocess.to_dict(),
                 "layout": layout.to_dict(),
+                "known_assets": known_summaries,
             },
         )
 
@@ -612,12 +614,38 @@ class PromptPlanner:
         exclude_slug: str | None,
     ) -> str:
         summaries = []
+        for summary in self._known_asset_summaries(assets, exclude_slug):
+            parts = [
+                f"{summary['name']} [{summary['asset_type']}]: {summary['prompt']}",
+                f"details: {summary['details']}" if summary["details"] else "",
+                f"layout: {summary['layout']}" if summary["layout"] else "",
+            ]
+            summaries.append("; ".join(part for part in parts if part))
+        return " | ".join(summaries)
+
+    def _known_asset_summaries(
+        self,
+        assets: list[AssetSpec],
+        exclude_slug: str | None,
+    ) -> list[dict[str, str]]:
+        summaries: list[dict[str, str]] = []
         for asset in assets:
             if exclude_slug and asset.slug == exclude_slug:
                 continue
-            summary = asset.enhanced_prompt or asset.description
-            summaries.append(f"{asset.name}: {summary}")
-        return " | ".join(summaries[:5])
+            prompt = asset.enhanced_prompt or asset.description
+            if not prompt and not asset.details:
+                continue
+            summaries.append(
+                {
+                    "name": asset.name,
+                    "slug": asset.slug or slugify(asset.name),
+                    "asset_type": asset.asset_type,
+                    "prompt": prompt,
+                    "details": asset.details,
+                    "layout": asset.layout or "",
+                }
+            )
+        return summaries[:8]
 
     def _region_prompt(self, layout: AssetLayout) -> str:
         regions = [
