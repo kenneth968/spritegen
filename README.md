@@ -71,6 +71,8 @@ pose sheets, or a large hero region plus a grid of smaller related cells to the
 current project without leaving the app.
 The output panel previews both the raw generated atlas and the sliced sprite files from
 `generation_manifest.json`, so desktop users can inspect the game-ready files directly.
+Each run also writes `asset_gallery.html`; use **Open Gallery** to compare raw atlases,
+slices, variants, and prompts in the browser.
 Use the **Variant** selector beside **Export Sprites** when you generated several
 candidates and only want to export the chosen one. **All** exports every candidate.
 Exports copy the sliced files and a compact export manifest into
@@ -131,8 +133,8 @@ spritegen project enhance-type --project myceliumtd --asset-type tower
 spritegen project enhance --project myceliumtd --asset puffball
 
 # Generate all prompt packets for the asset, save raw images, slice layout regions,
-# and write a generation_manifest.json beside the output. Use --variants to create
-# multiple candidate images for each prompt packet.
+# write generation_manifest.json, and create asset_gallery.html beside the output.
+# Use --variants to create multiple candidate images for each prompt packet.
 spritegen project generate --project myceliumtd --asset puffball --variants 2
 
 # Copy the sliced, game-ready PNGs into a clean export folder for an engine.

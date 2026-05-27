@@ -330,3 +330,15 @@ Chosen variants now feed future project coherence:
   assets in the same project.
 - This keeps the user's chosen candidate, rather than an arbitrary first variant,
   as the visual style anchor for subsequent generations.
+
+## Twenty-second implementation slice
+
+Generation runs now produce a browser-review artifact:
+
+- `ProjectAssetGenerator` writes `asset_gallery.html` beside
+  `generation_manifest.json` for every generation run.
+- The gallery links the manifest, raw atlases, sliced sprites, prompt text,
+  variants, and reference images using relative file paths.
+- `spritegen project generate` prints the gallery path, and the desktop output
+  toolbar adds **Open Gallery** so users can inspect and compare candidates in a
+  browser without digging through folders.

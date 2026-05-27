@@ -432,10 +432,15 @@ def test_project_generator_saves_manifest_and_slices(tmp_path):
     )
 
     assert result.manifest_path.exists()
+    assert result.gallery_path.exists()
     assert len(result.outputs) == 2
     assert result.outputs[0].raw_image.exists()
     assert result.outputs[0].slices
     assert result.outputs[0].slices[0].exists()
+    gallery = result.gallery_path.read_text(encoding="utf-8")
+    assert "MyceliumTD / Puffball" in gallery
+    assert "stage-01-sprout.png" in gallery
+    assert "generation_manifest.json" in gallery
 
 
 def test_project_generator_creates_variants_per_prompt_packet(tmp_path):
@@ -477,6 +482,9 @@ def test_project_generator_creates_variants_per_prompt_packet(tmp_path):
     assert manifest["variants_per_packet"] == 2
     assert manifest["outputs"][0]["variant_index"] == 1
     assert manifest["outputs"][1]["variant_index"] == 2
+    gallery = result.gallery_path.read_text(encoding="utf-8")
+    assert "sprout / variant 1" in gallery
+    assert "stage-01-sprout-v02.png" in gallery
 
 
 def test_project_generate_cli_dry_run_counts_variants(monkeypatch, tmp_path, capsys):

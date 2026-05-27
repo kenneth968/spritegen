@@ -232,6 +232,7 @@ class MainWindow(QWidget):
         self._online_model_suggestions: dict[tuple[str, str], list[ModelSuggestion]] = {}
         self._project_root = str(Path("projects").absolute())
         self._last_output_dir = str(Path("projects").absolute())
+        self._last_gallery_path = ""
         self._setup_ui()
         self._apply_user_settings()
         self._refresh_project_list()
@@ -592,6 +593,8 @@ class MainWindow(QWidget):
         header_label.setStyleSheet("font-size: 18px; font-weight: bold;")
         self.open_folder_btn = QPushButton("Open Folder")
         self.open_folder_btn.clicked.connect(self._open_output_folder)
+        self.open_gallery_btn = QPushButton("Open Gallery")
+        self.open_gallery_btn.clicked.connect(self._open_gallery)
         self.export_sprites_btn = QPushButton("Export Sprites")
         self.export_sprites_btn.clicked.connect(self._on_export_asset)
         self.export_variant_spin = QSpinBox()
@@ -603,6 +606,7 @@ class MainWindow(QWidget):
         header.addWidget(QLabel("Variant"))
         header.addWidget(self.export_variant_spin)
         header.addWidget(self.export_sprites_btn)
+        header.addWidget(self.open_gallery_btn)
         header.addWidget(self.open_folder_btn)
         layout.addLayout(header)
 
@@ -1180,6 +1184,7 @@ class MainWindow(QWidget):
 
     def _on_generation_finished(self, result) -> None:
         self._last_output_dir = str(result.output_dir)
+        self._last_gallery_path = str(result.gallery_path)
         max_variant_count = max((output.variant_count for output in result.outputs), default=1)
         self.export_variant_spin.setMaximum(max(8, max_variant_count))
         for output in result.outputs:
@@ -1376,6 +1381,8 @@ class MainWindow(QWidget):
         )
         self._last_output_dir = str(output_dir)
         manifest_path = output_dir / "generation_manifest.json"
+        gallery_path = output_dir / "asset_gallery.html"
+        self._last_gallery_path = str(gallery_path) if gallery_path.exists() else ""
         if not manifest_path.exists():
             return
         try:
@@ -1481,6 +1488,7 @@ class MainWindow(QWidget):
         self.add_hero_grid_layout_btn.setEnabled(not busy)
         self.export_sprites_btn.setEnabled(not busy)
         self.export_variant_spin.setEnabled(not busy)
+        self.open_gallery_btn.setEnabled(not busy)
         self.check_provider_setup_btn.setEnabled(not busy)
         self.save_provider_settings_btn.setEnabled(not busy)
         self.clear_saved_keys_btn.setEnabled(not busy)
@@ -1497,6 +1505,25 @@ class MainWindow(QWidget):
             import subprocess
 
             subprocess.run(["open", folder] if sys.platform == "darwin" else ["xdg-open", folder])
+
+    def _open_gallery(self) -> None:
+        if not self._last_gallery_path:
+            self.status_label.setText("No generated gallery is available yet")
+            return
+        gallery_path = Path(self._last_gallery_path)
+        if not gallery_path.exists():
+            self.status_label.setText(f"Gallery not found: {gallery_path}")
+            return
+        if os.name == "nt":
+            os.startfile(gallery_path)
+        elif os.name == "posix":
+            import subprocess
+
+            subprocess.run(
+                ["open", str(gallery_path)]
+                if sys.platform == "darwin"
+                else ["xdg-open", str(gallery_path)]
+            )
 
 
 def main() -> None:

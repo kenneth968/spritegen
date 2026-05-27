@@ -598,6 +598,7 @@ def cmd_project(args: argparse.Namespace) -> int:
         )
         print(f"Generated asset: {result.output_dir}")
         print(f"Manifest: {result.manifest_path}")
+        print(f"Gallery: {result.gallery_path}")
         for output in result.outputs:
             label = output.stage_label or "single"
             if output.variant_index:

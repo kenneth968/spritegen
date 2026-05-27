@@ -105,6 +105,8 @@ def test_main_window_loads_saved_project_and_asset(tmp_path):
     Image.new("RGBA", (32, 32), (255, 0, 0, 255)).save(raw_path)
     Image.new("RGBA", (16, 16), (0, 255, 0, 255)).save(idle_path)
     Image.new("RGBA", (16, 16), (0, 0, 255, 255)).save(attack_path)
+    gallery_path = output_dir / "asset_gallery.html"
+    gallery_path.write_text("<html>gallery</html>", encoding="utf-8")
     (output_dir / "generation_manifest.json").write_text(
         json.dumps(
             {
@@ -149,6 +151,7 @@ def test_main_window_loads_saved_project_and_asset(tmp_path):
     assert window.asset_name_edit.text() == "Puffball"
     assert window.enhanced_prompt_edit.toPlainText() == "Improved spore cloud prompt."
     assert window.preview_panel.image_paths == [raw_path, idle_path, attack_path]
+    assert window._last_gallery_path == str(gallery_path)
 
     window.close()
     app.processEvents()

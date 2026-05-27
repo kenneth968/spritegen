@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+from html import escape
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import quote
 
 from .config import SpriteConfig
 from .generator import SpriteGenerator
@@ -45,6 +47,7 @@ class ProjectGenerationResult:
     asset_slug: str
     output_dir: Path
     manifest_path: Path
+    gallery_path: Path
     outputs: list[GeneratedPacketOutput]
 
     def to_dict(self) -> dict:
@@ -53,6 +56,7 @@ class ProjectGenerationResult:
             "asset_slug": self.asset_slug,
             "output_dir": str(self.output_dir),
             "manifest_path": str(self.manifest_path),
+            "gallery_path": str(self.gallery_path),
             "outputs": [output.to_dict() for output in self.outputs],
         }
 
@@ -198,12 +202,25 @@ class ProjectAssetGenerator:
             "outputs": [output.to_dict() for output in outputs],
         }
         manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        gallery_path = self._write_generation_gallery(
+            project=project,
+            asset=asset,
+            provider=image_provider,
+            model=image_model,
+            output_dir=base_output,
+            manifest_path=manifest_path,
+            outputs=outputs,
+            variants_per_packet=variants_per_packet,
+            remove_background=should_remove_background,
+            reference_images=reference_images,
+        )
 
         return ProjectGenerationResult(
             project_slug=project_slug,
             asset_slug=asset_slug,
             output_dir=base_output,
             manifest_path=manifest_path,
+            gallery_path=gallery_path,
             outputs=outputs,
         )
 
@@ -351,3 +368,117 @@ class ProjectAssetGenerator:
         if output_variant is None:
             return variant_index == 1
         return output_variant == variant_index
+
+    def _write_generation_gallery(
+        self,
+        project: ProjectSpec,
+        asset: AssetSpec,
+        provider: str,
+        model: str,
+        output_dir: Path,
+        manifest_path: Path,
+        outputs: list[GeneratedPacketOutput],
+        variants_per_packet: int,
+        remove_background: bool,
+        reference_images: list[Path],
+    ) -> Path:
+        gallery_path = output_dir / "asset_gallery.html"
+        sections = "\n".join(
+            self._gallery_output_section(output, output_dir)
+            for output in outputs
+        )
+        reference_links = "\n".join(
+            f'<li><a href="{self._gallery_href(path, output_dir)}">'
+            f"{escape(path.name)}</a></li>"
+            for path in reference_images
+        ) or "<li>None</li>"
+        html = f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{escape(project.name)} / {escape(asset.name)} asset gallery</title>
+  <style>
+    body {{ font-family: Segoe UI, Arial, sans-serif; margin: 24px; color: #1f2933; }}
+    header {{ margin-bottom: 24px; }}
+    h1 {{ margin: 0 0 8px; font-size: 28px; }}
+    h2 {{ margin: 0 0 12px; font-size: 20px; }}
+    .meta {{ display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }}
+    .pill {{ border: 1px solid #c8d1dc; border-radius: 999px; padding: 4px 10px; font-size: 13px; }}
+    .output {{ border-top: 1px solid #d7dee8; padding: 18px 0; }}
+    .grid {{ display: grid; grid-template-columns: minmax(220px, 360px) 1fr; gap: 18px; }}
+    .raw img {{ width: 100%; max-height: 360px; object-fit: contain; background: #eef2f7; }}
+    .slices {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 10px; }}
+    .slice img {{ width: 100%; aspect-ratio: 1; object-fit: contain; background: #eef2f7; }}
+    .caption {{ font-size: 12px; overflow-wrap: anywhere; color: #52606d; margin-top: 4px; }}
+    .prompt {{ white-space: pre-wrap; background: #f5f7fa; padding: 12px; margin-top: 14px; font-size: 13px; }}
+    a {{ color: #155e75; }}
+    @media (max-width: 760px) {{ .grid {{ grid-template-columns: 1fr; }} body {{ margin: 14px; }} }}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>{escape(project.name)} / {escape(asset.name)}</h1>
+    <p>{escape(asset.description)}</p>
+    <div class="meta">
+      <span class="pill">provider: {escape(provider)}</span>
+      <span class="pill">model: {escape(model)}</span>
+      <span class="pill">variants per packet: {variants_per_packet}</span>
+      <span class="pill">background removal: {str(remove_background).lower()}</span>
+    </div>
+    <p><a href="{self._gallery_href(manifest_path, output_dir)}">Open generation manifest</a></p>
+    <h2>Reference Images</h2>
+    <ul>{reference_links}</ul>
+  </header>
+  <main>
+{sections}
+  </main>
+</body>
+</html>
+"""
+        gallery_path.write_text(html, encoding="utf-8")
+        return gallery_path
+
+    def _gallery_output_section(
+        self,
+        output: GeneratedPacketOutput,
+        output_dir: Path,
+    ) -> str:
+        title_parts = [output.stage_label or "single"]
+        if output.variant_index:
+            title_parts.append(f"variant {output.variant_index}")
+        title = " / ".join(title_parts)
+        slice_items = "\n".join(
+            "          "
+            f'<div class="slice"><a href="{self._gallery_href(path, output_dir)}">'
+            f'<img src="{self._gallery_href(path, output_dir)}" alt="{escape(path.name)}"></a>'
+            f'<div class="caption">{escape(path.name)}</div></div>'
+            for path in output.slices
+        ) or "          <p>No slices were written for this output.</p>"
+        return f"""    <section class="output">
+      <h2>{escape(title)} ({escape(output.layout_name)})</h2>
+      <div class="grid">
+        <div class="raw">
+          <a href="{self._gallery_href(output.raw_image, output_dir)}">
+            <img src="{self._gallery_href(output.raw_image, output_dir)}" alt="{escape(title)} raw atlas">
+          </a>
+          <div class="caption">{escape(output.raw_image.name)}</div>
+        </div>
+        <div>
+          <div class="slices">
+{slice_items}
+          </div>
+        </div>
+      </div>
+      <details>
+        <summary>Prompt</summary>
+        <div class="prompt">{escape(output.prompt)}</div>
+      </details>
+    </section>"""
+
+    def _gallery_href(self, path: Path, output_dir: Path) -> str:
+        try:
+            relative = path.relative_to(output_dir)
+        except ValueError:
+            relative = path
+        return quote(relative.as_posix())
