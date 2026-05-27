@@ -257,3 +257,18 @@ Custom atlas layout creation now covers character-sheet composites:
   JSON by hand.
 - The layout prompt instructions explicitly call out hard seams, same identity,
   shared palette/materials/style, and exact slice boundaries.
+
+## Seventeenth implementation slice
+
+Project coherence now uses visual references where the provider supports them:
+
+- Project generation scans known prior assets for `generation_manifest.json` and
+  collects existing raw generated atlases as reference images.
+- OpenRouter image generation sends those references as `image_url` data-url
+  content parts alongside the text prompt, using the same Chat Completions path
+  as image generation.
+- Generation manifests now record the reference images used at the run and output
+  levels, making style-reference influence auditable after generation.
+- Providers without implemented multimodal image input continue using the
+  existing text anchors from prior assets rather than guessing unsupported API
+  payloads.

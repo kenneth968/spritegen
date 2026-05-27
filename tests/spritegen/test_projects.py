@@ -440,6 +440,86 @@ def test_project_generator_passes_session_api_key_to_image_generator(tmp_path, m
     assert seen["api_key"] == "session-image-key"
 
 
+def test_project_generator_passes_prior_generated_images_as_references(tmp_path, monkeypatch):
+    from PIL import Image
+
+    seen = {}
+
+    project = ProjectSpec(
+        name="MyceliumTD",
+        summary="Fungal tower defense game",
+        visual_style="clean cartoon sprites",
+        shared_context="Forest floor fungi.",
+    )
+    project.provider_defaults.image_provider = "openrouter"
+    project.provider_defaults.image_model = "google/test"
+    project.add_asset_type(AssetTypeSpec(name="tower", shared_prompt="Readable towers."))
+    existing = AssetSpec(
+        name="Puffball",
+        asset_type="tower",
+        description="Spore cloud tower.",
+    )
+    next_asset = AssetSpec(
+        name="Amanita",
+        asset_type="tower",
+        description="Poison mushroom tower.",
+    )
+
+    store = ProjectStore(tmp_path / "projects")
+    store.save_project(project)
+    store.save_asset(project, existing)
+    previous_dir = store.generated_dir(project.slug) / existing.slug
+    previous_dir.mkdir(parents=True)
+    previous_raw = previous_dir / "single.png"
+    Image.new("RGBA", (1024, 1024), (255, 0, 0, 255)).save(previous_raw)
+    (previous_dir / "generation_manifest.json").write_text(
+        json.dumps(
+            {
+                "outputs": [
+                    {
+                        "stage_index": None,
+                        "stage_label": None,
+                        "layout_name": "single_sprite",
+                        "raw_image": str(previous_raw),
+                        "slices": [],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def fake_generate_raw_image(
+        self,
+        prompt,
+        negative_prompt,
+        width,
+        height,
+        reference_images=None,
+    ):
+        seen["reference_images"] = reference_images
+        image = Image.new("RGBA", (width, height), (255, 255, 255, 255))
+        buffer = BytesIO()
+        image.save(buffer, format="PNG")
+        return buffer.getvalue()
+
+    monkeypatch.setattr(
+        "spritegen.project_generation.SpriteGenerator.generate_raw_image",
+        fake_generate_raw_image,
+    )
+
+    result = ProjectAssetGenerator(store).generate(
+        project=project,
+        asset=next_asset,
+        known_assets=[existing],
+    )
+
+    assert seen["reference_images"] == [previous_raw]
+    manifest = json.loads(result.manifest_path.read_text(encoding="utf-8"))
+    assert manifest["reference_images"] == [str(previous_raw)]
+    assert manifest["outputs"][0]["reference_images"] == [str(previous_raw)]
+
+
 def test_project_generator_can_keep_backgrounds(tmp_path):
     from PIL import Image
 

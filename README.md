@@ -10,6 +10,7 @@ AI-powered sprite sheet generator for tower defense games. Generates evolution c
 - **Style consistency**: Style presets with seed tracking ensure visual coherence across generations
 - **Sprite slicing**: Extract individual sprites from sheets with metadata export
 - **Project-aware prompt planning**: Store a game project, shared style, palette, asset types, and prior assets so each new prompt carries the same universe context
+- **Visual reference reuse**: OpenRouter generations can include prior generated atlases as reference images for stronger project coherence
 - **Separate model choices**: Use one provider/model for final image generation and another provider/model for AI prompt improvement
 - **Markdown prompt guides**: Bundled `.md` system prompts steer project, asset type, asset, layout, and color-mode prompt improvement
 - **Color production modes**: Generate full color, limited palette, black/white, grayscale value-map, or single-hue value-map assets
@@ -56,6 +57,9 @@ Use **Improve Project**, **Improve Type Rules**, and **Enhance Asset** to run th
 prompt-improvement model at the right level of the workflow before generating images.
 Use **Preview Prompts** to inspect the exact image prompts, including prior saved
 assets that will be used as style and universe anchors, before spending image tokens.
+When using OpenRouter for image generation, saved raw atlases from prior project
+assets are also sent as visual reference images when available; other providers
+currently keep using the text anchors.
 Use **Workflow / Apply Preset** to fill common asset-type settings such as four-stage
 towers or a full-body character plus eight emotion heads.
 Use **Custom Layout** to add reusable equal-cell atlases, contact sheets, tile grids,

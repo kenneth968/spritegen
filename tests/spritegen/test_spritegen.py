@@ -207,6 +207,51 @@ class TestOpenAIIntegration:
         assert "session-openrouter-key" not in captured["script"]
         assert captured["env"] == {"SPRITEGEN_SESSION_API_KEY": "session-openrouter-key"}
 
+    def test_openrouter_generation_script_adds_reference_images(self, tmp_path):
+        from PIL import Image
+        from spritegen.generator import SpriteGenerator
+        from spritegen.style import StyleManager, StylePreset
+        from spritegen.config import SpriteConfig
+
+        reference = tmp_path / "reference.png"
+        Image.new("RGBA", (16, 16), (255, 0, 0, 255)).save(reference)
+        captured = {}
+        style = StylePreset(
+            name="test_style",
+            base_prompt="pixel art",
+            negative_prompt="",
+            color_palette=[],
+            visual_tags=[],
+            seed="test456",
+        )
+        config = SpriteConfig(
+            api_provider="openrouter",
+            api_model="google/test",
+            api_key="session-openrouter-key",
+        )
+        generator = SpriteGenerator(style=style, config=config, style_manager=StyleManager())
+
+        def fake_run_python_script(script, env=None):
+            captured["script"] = script
+            captured["env"] = env
+            return ""
+
+        generator._run_python_script = fake_run_python_script
+        generator._b64_to_png = lambda value: b""
+
+        generator._call_openrouter(
+            "test prompt",
+            "",
+            (1024, 1024),
+            "google/test",
+            reference_images=[reference],
+        )
+
+        assert "reference_image_paths" in captured["script"]
+        assert '"image_url"' in captured["script"]
+        assert reference.name in captured["script"]
+        assert captured["env"] == {"SPRITEGEN_SESSION_API_KEY": "session-openrouter-key"}
+
     def test_openrouter_image_config_uses_supported_keys(self):
         from spritegen.generator import SpriteGenerator
         from spritegen.style import StyleManager, StylePreset

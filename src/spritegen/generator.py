@@ -25,6 +25,7 @@ import os
 import subprocess
 import sys
 import urllib.request
+from pathlib import Path
 
 from .config import SpriteConfig, SpriteDefinition, SheetLayout
 from .models import GeneratedSheet, SpriteMetadata
@@ -54,6 +55,7 @@ class SpriteGenerator:
         prompt: str,
         negative_prompt: str,
         size: tuple[int, int],
+        reference_images: list[Path | str] | None = None,
     ) -> bytes:
         provider = self.config.api_provider
         model = self.config.api_model
@@ -71,7 +73,13 @@ class SpriteGenerator:
         elif provider == "pollinations":
             return self._call_pollinations(prompt, size)
         elif provider == "openrouter":
-            return self._call_openrouter(prompt, negative_prompt, size, model)
+            return self._call_openrouter(
+                prompt,
+                negative_prompt,
+                size,
+                model,
+                reference_images=reference_images,
+            )
         else:
             raise ValueError(f"Unknown provider: {provider}")
 
@@ -297,11 +305,13 @@ except Exception as e:
         negative_prompt: str,
         size: tuple[int, int],
         model: str,
+        reference_images: list[Path | str] | None = None,
     ) -> bytes:
         """Generate image via OpenRouter (Gemini Flash image generation)."""
         import json as _json
 
         image_config_json = _json.dumps(self._openrouter_image_config(size))
+        reference_paths_json = _json.dumps([str(path) for path in reference_images or []])
         full_prompt = (
             f"Generate a game sprite image: {prompt}. "
             f"Avoid: {negative_prompt}. "
@@ -317,6 +327,8 @@ import json
 import base64
 import sys
 import os
+
+reference_image_paths = {reference_paths_json}
 
 api_key = (
     os.environ.get("SPRITEGEN_SESSION_API_KEY", "")
@@ -334,12 +346,24 @@ headers = {{
     "HTTP-Referer": "https://github.com/spritegen",
 }}
 
+content = [{{"type": "text", "text": {prompt_json}}}]
+for reference_path in reference_image_paths:
+    try:
+        with open(reference_path, "rb") as reference_file:
+            reference_b64 = base64.b64encode(reference_file.read()).decode()
+    except OSError:
+        continue
+    content.append({{
+        "type": "image_url",
+        "image_url": {{"url": "data:image/png;base64," + reference_b64}},
+    }})
+
 payload = json.dumps({{
     "model": {model_json},
     "messages": [
         {{
             "role": "user",
-            "content": {prompt_json}
+            "content": content if reference_image_paths else {prompt_json}
         }}
     ],
     "modalities": ["image", "text"],
@@ -598,9 +622,15 @@ except Exception as e:
         negative_prompt: str,
         width: int,
         height: int,
+        reference_images: list[Path | str] | None = None,
     ) -> bytes:
         """Generate one image without adding style-manager prompt text."""
-        return self._call_image_api(prompt, negative_prompt, (width, height))
+        return self._call_image_api(
+            prompt,
+            negative_prompt,
+            (width, height),
+            reference_images=reference_images,
+        )
 
     def generate_evolution_chain(
         self,

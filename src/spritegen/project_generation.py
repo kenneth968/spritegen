@@ -21,6 +21,7 @@ class GeneratedPacketOutput:
     prompt: str
     raw_image: Path
     slices: list[Path] = field(default_factory=list)
+    reference_images: list[Path] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -30,6 +31,7 @@ class GeneratedPacketOutput:
             "prompt": self.prompt,
             "raw_image": str(self.raw_image),
             "slices": [str(path) for path in self.slices],
+            "reference_images": [str(path) for path in self.reference_images],
         }
 
 
@@ -118,6 +120,12 @@ class ProjectAssetGenerator:
             base_output,
             api_key=api_key,
         )
+        reference_images = self._collect_reference_images(
+            project,
+            asset,
+            packets,
+            provider=image_provider,
+        )
         outputs: list[GeneratedPacketOutput] = []
 
         for packet in packets:
@@ -125,11 +133,13 @@ class ProjectAssetGenerator:
             stage_name = self._stage_filename(packet)
             raw_path = base_output / f"{stage_name}.png"
 
+            kwargs = {"reference_images": reference_images} if reference_images else {}
             image_data = generator.generate_raw_image(
                 prompt=packet.prompt,
                 negative_prompt=packet.negative_prompt,
                 width=layout.width,
                 height=layout.height,
+                **kwargs,
             )
             raw_path.write_bytes(image_data)
 
@@ -155,6 +165,7 @@ class ProjectAssetGenerator:
                     prompt=packet.prompt,
                     raw_image=raw_path,
                     slices=slice_paths,
+                    reference_images=reference_images,
                 )
             )
 
@@ -167,6 +178,7 @@ class ProjectAssetGenerator:
             "postprocess": {
                 "remove_background": should_remove_background,
             },
+            "reference_images": [str(path) for path in reference_images],
             "outputs": [output.to_dict() for output in outputs],
         }
         manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
@@ -215,3 +227,62 @@ class ProjectAssetGenerator:
             return "single"
         label = (packet.stage_label or f"stage-{packet.stage_index}").replace(" ", "-")
         return f"stage-{packet.stage_index:02d}-{label}"
+
+    def _collect_reference_images(
+        self,
+        project: ProjectSpec,
+        asset: AssetSpec,
+        packets: list[PromptPacket],
+        provider: str,
+        limit: int = 4,
+    ) -> list[Path]:
+        if provider != "openrouter":
+            return []
+
+        project_slug = project.slug or project.name
+        current_slug = asset.slug or asset.name
+        references: list[Path] = []
+        seen: set[Path] = set()
+        known_assets = [
+            known
+            for packet in packets
+            for known in packet.metadata.get("known_assets", [])
+            if isinstance(known, dict)
+        ]
+        for known in known_assets:
+            known_slug = str(known.get("slug") or "")
+            if not known_slug or known_slug == current_slug:
+                continue
+            manifest_path = (
+                self.store.generated_dir(project_slug)
+                / known_slug
+                / "generation_manifest.json"
+            )
+            raw_image = self._first_manifest_raw_image(manifest_path)
+            if raw_image is None or raw_image in seen:
+                continue
+            seen.add(raw_image)
+            references.append(raw_image)
+            if len(references) >= limit:
+                break
+        return references
+
+    def _first_manifest_raw_image(self, manifest_path: Path) -> Path | None:
+        if not manifest_path.exists():
+            return None
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+        for output in manifest.get("outputs", []):
+            if not isinstance(output, dict):
+                continue
+            raw_image = output.get("raw_image")
+            if not isinstance(raw_image, str) or not raw_image:
+                continue
+            path = Path(raw_image)
+            if not path.is_absolute():
+                path = manifest_path.parent / path
+            if path.exists():
+                return path
+        return None
