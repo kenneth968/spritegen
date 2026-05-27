@@ -28,6 +28,19 @@ spritegen evolution-chain --tower puffball --provider openrouter --model google/
 spritegen generate --style pixel_art --sprites "red mushroom" "blue mushroom" --provider mock
 ```
 
+## Desktop App
+
+On Windows, double-click `launch_spritegen.cmd` from the project folder. The launcher creates
+a local `.venv`, installs the desktop dependencies, and opens the app.
+
+For a distributable Windows executable:
+
+```powershell
+.\scripts\build_desktop_app.ps1 -Clean
+```
+
+The built app is written to `dist\spritegen.exe`.
+
 ## Project-Aware Workflow
 
 Create a project once, then add assets inside that shared universe. The prompt planner saves

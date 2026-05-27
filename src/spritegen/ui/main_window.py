@@ -1,0 +1,509 @@
+"""Main window for the spritegen desktop application."""
+
+from __future__ import annotations
+
+import os
+import sys
+from pathlib import Path
+
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QImage, QPixmap
+from PySide6.QtWidgets import (
+    QApplication,
+    QComboBox,
+    QFileDialog,
+    QFormLayout,
+    QFrame,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QProgressBar,
+    QPushButton,
+    QScrollArea,
+    QSpinBox,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
+
+from ..layouts import PRESET_LAYOUTS
+from ..projects import (
+    AssetSpec,
+    AssetTypeSpec,
+    EvolutionPlan,
+    ProjectSpec,
+    ProjectStore,
+    ProviderDefaults,
+    PromptPlanner,
+)
+from .generation_thread import EnhancementThread, ProjectGenerationThread
+
+
+IMAGE_PROVIDERS = ["mock", "pollinations", "openai", "openrouter"]
+PROMPT_PROVIDERS = ["mock", "pollinations", "openai", "openrouter"]
+
+PROVIDER_LABELS = {
+    "mock": "Mock",
+    "pollinations": "Pollinations",
+    "openai": "OpenAI",
+    "openrouter": "OpenRouter",
+}
+
+DEFAULT_IMAGE_MODELS = {
+    "mock": "mock",
+    "pollinations": "flux",
+    "openai": "gpt-image-2",
+    "openrouter": "google/gemini-3.1-flash-image-preview",
+}
+
+DEFAULT_PROMPT_MODELS = {
+    "mock": "mock",
+    "pollinations": "openai",
+    "openai": "gpt-5.5",
+    "openrouter": "openai/gpt-5.5",
+}
+
+
+class PreviewPanel(QWidget):
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self._setup_ui()
+
+    def _setup_ui(self) -> None:
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+
+        self.container = QWidget()
+        self.container_layout = QVBoxLayout(self.container)
+        self.container_layout.setAlignment(Qt.AlignTop)
+
+        self.placeholder = QLabel("No generated assets yet.")
+        self.placeholder.setAlignment(Qt.AlignCenter)
+        self.placeholder.setStyleSheet("color: #666; font-size: 14px; padding: 40px;")
+        self.container_layout.addWidget(self.placeholder)
+
+        scroll.setWidget(self.container)
+        layout.addWidget(scroll)
+
+    def clear(self) -> None:
+        while self.container_layout.count() > 1:
+            item = self.container_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        self.placeholder.show()
+
+    def add_image_path(self, path: Path) -> None:
+        self.placeholder.hide()
+        label = QLabel(path.name)
+        label.setStyleSheet("font-weight: bold;")
+        self.container_layout.addWidget(label)
+
+        pixmap = QPixmap.fromImage(QImage(str(path)))
+        if not pixmap.isNull():
+            image_label = QLabel()
+            image_label.setAlignment(Qt.AlignCenter)
+            image_label.setPixmap(
+                pixmap.scaled(
+                    480,
+                    480,
+                    Qt.KeepAspectRatio,
+                    Qt.SmoothTransformation,
+                )
+            )
+            self.container_layout.addWidget(image_label)
+
+
+class MainWindow(QWidget):
+    def __init__(self) -> None:
+        super().__init__()
+        self._thread = None
+        self._project_root = str(Path("projects").absolute())
+        self._last_output_dir = str(Path("projects").absolute())
+        self._setup_ui()
+
+    def _setup_ui(self) -> None:
+        self.setWindowTitle("spritegen")
+        self.setMinimumSize(1180, 820)
+
+        main_layout = QHBoxLayout(self)
+        main_layout.setSpacing(16)
+        main_layout.setContentsMargins(16, 16, 16, 16)
+
+        left_panel = self._create_left_panel()
+        left_panel.setMaximumWidth(540)
+        main_layout.addWidget(left_panel)
+
+        right_panel = self._create_right_panel()
+        main_layout.addWidget(right_panel, 1)
+
+    def _create_left_panel(self) -> QWidget:
+        panel = QWidget()
+        layout = QVBoxLayout(panel)
+        layout.setSpacing(12)
+
+        title = QLabel("spritegen")
+        title.setStyleSheet("font-size: 24px; font-weight: bold;")
+        layout.addWidget(title)
+
+        project_group = QGroupBox("Project")
+        project_layout = QFormLayout(project_group)
+
+        self.project_name_edit = QLineEdit("MyceliumTD")
+        project_layout.addRow("Name:", self.project_name_edit)
+
+        self.project_summary_edit = QLineEdit("Fungal tower defense game")
+        project_layout.addRow("Summary:", self.project_summary_edit)
+
+        self.style_edit = QTextEdit()
+        self.style_edit.setMaximumHeight(80)
+        self.style_edit.setPlainText("clean cartoon tower defense sprites, bold outlines")
+        project_layout.addRow("Style:", self.style_edit)
+
+        self.context_edit = QTextEdit()
+        self.context_edit.setMaximumHeight(90)
+        self.context_edit.setPlainText("Friendly fungal towers defending a forest floor.")
+        project_layout.addRow("Universe:", self.context_edit)
+
+        self.palette_edit = QLineEdit("#8B4513,#228B22,#9932CC,#00FA9A")
+        project_layout.addRow("Palette:", self.palette_edit)
+
+        self.negative_prompt_edit = QLineEdit("photorealistic, watermark, text labels")
+        project_layout.addRow("Avoid:", self.negative_prompt_edit)
+
+        root_row = QHBoxLayout()
+        self.project_root_edit = QLineEdit(self._project_root)
+        root_btn = QPushButton("Browse")
+        root_btn.clicked.connect(self._browse_project_root)
+        root_row.addWidget(self.project_root_edit)
+        root_row.addWidget(root_btn)
+        project_layout.addRow("Project Dir:", root_row)
+
+        layout.addWidget(project_group)
+
+        asset_group = QGroupBox("Asset")
+        asset_layout = QFormLayout(asset_group)
+
+        self.asset_type_edit = QLineEdit("tower")
+        asset_layout.addRow("Type:", self.asset_type_edit)
+
+        self.asset_type_context_edit = QLineEdit("Readable tower upgrades at small game size")
+        asset_layout.addRow("Type Rules:", self.asset_type_context_edit)
+
+        self.evolutions_spin = QSpinBox()
+        self.evolutions_spin.setRange(1, 8)
+        self.evolutions_spin.setValue(4)
+        asset_layout.addRow("Evolutions:", self.evolutions_spin)
+
+        self.layout_combo = QComboBox()
+        for name in sorted(PRESET_LAYOUTS):
+            self.layout_combo.addItem(name, name)
+        asset_layout.addRow("Layout:", self.layout_combo)
+
+        self.asset_name_edit = QLineEdit("Puffball")
+        asset_layout.addRow("Name:", self.asset_name_edit)
+
+        self.asset_description_edit = QTextEdit()
+        self.asset_description_edit.setMaximumHeight(90)
+        self.asset_description_edit.setPlainText("A mushroom tower that attacks with spore clouds.")
+        asset_layout.addRow("Concept:", self.asset_description_edit)
+
+        self.asset_details_edit = QTextEdit()
+        self.asset_details_edit.setMaximumHeight(70)
+        self.asset_details_edit.setPlainText("Soft white cap, playful shape language, area damage identity.")
+        asset_layout.addRow("Details:", self.asset_details_edit)
+
+        self.enhanced_prompt_edit = QTextEdit()
+        self.enhanced_prompt_edit.setMaximumHeight(110)
+        asset_layout.addRow("Enhanced:", self.enhanced_prompt_edit)
+
+        layout.addWidget(asset_group)
+
+        config_group = QGroupBox("Providers")
+        config_layout = QFormLayout(config_group)
+
+        self.image_provider_combo = self._provider_combo(IMAGE_PROVIDERS)
+        self.image_provider_combo.currentIndexChanged.connect(self._on_image_provider_changed)
+        config_layout.addRow("Image:", self.image_provider_combo)
+
+        self.image_model_edit = QLineEdit(DEFAULT_IMAGE_MODELS["mock"])
+        config_layout.addRow("Image Model:", self.image_model_edit)
+
+        self.prompt_provider_combo = self._provider_combo(PROMPT_PROVIDERS)
+        self.prompt_provider_combo.currentIndexChanged.connect(self._on_prompt_provider_changed)
+        config_layout.addRow("Prompt:", self.prompt_provider_combo)
+
+        self.prompt_model_edit = QLineEdit(DEFAULT_PROMPT_MODELS["mock"])
+        config_layout.addRow("Prompt Model:", self.prompt_model_edit)
+
+        self.api_key_override = QLineEdit()
+        self.api_key_override.setEchoMode(QLineEdit.Password)
+        config_layout.addRow("API Key:", self.api_key_override)
+
+        layout.addWidget(config_group)
+
+        actions = QHBoxLayout()
+        self.save_btn = QPushButton("Save Plan")
+        self.save_btn.clicked.connect(self._on_save_plan)
+        self.enhance_btn = QPushButton("Enhance")
+        self.enhance_btn.clicked.connect(self._on_enhance)
+        self.generate_btn = QPushButton("Generate")
+        self.generate_btn.clicked.connect(self._on_generate)
+        actions.addWidget(self.save_btn)
+        actions.addWidget(self.enhance_btn)
+        actions.addWidget(self.generate_btn)
+        layout.addLayout(actions)
+
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 1)
+        self.progress_bar.setValue(0)
+        layout.addWidget(self.progress_bar)
+
+        self.status_label = QLabel("Ready")
+        self.status_label.setWordWrap(True)
+        layout.addWidget(self.status_label)
+
+        layout.addStretch()
+        return panel
+
+    def _create_right_panel(self) -> QWidget:
+        panel = QWidget()
+        layout = QVBoxLayout(panel)
+
+        header = QHBoxLayout()
+        header_label = QLabel("Generated Output")
+        header_label.setStyleSheet("font-size: 18px; font-weight: bold;")
+        self.open_folder_btn = QPushButton("Open Folder")
+        self.open_folder_btn.clicked.connect(self._open_output_folder)
+        header.addWidget(header_label)
+        header.addStretch()
+        header.addWidget(self.open_folder_btn)
+        layout.addLayout(header)
+
+        self.preview_panel = PreviewPanel()
+        layout.addWidget(self.preview_panel)
+        return panel
+
+    def _provider_combo(self, providers: list[str]) -> QComboBox:
+        combo = QComboBox()
+        for provider in providers:
+            combo.addItem(PROVIDER_LABELS[provider], provider)
+        return combo
+
+    def _on_image_provider_changed(self, *_args) -> None:
+        provider = self.image_provider_combo.currentData()
+        self.image_model_edit.setText(DEFAULT_IMAGE_MODELS.get(provider, ""))
+
+    def _on_prompt_provider_changed(self, *_args) -> None:
+        provider = self.prompt_provider_combo.currentData()
+        self.prompt_model_edit.setText(DEFAULT_PROMPT_MODELS.get(provider, ""))
+
+    def _browse_project_root(self) -> None:
+        folder = QFileDialog.getExistingDirectory(
+            self,
+            "Select Project Directory",
+            self.project_root_edit.text(),
+        )
+        if folder:
+            self.project_root_edit.setText(folder)
+
+    def _on_save_plan(self) -> None:
+        try:
+            project, asset = self._save_current_specs()
+            self.status_label.setText(f"Saved {project.name} / {asset.name}")
+        except Exception as exc:
+            QMessageBox.warning(self, "Save Failed", str(exc))
+
+    def _on_enhance(self) -> None:
+        try:
+            project, asset = self._save_current_specs()
+        except Exception as exc:
+            QMessageBox.warning(self, "Enhance Failed", str(exc))
+            return
+
+        provider = self.prompt_provider_combo.currentData()
+        api_key = self._api_key_for(provider)
+        if not self._provider_can_run(provider, api_key):
+            return
+
+        self._set_busy(True, "Enhancing asset prompt...")
+        self._thread = EnhancementThread(
+            project=project,
+            asset=asset,
+            project_root=self.project_root_edit.text(),
+            provider=provider,
+            model=self.prompt_model_edit.text().strip(),
+            api_key=api_key,
+        )
+        self._thread.finished.connect(lambda text: self._on_enhance_finished(text, project, asset))
+        self._thread.error.connect(self._on_thread_error)
+        self._thread.start()
+
+    def _on_enhance_finished(self, enhanced: str, project: ProjectSpec, asset: AssetSpec) -> None:
+        asset.enhanced_prompt = enhanced
+        self.enhanced_prompt_edit.setPlainText(enhanced)
+        store = ProjectStore(self.project_root_edit.text())
+        store.save_asset(project, asset)
+        known_assets = store.load_assets(project)
+        packets = PromptPlanner().build_prompt_packets(project, asset, known_assets=known_assets)
+        store.save_prompt_plan(project, asset, packets)
+        self._set_busy(False, "Enhanced prompt saved")
+        self._thread = None
+
+    def _on_generate(self) -> None:
+        try:
+            project, asset = self._save_current_specs()
+        except Exception as exc:
+            QMessageBox.warning(self, "Generate Failed", str(exc))
+            return
+
+        provider = self.image_provider_combo.currentData()
+        api_key = self._api_key_for(provider)
+        if not self._provider_can_run(provider, api_key):
+            return
+
+        output_root = (
+            Path(self.project_root_edit.text())
+            / (project.slug or project.name)
+            / "generated"
+            / (asset.slug or asset.name)
+        )
+        self.preview_panel.clear()
+        self._set_busy(True, "Generating asset...")
+        self._thread = ProjectGenerationThread(
+            project=project,
+            asset=asset,
+            project_root=self.project_root_edit.text(),
+            output_root=str(output_root),
+            provider=provider,
+            model=self.image_model_edit.text().strip(),
+            api_key=api_key,
+        )
+        self._thread.progress.connect(self.status_label.setText)
+        self._thread.finished.connect(self._on_generation_finished)
+        self._thread.error.connect(self._on_thread_error)
+        self._thread.start()
+
+    def _on_generation_finished(self, result) -> None:
+        self._last_output_dir = str(result.output_dir)
+        for output in result.outputs:
+            self.preview_panel.add_image_path(output.raw_image)
+        self._set_busy(False, f"Generated {len(result.outputs)} image(s)")
+        self._thread = None
+
+    def _on_thread_error(self, message: str) -> None:
+        self._set_busy(False, f"Error: {message}")
+        QMessageBox.warning(self, "spritegen", message)
+        self._thread = None
+
+    def _save_current_specs(self) -> tuple[ProjectSpec, AssetSpec]:
+        project = self._build_project_spec()
+        asset = self._build_asset_spec()
+        store = ProjectStore(self.project_root_edit.text())
+        store.save_project(project)
+        store.save_asset(project, asset)
+        known_assets = store.load_assets(project)
+        packets = PromptPlanner().build_prompt_packets(project, asset, known_assets=known_assets)
+        store.save_prompt_plan(project, asset, packets)
+        return project, asset
+
+    def _build_project_spec(self) -> ProjectSpec:
+        name = self.project_name_edit.text().strip()
+        if not name:
+            raise ValueError("Project name is required")
+        asset_type = self.asset_type_edit.text().strip() or "asset"
+        project = ProjectSpec(
+            name=name,
+            summary=self.project_summary_edit.text().strip(),
+            visual_style=self.style_edit.toPlainText().strip(),
+            shared_context=self.context_edit.toPlainText().strip(),
+            palette=self._palette_values(),
+            negative_prompt=self.negative_prompt_edit.text().strip(),
+            provider_defaults=ProviderDefaults(
+                image_provider=self.image_provider_combo.currentData(),
+                image_model=self.image_model_edit.text().strip(),
+                prompt_provider=self.prompt_provider_combo.currentData(),
+                prompt_model=self.prompt_model_edit.text().strip(),
+            ),
+        )
+        project.add_asset_type(
+            AssetTypeSpec(
+                name=asset_type,
+                shared_prompt=self.asset_type_context_edit.text().strip(),
+                evolution=EvolutionPlan(count=self.evolutions_spin.value()),
+                default_layout=self.layout_combo.currentData(),
+            )
+        )
+        return project
+
+    def _build_asset_spec(self) -> AssetSpec:
+        name = self.asset_name_edit.text().strip()
+        if not name:
+            raise ValueError("Asset name is required")
+        return AssetSpec(
+            name=name,
+            asset_type=self.asset_type_edit.text().strip() or "asset",
+            description=self.asset_description_edit.toPlainText().strip(),
+            details=self.asset_details_edit.toPlainText().strip(),
+            enhanced_prompt=self.enhanced_prompt_edit.toPlainText().strip(),
+            layout=self.layout_combo.currentData(),
+        )
+
+    def _palette_values(self) -> list[str]:
+        return [value.strip() for value in self.palette_edit.text().split(",") if value.strip()]
+
+    def _api_key_for(self, provider: str) -> str:
+        override = self.api_key_override.text().strip()
+        if override:
+            return override
+        if provider == "openai":
+            return os.environ.get("OPENAI_API_KEY", "")
+        if provider == "openrouter":
+            return os.environ.get("OPENROUTER_API_KEY", "")
+        return ""
+
+    def _provider_can_run(self, provider: str, api_key: str) -> bool:
+        if provider in {"mock", "pollinations"}:
+            return True
+        if api_key:
+            return True
+        QMessageBox.warning(
+            self,
+            "API Key Required",
+            f"Enter an API key or set {provider.upper()}_API_KEY in the environment.",
+        )
+        return False
+
+    def _set_busy(self, busy: bool, status: str) -> None:
+        self.save_btn.setEnabled(not busy)
+        self.enhance_btn.setEnabled(not busy)
+        self.generate_btn.setEnabled(not busy)
+        self.progress_bar.setRange(0, 0 if busy else 1)
+        self.progress_bar.setValue(0 if busy else 1)
+        self.status_label.setText(status)
+
+    def _open_output_folder(self) -> None:
+        folder = self._last_output_dir
+        if os.name == "nt":
+            os.startfile(folder)
+        elif os.name == "posix":
+            import subprocess
+
+            subprocess.run(["open", folder] if sys.platform == "darwin" else ["xdg-open", folder])
+
+
+def main() -> None:
+    app = QApplication(sys.argv)
+    app.setStyle("Fusion")
+    window = MainWindow()
+    window.show()
+    sys.exit(app.exec())
+
+
+if __name__ == "__main__":
+    main()
