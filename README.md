@@ -10,7 +10,7 @@ AI-powered sprite sheet generator for tower defense games. Generates evolution c
 - **Style consistency**: Style presets with seed tracking ensure visual coherence across generations
 - **Sprite slicing**: Extract individual sprites from sheets with metadata export
 - **Project-aware prompt planning**: Store a game project, shared style, palette, asset types, and prior assets so each new prompt carries the same universe context
-- **Visual reference reuse**: OpenRouter generations can include prior generated atlases as reference images for stronger project coherence
+- **Visual reference reuse**: OpenRouter and OpenAI generations can include prior generated atlases as reference images for stronger project coherence
 - **Separate model choices**: Use one provider/model for final image generation and another provider/model for AI prompt improvement
 - **Markdown prompt guides**: Bundled `.md` system prompts steer project, asset type, asset, layout, and color-mode prompt improvement
 - **Color production modes**: Generate full color, limited palette, black/white, grayscale value-map, or single-hue value-map assets
@@ -42,10 +42,10 @@ a local `.venv`, installs the desktop dependencies, and opens the app.
 The desktop app exposes separate provider/model fields for image generation and prompt
 improvement. Each provider has suggested model IDs in a picker beside the editable
 model field, so a user can choose a known-good default or paste a newer/custom model.
-For OpenRouter model IDs, use [models.dev](https://models.dev/?search=minim) or
-OpenRouter's model list, then paste the exact model name into the matching model field.
-Use **Refresh Models** to pull the current OpenRouter model list into those pickers;
-the built-in suggestions remain available when offline.
+Use [models.dev](https://models.dev/?search=minim) for current provider model IDs,
+including OpenRouter model names, then paste the exact model name into the matching
+model field. Use **Refresh Models** to pull current OpenRouter and OpenAI catalog
+results into those pickers; the built-in suggestions remain available when offline.
 Paste provider keys into **Image API Key** and **Prompt API Key**. Use **Check Setup**
 to confirm the selected providers have models and keys, or **Save Local Setup** to
 remember provider defaults and keys on this computer. Keys are never written to project
@@ -61,9 +61,9 @@ Use **Preview Prompts** to inspect the exact image prompts, including prior save
 assets that will be used as style and universe anchors, before spending image tokens.
 Set **Image Variants** above 1 when you want several candidate atlases for the same
 asset or evolution stage in one generation run.
-When using OpenRouter for image generation, saved raw atlases from prior project
-assets are also sent as visual reference images when available; other providers
-currently keep using the text anchors.
+When using OpenRouter or OpenAI for image generation, saved raw atlases from prior
+project assets are also sent as visual reference images when available; other
+providers currently keep using the text anchors.
 Use **Workflow / Apply Preset** to fill common asset-type settings such as four-stage
 towers or a full-body character plus eight emotion heads.
 Use **Custom Layout** to add reusable equal-cell atlases, contact sheets, tile grids,
@@ -77,8 +77,8 @@ Use the **Variant** selector beside **Export Sprites** when you generated severa
 candidates and only want to export the chosen one. **All** exports every candidate.
 Exports copy the sliced files and a compact export manifest into
 `projects/<project>/exports/<asset>/`.
-When a specific variant is exported, later OpenRouter generations prefer that chosen
-raw atlas as the visual reference for future assets in the same project.
+When a specific variant is exported, later OpenRouter and OpenAI generations prefer
+that chosen raw atlas as the visual reference for future assets in the same project.
 
 For a distributable Windows executable:
 

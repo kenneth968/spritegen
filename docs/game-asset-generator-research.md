@@ -75,7 +75,7 @@ makes production color rules explicit:
   black/white, grayscale value map, or single-hue value map. The planner injects
   this into both the prompt-improvement brief and the final image prompt.
 - The desktop provider area links to `https://models.dev/?search=minim` so users
-  can find exact model IDs for providers such as OpenRouter.
+  can find exact model IDs for providers such as OpenRouter and OpenAI.
 - The desktop app can now refresh and load saved projects and saved assets from
   the selected project directory, making the workflow a reusable asset library
   instead of a single-entry form.
@@ -236,11 +236,11 @@ Model discovery now reaches beyond the static fallback list:
   the offline defaults, so users can find current model IDs without waiting for a
   package update.
 - `spritegen models --online --catalog-source models-dev --search ...` can query
-  the models.dev OpenRouter catalog directly when users find newer model names
-  there first.
-- The desktop **Refresh Models** button fetches current OpenRouter image and
-  prompt models into the suggestion pickers without overwriting any custom model
-  text the user has typed.
+  models.dev provider catalogs directly when users find newer model names there
+  first, including OpenRouter and OpenAI IDs.
+- The desktop **Refresh Models** button fetches current OpenRouter and OpenAI
+  image and prompt models into the suggestion pickers without overwriting any
+  custom model text the user has typed.
 - Offline defaults remain the fallback for no-network use and for providers that
   do not expose a model-list endpoint in this tool yet.
 
@@ -270,6 +270,9 @@ Project coherence now uses visual references where the provider supports them:
 - OpenRouter image generation sends those references as `image_url` data-url
   content parts alongside the text prompt, using the same Chat Completions path
   as image generation.
+- OpenAI image generation keeps using the Images API for simple text-only runs,
+  then switches to the Responses image-generation tool when prior raw atlases are
+  available as `input_image` references.
 - Generation manifests now record the reference images used at the run and output
   levels, making style-reference influence auditable after generation.
 - Providers without implemented multimodal image input continue using the
@@ -323,7 +326,7 @@ Variant runs can now be narrowed at export time:
 
 Chosen variants now feed future project coherence:
 
-- OpenRouter visual-reference collection checks each prior asset's
+- The OpenRouter and OpenAI visual-reference path checks each prior asset's
   `asset_export_manifest.json` before falling back to the first generated atlas.
 - When an export records `selected_variant`, the matching raw atlas in
   `generation_manifest.json` becomes the preferred reference image for later
@@ -342,3 +345,16 @@ Generation runs now produce a browser-review artifact:
 - `spritegen project generate` prints the gallery path, and the desktop output
   toolbar adds **Open Gallery** so users can inspect and compare candidates in a
   browser without digging through folders.
+
+## Twenty-third implementation slice
+
+Provider discovery and visual references now cover the main paid paths more
+evenly:
+
+- models.dev discovery is generic per provider, so OpenAI and OpenRouter can both
+  return current image and prompt model IDs through the CLI and desktop refresh.
+- OpenAI reference-image generation uses Responses image generation with
+  `input_image` parts only when references exist, preserving the simpler Images
+  API path for normal text-only calls.
+- Project manifests now reflect the same prior-asset reference list for OpenAI
+  and OpenRouter runs, including the user's exported variant preference.

@@ -19,6 +19,7 @@ Usage:
 
 from __future__ import annotations
 
+import base64
 import io
 import json
 import os
@@ -61,7 +62,13 @@ class SpriteGenerator:
         model = self.config.api_model
 
         if provider == "openai":
-            return self._call_openai(prompt, negative_prompt, size, model)
+            return self._call_openai(
+                prompt,
+                negative_prompt,
+                size,
+                model,
+                reference_images=reference_images,
+            )
         elif provider == "anthropic":
             return self._call_anthropic(prompt, negative_prompt, size)
         elif provider == "replicate":
@@ -89,6 +96,7 @@ class SpriteGenerator:
         negative_prompt: str,
         size: tuple[int, int],
         model: str,
+        reference_images: list[Path | str] | None = None,
     ) -> bytes:
         size_str = f"{size[0]}x{size[1]}"
         if model == "dall-e-3":
@@ -101,6 +109,16 @@ class SpriteGenerator:
         full_prompt = prompt
         if negative_prompt:
             full_prompt = f"{prompt}\n\nAvoid: {negative_prompt}"
+
+        image_parts = self._openai_reference_image_parts(reference_images)
+        if image_parts:
+            return self._call_openai_responses(
+                full_prompt=full_prompt,
+                size_str=size_str,
+                model=model,
+                api_key=api_key,
+                image_parts=image_parts,
+            )
 
         payload = {
             "model": model,
@@ -127,6 +145,95 @@ class SpriteGenerator:
             return self._b64_to_png(result["data"][0]["b64_json"])
         except (KeyError, IndexError, TypeError) as exc:
             raise ImageGenerationError("OpenAI response did not include b64 image data") from exc
+
+    def _call_openai_responses(
+        self,
+        full_prompt: str,
+        size_str: str,
+        model: str,
+        api_key: str,
+        image_parts: list[dict[str, str]],
+    ) -> bytes:
+        payload = {
+            "model": model,
+            "input": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "input_text", "text": full_prompt},
+                        *image_parts,
+                    ],
+                }
+            ],
+            "tools": [
+                {
+                    "type": "image_generation",
+                    "size": size_str,
+                }
+            ],
+            "tool_choice": {"type": "image_generation"},
+        }
+        request = urllib.request.Request(
+            "https://api.openai.com/v1/responses",
+            data=json.dumps(payload).encode("utf-8"),
+            method="POST",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=API_TIMEOUT_SECONDS) as resp:
+                result = json.loads(resp.read().decode("utf-8"))
+        except Exception as exc:
+            raise ImageGenerationError(f"OpenAI image generation failed: {exc}") from exc
+
+        try:
+            return self._extract_openai_response_image(result)
+        except (KeyError, TypeError) as exc:
+            raise ImageGenerationError("OpenAI response did not include b64 image data") from exc
+
+    def _openai_reference_image_parts(
+        self,
+        reference_images: list[Path | str] | None,
+    ) -> list[dict[str, str]]:
+        parts: list[dict[str, str]] = []
+        for reference_image in reference_images or []:
+            data_url = self._image_data_url(reference_image)
+            if not data_url:
+                continue
+            parts.append({"type": "input_image", "image_url": data_url})
+        return parts
+
+    def _image_data_url(self, image_path: Path | str) -> str:
+        path = Path(image_path)
+        try:
+            data = path.read_bytes()
+        except OSError:
+            return ""
+        suffix = path.suffix.lower()
+        mime_type = {
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".webp": "image/webp",
+        }.get(suffix, "image/png")
+        encoded = base64.b64encode(data).decode("ascii")
+        return f"data:{mime_type};base64,{encoded}"
+
+    def _extract_openai_response_image(self, result: dict) -> bytes:
+        for item in result.get("output", []):
+            if not isinstance(item, dict):
+                continue
+            b64_image = item.get("result") or item.get("b64_json")
+            if isinstance(b64_image, str) and b64_image:
+                return self._b64_to_png(b64_image)
+            for content in item.get("content", []):
+                if not isinstance(content, dict):
+                    continue
+                b64_image = content.get("result") or content.get("b64_json")
+                if isinstance(b64_image, str) and b64_image:
+                    return self._b64_to_png(b64_image)
+        raise KeyError("missing image_generation_call result")
 
     def _call_mock(self, prompt: str, size: tuple[int, int]) -> bytes:
         try:

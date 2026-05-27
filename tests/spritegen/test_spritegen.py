@@ -172,6 +172,86 @@ class TestOpenAIIntegration:
         assert data == buffer.getvalue()
         assert captured["authorization"] == "Bearer session-openai-key"
 
+    def test_openai_generation_uses_reference_images_via_responses(self, monkeypatch, tmp_path):
+        import base64
+        import json
+        from io import BytesIO
+
+        from PIL import Image
+        from spritegen.generator import SpriteGenerator
+        from spritegen.style import StyleManager, StylePreset
+        from spritegen.config import SpriteConfig
+
+        captured = {}
+
+        image = Image.new("RGBA", (1, 1), (255, 255, 255, 255))
+        buffer = BytesIO()
+        image.save(buffer, format="PNG")
+        encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+
+        reference = tmp_path / "reference.png"
+        Image.new("RGBA", (16, 16), (255, 0, 0, 255)).save(reference)
+
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return json.dumps(
+                    {"output": [{"type": "image_generation_call", "result": encoded}]}
+                ).encode("utf-8")
+
+        def fake_urlopen(request, timeout=None):
+            captured["url"] = request.full_url
+            captured["authorization"] = request.headers["Authorization"]
+            captured["payload"] = json.loads(request.data.decode("utf-8"))
+            return FakeResponse()
+
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+
+        style = StylePreset(
+            name="test_style",
+            base_prompt="pixel art",
+            negative_prompt="",
+            color_palette=[],
+            visual_tags=[],
+            seed="test456",
+        )
+        config = SpriteConfig(
+            api_provider="openai",
+            api_model="gpt-image-2",
+            api_key="session-openai-key",
+        )
+        generator = SpriteGenerator(
+            style=style,
+            config=config,
+            style_manager=StyleManager(),
+        )
+
+        data = generator._call_openai(
+            "test prompt",
+            "blurry",
+            (1024, 1024),
+            "gpt-image-2",
+            reference_images=[reference],
+        )
+
+        assert data == buffer.getvalue()
+        assert captured["url"] == "https://api.openai.com/v1/responses"
+        assert captured["authorization"] == "Bearer session-openai-key"
+        assert captured["payload"]["tools"] == [
+            {"type": "image_generation", "size": "1024x1024"}
+        ]
+        assert captured["payload"]["tool_choice"] == {"type": "image_generation"}
+        content = captured["payload"]["input"][0]["content"]
+        assert content[0] == {"type": "input_text", "text": "test prompt\n\nAvoid: blurry"}
+        assert content[1]["type"] == "input_image"
+        assert content[1]["image_url"].startswith("data:image/png;base64,")
+
     def test_openrouter_generation_script_uses_config_api_key(self):
         from spritegen.generator import SpriteGenerator
         from spritegen.style import StyleManager, StylePreset

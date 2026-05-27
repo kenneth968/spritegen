@@ -19,7 +19,8 @@ OPENROUTER_IMAGE_DOCS_URL = (
 )
 OPENROUTER_MODELS_URL = "https://openrouter.ai/docs/guides/overview/models"
 MODELS_DEV_API_URL = "https://models.dev/api.json"
-MODELS_DEV_OPENROUTER_SEARCH_URL = "https://models.dev/?search=minim"
+MODELS_DEV_SEARCH_URL = "https://models.dev/?search=minim"
+MODELS_DEV_OPENROUTER_SEARCH_URL = MODELS_DEV_SEARCH_URL
 MODEL_DISCOVERY_SOURCES = ("auto", "openrouter", "models-dev")
 
 
@@ -136,7 +137,7 @@ MODEL_SUGGESTIONS: tuple[ModelSuggestion, ...] = (
         model="minimax/minimax-m2.7",
         label="MiniMax M2.7 via OpenRouter",
         note="Useful OpenRouter text model candidate for prompt rewriting.",
-        source_url=MODELS_DEV_OPENROUTER_SEARCH_URL,
+        source_url=MODELS_DEV_SEARCH_URL,
     ),
 )
 
@@ -168,16 +169,26 @@ def discover_model_suggestions(
     timeout: int = 15,
     source: str = "auto",
 ) -> list[ModelSuggestion]:
-    if provider != "openrouter":
-        return []
     if role not in MODEL_ROLES:
         raise ValueError(f"Unknown model role: {role}")
     if source not in MODEL_DISCOVERY_SOURCES:
         raise ValueError(f"Unknown model discovery source: {source}")
-    if source == "openrouter":
+    if source == "openrouter" and provider == "openrouter":
         return _discover_openrouter_models(role=role, search=search, limit=limit, timeout=timeout)
+    if source == "openrouter":
+        return []
     if source == "models-dev":
-        return _discover_models_dev_openrouter_models(
+        return _discover_models_dev_models(
+            provider=provider,
+            role=role,
+            search=search,
+            limit=limit,
+            timeout=timeout,
+        )
+
+    if provider != "openrouter":
+        return _discover_models_dev_models(
+            provider=provider,
             role=role,
             search=search,
             limit=limit,
@@ -199,7 +210,8 @@ def discover_model_suggestions(
             return openrouter_results
 
     try:
-        return _discover_models_dev_openrouter_models(
+        return _discover_models_dev_models(
+            provider=provider,
             role=role,
             search=search,
             limit=limit,
@@ -294,7 +306,8 @@ def _openrouter_model_to_suggestion(
     )
 
 
-def _discover_models_dev_openrouter_models(
+def _discover_models_dev_models(
+    provider: str,
     role: str,
     search: str = "",
     limit: int = 20,
@@ -306,12 +319,12 @@ def _discover_models_dev_openrouter_models(
     except Exception as exc:
         raise ModelDiscoveryError(f"Could not fetch models.dev catalog: {exc}") from exc
 
-    provider = payload.get("openrouter")
-    if not isinstance(provider, dict):
-        raise ModelDiscoveryError("models.dev catalog did not include OpenRouter")
-    models = provider.get("models")
+    catalog = payload.get(provider)
+    if not isinstance(catalog, dict):
+        return []
+    models = catalog.get("models")
     if not isinstance(models, dict):
-        raise ModelDiscoveryError("models.dev OpenRouter catalog did not include models")
+        raise ModelDiscoveryError(f"models.dev {provider} catalog did not include models")
 
     results: list[ModelSuggestion] = []
     search_text = search.strip().lower()
@@ -319,6 +332,7 @@ def _discover_models_dev_openrouter_models(
         if not isinstance(item, dict):
             continue
         suggestion = _models_dev_model_to_suggestion(
+            provider,
             key,
             item,
             role,
@@ -336,6 +350,7 @@ def _discover_models_dev_openrouter_models(
 
 
 def _models_dev_model_to_suggestion(
+    provider: str,
     key: str,
     item: dict,
     role: str,
@@ -366,7 +381,7 @@ def _models_dev_model_to_suggestion(
     if last_updated and last_updated != release_date:
         note_parts.append(f"updated: {last_updated}")
     return ModelSuggestion(
-        provider="openrouter",
+        provider=provider,
         role=role,
         model=model_id,
         label=label,

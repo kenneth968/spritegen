@@ -157,6 +157,53 @@ def test_models_dev_discovery_uses_openrouter_model_ids(monkeypatch):
     assert results[0].source_url == "https://models.dev/?search=minimax"
 
 
+def test_models_dev_discovery_can_return_openai_model_ids(monkeypatch):
+    from spritegen import provider_models
+    from spritegen.provider_models import IMAGE_ROLE, PROMPT_ROLE, discover_model_suggestions
+
+    payload = {
+        "openai": {
+            "models": {
+                "gpt-image-1.5": {
+                    "id": "gpt-image-1.5",
+                    "name": "gpt-image-1.5",
+                    "modalities": {"input": ["text", "image"], "output": ["text", "image"]},
+                    "limit": {"context": 32000},
+                    "last_updated": "2025-11-25",
+                },
+                "gpt-5.5": {
+                    "id": "gpt-5.5",
+                    "name": "GPT-5.5",
+                    "modalities": {"input": ["text", "image"], "output": ["text"]},
+                    "limit": {"context": 400000},
+                    "last_updated": "2026-04-23",
+                },
+            }
+        }
+    }
+
+    monkeypatch.setattr(provider_models, "_fetch_json", lambda url, timeout: payload)
+
+    image_results = discover_model_suggestions(
+        "openai",
+        IMAGE_ROLE,
+        search="image",
+        source="models-dev",
+    )
+    prompt_results = discover_model_suggestions(
+        "openai",
+        PROMPT_ROLE,
+        search="gpt-5.5",
+        source="auto",
+    )
+
+    assert [suggestion.model for suggestion in image_results] == ["gpt-image-1.5"]
+    assert image_results[0].provider == "openai"
+    assert image_results[0].source_url == "https://models.dev/?search=image"
+    assert [suggestion.model for suggestion in prompt_results] == ["gpt-5.5"]
+    assert "context: 400,000 tokens" in prompt_results[0].note
+
+
 def test_cli_lists_suggested_models(monkeypatch, capsys):
     from spritegen.cli import main
 

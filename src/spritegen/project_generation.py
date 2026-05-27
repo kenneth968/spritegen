@@ -280,7 +280,7 @@ class ProjectAssetGenerator:
         provider: str,
         limit: int = 4,
     ) -> list[Path]:
-        if provider != "openrouter":
+        if provider not in {"openrouter", "openai"}:
             return []
 
         project_slug = project.slug or project.name
