@@ -224,3 +224,19 @@ Provider model setup now has shared suggestions without blocking custom IDs:
 - OpenRouter image suggestions are aligned with the documented model discovery
   path: filter the Models API by `output_modalities=image` and use
   `image_config.image_size` values such as `1K`, `2K`, or `4K` during generation.
+
+## Fifteenth implementation slice
+
+Model discovery now reaches beyond the static fallback list:
+
+- `spritegen.provider_models.discover_model_suggestions` can query OpenRouter's
+  Models API with `output_modalities=image` or `output_modalities=text` and turn
+  the response into the same suggestion objects used by the desktop app.
+- `spritegen models --online --search ...` merges live OpenRouter results with
+  the offline defaults, so users can find current model IDs without waiting for a
+  package update.
+- The desktop **Refresh Models** button fetches current OpenRouter image and
+  prompt models into the suggestion pickers without overwriting any custom model
+  text the user has typed.
+- Offline defaults remain the fallback for no-network use and for providers that
+  do not expose a model-list endpoint in this tool yet.

@@ -43,6 +43,8 @@ improvement. Each provider has suggested model IDs in a picker beside the editab
 model field, so a user can choose a known-good default or paste a newer/custom model.
 For OpenRouter model IDs, use [models.dev](https://models.dev/?search=minim) or
 OpenRouter's model list, then paste the exact model name into the matching model field.
+Use **Refresh Models** to pull the current OpenRouter model list into those pickers;
+the built-in suggestions remain available when offline.
 Paste provider keys into **Image API Key** and **Prompt API Key**. Use **Check Setup**
 to confirm the selected providers have models and keys, or **Save Local Setup** to
 remember provider defaults and keys on this computer. Keys are never written to project
@@ -94,6 +96,7 @@ spritegen project presets
 # See suggested provider model IDs for image generation or prompt improvement.
 spritegen models --provider openrouter --role image
 spritegen models --provider openrouter --role prompt
+spritegen models --provider openrouter --role prompt --online --search minimax
 
 spritegen project asset \
   --project myceliumtd \

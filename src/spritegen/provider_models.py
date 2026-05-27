@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 
 
 IMAGE_ROLE = "image"
@@ -26,6 +29,10 @@ class ModelSuggestion:
     label: str
     note: str = ""
     source_url: str = ""
+
+
+class ModelDiscoveryError(Exception):
+    pass
 
 
 MODEL_SUGGESTIONS: tuple[ModelSuggestion, ...] = (
@@ -132,6 +139,12 @@ MODEL_SUGGESTIONS: tuple[ModelSuggestion, ...] = (
 )
 
 
+def _fetch_json(url: str, timeout: int) -> dict:
+    request = Request(url, headers={"User-Agent": "spritegen/1.0"})
+    with urlopen(request, timeout=timeout) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
 def model_suggestions(provider: str, role: str) -> list[ModelSuggestion]:
     return [
         suggestion
@@ -143,6 +156,115 @@ def model_suggestions(provider: str, role: str) -> list[ModelSuggestion]:
 def default_model(provider: str, role: str) -> str:
     suggestions = model_suggestions(provider, role)
     return suggestions[0].model if suggestions else ""
+
+
+def discover_model_suggestions(
+    provider: str,
+    role: str,
+    search: str = "",
+    limit: int = 20,
+    timeout: int = 15,
+) -> list[ModelSuggestion]:
+    if provider != "openrouter":
+        return []
+    if role not in MODEL_ROLES:
+        raise ValueError(f"Unknown model role: {role}")
+    return _discover_openrouter_models(role=role, search=search, limit=limit, timeout=timeout)
+
+
+def combined_model_suggestions(
+    provider: str,
+    role: str,
+    extra: list[ModelSuggestion] | tuple[ModelSuggestion, ...] = (),
+) -> list[ModelSuggestion]:
+    suggestions: list[ModelSuggestion] = []
+    seen: set[str] = set()
+    for suggestion in [*model_suggestions(provider, role), *extra]:
+        if suggestion.model in seen:
+            continue
+        seen.add(suggestion.model)
+        suggestions.append(suggestion)
+    return suggestions
+
+
+def _discover_openrouter_models(
+    role: str,
+    search: str = "",
+    limit: int = 20,
+    timeout: int = 15,
+) -> list[ModelSuggestion]:
+    output_modality = "image" if role == IMAGE_ROLE else "text"
+    query = urlencode({"output_modalities": output_modality})
+    url = f"https://openrouter.ai/api/v1/models?{query}"
+    try:
+        payload = _fetch_json(url, timeout)
+    except Exception as exc:
+        raise ModelDiscoveryError(f"Could not fetch OpenRouter models: {exc}") from exc
+
+    data = payload.get("data", [])
+    if not isinstance(data, list):
+        raise ModelDiscoveryError("OpenRouter models response did not include a data list")
+
+    results: list[ModelSuggestion] = []
+    search_text = search.strip().lower()
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        suggestion = _openrouter_model_to_suggestion(item, role, output_modality)
+        if suggestion is None:
+            continue
+        if search_text and search_text not in _suggestion_search_text(suggestion):
+            continue
+        results.append(suggestion)
+        if len(results) >= limit:
+            break
+    return results
+
+
+def _openrouter_model_to_suggestion(
+    item: dict,
+    role: str,
+    output_modality: str,
+) -> ModelSuggestion | None:
+    model_id = str(item.get("id") or "").strip()
+    if not model_id:
+        return None
+    architecture = item.get("architecture") if isinstance(item.get("architecture"), dict) else {}
+    outputs = [
+        str(value)
+        for value in architecture.get("output_modalities", [])
+        if isinstance(value, str)
+    ]
+    if output_modality not in outputs:
+        return None
+    label = str(item.get("name") or model_id)
+    description = str(item.get("description") or "").strip()
+    note_parts = [f"Outputs: {','.join(outputs)}"]
+    context_length = item.get("context_length")
+    if isinstance(context_length, int) and context_length > 0:
+        note_parts.append(f"context: {context_length:,} tokens")
+    if description:
+        note_parts.append(description[:160])
+    return ModelSuggestion(
+        provider="openrouter",
+        role=role,
+        model=model_id,
+        label=label,
+        note="; ".join(note_parts),
+        source_url=OPENROUTER_MODELS_URL,
+    )
+
+
+def _suggestion_search_text(suggestion: ModelSuggestion) -> str:
+    return " ".join(
+        [
+            suggestion.provider,
+            suggestion.role,
+            suggestion.model,
+            suggestion.label,
+            suggestion.note,
+        ]
+    ).lower()
 
 
 def model_source_urls(

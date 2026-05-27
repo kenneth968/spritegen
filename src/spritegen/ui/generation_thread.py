@@ -7,8 +7,43 @@ from pathlib import Path
 from PySide6.QtCore import QThread, Signal
 
 from ..enhancement import PromptEnhancer
+from ..provider_models import (
+    IMAGE_ROLE,
+    PROMPT_ROLE,
+    discover_model_suggestions,
+)
 from ..project_generation import ProjectAssetGenerator
 from ..projects import AssetSpec, AssetTypeSpec, ProjectSpec, ProjectStore, PromptPlanner
+
+
+class ModelDiscoveryThread(QThread):
+    finished = Signal(object)
+
+    def __init__(
+        self,
+        image_provider: str,
+        prompt_provider: str,
+        parent=None,
+    ) -> None:
+        super().__init__(parent)
+        self.image_provider = image_provider
+        self.prompt_provider = prompt_provider
+
+    def run(self) -> None:
+        suggestions = {}
+        errors = []
+        for role, provider in (
+            (IMAGE_ROLE, self.image_provider),
+            (PROMPT_ROLE, self.prompt_provider),
+        ):
+            try:
+                discovered = discover_model_suggestions(provider, role, limit=30)
+            except Exception as exc:
+                errors.append(f"{provider} {role}: {exc}")
+                continue
+            if discovered:
+                suggestions[(role, provider)] = discovered
+        self.finished.emit({"suggestions": suggestions, "errors": errors})
 
 
 class ProjectEnhancementThread(QThread):

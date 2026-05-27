@@ -17,9 +17,11 @@ from .provider_models import (
     IMAGE_ROLE,
     MODEL_ROLES,
     PROMPT_ROLE,
+    ModelDiscoveryError,
+    combined_model_suggestions,
     default_model,
+    discover_model_suggestions,
     model_source_urls,
-    model_suggestions,
 )
 from .project_export import ProjectAssetExporter
 from .project_generation import ProjectAssetGenerator
@@ -188,7 +190,37 @@ def cmd_models(args: argparse.Namespace) -> int:
     elif args.provider == "pollinations":
         provider_label = "Pollinations"
 
-    suggestions = model_suggestions(args.provider, args.role)
+    online_suggestions = []
+    if args.online:
+        try:
+            online_suggestions = discover_model_suggestions(
+                args.provider,
+                args.role,
+                search=args.search,
+                limit=args.limit,
+            )
+        except ModelDiscoveryError as exc:
+            print(f"Online model discovery failed: {exc}")
+
+    suggestions = combined_model_suggestions(
+        args.provider,
+        args.role,
+        online_suggestions,
+    )
+    if args.search and not args.online:
+        search_text = args.search.lower()
+        suggestions = [
+            suggestion
+            for suggestion in suggestions
+            if search_text
+            in " ".join(
+                [
+                    suggestion.model,
+                    suggestion.label,
+                    suggestion.note,
+                ]
+            ).lower()
+        ]
     print(f"{provider_label} {role_label} model suggestions:")
     if not suggestions:
         print("  - none")
@@ -714,6 +746,22 @@ def main() -> int:
         default=IMAGE_ROLE,
         choices=MODEL_ROLES,
         help="Model role: image generation or prompt improvement",
+    )
+    models_parser.add_argument(
+        "--online",
+        action="store_true",
+        help="Fetch provider model lists when supported, then merge with offline suggestions",
+    )
+    models_parser.add_argument(
+        "--search",
+        default="",
+        help="Filter model suggestions by text, such as minimax or image",
+    )
+    models_parser.add_argument(
+        "--limit",
+        type=int,
+        default=20,
+        help="Maximum online model suggestions to fetch",
     )
 
     evo_parser = subparsers.add_parser(

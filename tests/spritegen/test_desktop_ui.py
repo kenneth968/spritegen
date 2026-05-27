@@ -543,6 +543,58 @@ def test_main_window_model_suggestions_are_editable(tmp_path):
     app.processEvents()
 
 
+def test_main_window_refreshes_online_model_suggestions_without_overwriting_text(tmp_path):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    pytest.importorskip("PySide6")
+
+    from PySide6.QtWidgets import QApplication
+    from spritegen.provider_models import IMAGE_ROLE, PROMPT_ROLE, ModelSuggestion
+    from spritegen.user_settings import UserSettingsStore
+    from spritegen.ui.main_window import MainWindow
+
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow(settings_store=UserSettingsStore(tmp_path / "settings.json"))
+    window._set_combo_value(window.image_provider_combo, "openrouter")
+    window._set_combo_value(window.prompt_provider_combo, "openrouter")
+    window._on_image_provider_changed()
+    window._on_prompt_provider_changed()
+    window.image_model_edit.setText("custom/image-model")
+    window.prompt_model_edit.setText("custom/prompt-model")
+
+    window._on_model_discovery_finished(
+        {
+            "suggestions": {
+                (IMAGE_ROLE, "openrouter"): [
+                    ModelSuggestion(
+                        provider="openrouter",
+                        role=IMAGE_ROLE,
+                        model="live/image-model",
+                        label="Live Image",
+                    )
+                ],
+                (PROMPT_ROLE, "openrouter"): [
+                    ModelSuggestion(
+                        provider="openrouter",
+                        role=PROMPT_ROLE,
+                        model="live/prompt-model",
+                        label="Live Prompt",
+                    )
+                ],
+            },
+            "errors": [],
+        }
+    )
+
+    assert window.image_model_suggestions.findData("live/image-model") >= 0
+    assert window.prompt_model_suggestions.findData("live/prompt-model") >= 0
+    assert window.image_model_edit.text() == "custom/image-model"
+    assert window.prompt_model_edit.text() == "custom/prompt-model"
+    assert "Loaded 2 online model suggestion" in window.status_label.text()
+
+    window.close()
+    app.processEvents()
+
+
 def test_main_window_checks_provider_setup_without_network(tmp_path, monkeypatch):
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     pytest.importorskip("PySide6")

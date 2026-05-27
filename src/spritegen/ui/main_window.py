@@ -32,7 +32,13 @@ from PySide6.QtWidgets import (
 )
 
 from ..layouts import PRESET_LAYOUTS, AssetLayout
-from ..provider_models import IMAGE_ROLE, PROMPT_ROLE, default_model, model_suggestions
+from ..provider_models import (
+    IMAGE_ROLE,
+    PROMPT_ROLE,
+    ModelSuggestion,
+    combined_model_suggestions,
+    default_model,
+)
 from ..project_export import ProjectAssetExporter
 from ..projects import (
     AssetSpec,
@@ -54,6 +60,7 @@ from ..workflow_presets import get_workflow_preset, list_workflow_presets
 from .generation_thread import (
     AssetTypeEnhancementThread,
     EnhancementThread,
+    ModelDiscoveryThread,
     ProjectEnhancementThread,
     ProjectGenerationThread,
 )
@@ -221,6 +228,7 @@ class MainWindow(QWidget):
         self._current_project: ProjectSpec | None = None
         self._settings_store = settings_store or UserSettingsStore()
         self._user_settings = self._settings_store.load()
+        self._online_model_suggestions: dict[tuple[str, str], list[ModelSuggestion]] = {}
         self._project_root = str(Path("projects").absolute())
         self._last_output_dir = str(Path("projects").absolute())
         self._setup_ui()
@@ -493,9 +501,12 @@ class MainWindow(QWidget):
         self.save_provider_settings_btn.clicked.connect(self._on_save_provider_settings)
         self.clear_saved_keys_btn = QPushButton("Clear Saved Keys")
         self.clear_saved_keys_btn.clicked.connect(self._on_clear_saved_keys)
+        self.refresh_models_btn = QPushButton("Refresh Models")
+        self.refresh_models_btn.clicked.connect(self._on_refresh_models)
         provider_actions.addWidget(self.check_provider_setup_btn)
         provider_actions.addWidget(self.save_provider_settings_btn)
         provider_actions.addWidget(self.clear_saved_keys_btn)
+        provider_actions.addWidget(self.refresh_models_btn)
         config_layout.addRow("Local Setup:", provider_actions)
 
         layout.addWidget(config_group)
@@ -601,7 +612,8 @@ class MainWindow(QWidget):
         )
         combo.blockSignals(True)
         combo.clear()
-        for suggestion in model_suggestions(provider, role):
+        online = self._online_model_suggestions.get((role, provider), [])
+        for suggestion in combined_model_suggestions(provider, role, online):
             combo.addItem(f"{suggestion.label} ({suggestion.model})", suggestion.model)
         combo.blockSignals(False)
 
@@ -877,6 +889,34 @@ class MainWindow(QWidget):
         self._settings_store.save(self._user_settings)
         self._refresh_api_key_fields()
         self.status_label.setText("Cleared saved local API keys")
+
+    def _on_refresh_models(self) -> None:
+        self._set_busy(True, "Refreshing provider model lists...")
+        self._thread = ModelDiscoveryThread(
+            image_provider=self.image_provider_combo.currentData(),
+            prompt_provider=self.prompt_provider_combo.currentData(),
+        )
+        self._thread.finished.connect(self._on_model_discovery_finished)
+        self._thread.start()
+
+    def _on_model_discovery_finished(self, result: dict) -> None:
+        suggestions = result.get("suggestions", {})
+        for key, values in suggestions.items():
+            self._online_model_suggestions[key] = values
+        self._refresh_model_suggestions(IMAGE_ROLE, self.image_provider_combo.currentData())
+        self._refresh_model_suggestions(PROMPT_ROLE, self.prompt_provider_combo.currentData())
+        count = sum(len(values) for values in suggestions.values())
+        errors = result.get("errors", [])
+        if count:
+            status = f"Loaded {count} online model suggestion(s)"
+            if errors:
+                status += f"; {len(errors)} provider refresh issue(s)"
+        elif errors:
+            status = "Could not refresh model lists: " + "; ".join(errors)
+        else:
+            status = "No online model suggestions available for selected providers"
+        self._set_busy(False, status)
+        self._thread = None
 
     def _on_improve_project(self) -> None:
         try:
@@ -1316,6 +1356,7 @@ class MainWindow(QWidget):
         self.check_provider_setup_btn.setEnabled(not busy)
         self.save_provider_settings_btn.setEnabled(not busy)
         self.clear_saved_keys_btn.setEnabled(not busy)
+        self.refresh_models_btn.setEnabled(not busy)
         self.progress_bar.setRange(0, 0 if busy else 1)
         self.progress_bar.setValue(0 if busy else 1)
         self.status_label.setText(status)
