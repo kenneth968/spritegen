@@ -52,6 +52,8 @@ Use **Improve Project**, **Improve Type Rules**, and **Enhance Asset** to run th
 prompt-improvement model at the right level of the workflow before generating images.
 Use **Preview Prompts** to inspect the exact image prompts, including prior saved
 assets that will be used as style and universe anchors, before spending image tokens.
+Use **Workflow / Apply Preset** to fill common asset-type settings such as four-stage
+towers or a full-body character plus eight emotion heads.
 Use **Custom Layout** to add reusable equal-cell atlases, contact sheets, tile grids,
 or pose sheets to the current project without leaving the app.
 The output panel previews both the raw generated atlas and the sliced sprite files from
@@ -75,16 +77,17 @@ reusable JSON specs under `projects/<slug>/` and produces image prompts for ever
 ```bash
 spritegen project init \
   --name MyceliumTD \
+  --preset tower_4_stage \
   --summary "Fungal tower defense game" \
   --style "clean cartoon tower defense sprites, bold outlines, bright readable shapes" \
   --context "Friendly fungal towers defending a forest floor from tiny slime enemies" \
   --palette "#8B4513,#228B22,#9932CC,#00FA9A" \
   --color-mode limited_palette \
   --color-prompt "Keep values readable when recolored by tower upgrade tier" \
-  --remove-background \
-  --asset-type tower \
-  --asset-type-context "Every tower has four upgrade stages and should read clearly at small game size" \
-  --evolutions 4
+  --remove-background
+
+# See available presets, such as tower_4_stage and character_emotion_atlas.
+spritegen project presets
 
 spritegen project asset \
   --project myceliumtd \

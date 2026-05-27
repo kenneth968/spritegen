@@ -357,6 +357,32 @@ def test_main_window_adds_project_grid_layout(tmp_path):
     app.processEvents()
 
 
+def test_main_window_applies_character_workflow_preset(tmp_path):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    pytest.importorskip("PySide6")
+
+    from PySide6.QtWidgets import QApplication
+    from spritegen.user_settings import UserSettingsStore
+    from spritegen.ui.main_window import MainWindow
+
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow(settings_store=UserSettingsStore(tmp_path / "settings.json"))
+    index = window.workflow_preset_combo.findData("character_emotion_atlas")
+    assert index >= 0
+    window.workflow_preset_combo.setCurrentIndex(index)
+
+    window._on_apply_workflow_preset()
+
+    assert window.asset_type_edit.text() == "character"
+    assert window.evolutions_spin.value() == 1
+    assert window.layout_combo.currentData() == "character_full_plus_8_emotions"
+    assert "same character identity" in window.asset_type_context_edit.text().lower()
+    assert "Applied workflow preset" in window.status_label.text()
+
+    window.close()
+    app.processEvents()
+
+
 def test_main_window_previews_prompt_plan_with_prior_assets(tmp_path):
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     pytest.importorskip("PySide6")

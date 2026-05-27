@@ -195,3 +195,17 @@ Project coherence is now easier to inspect before generation:
 - The desktop **Preview Prompts** button writes the current prompt plan and shows
   the exact prompts, including prior-asset anchors, before a user spends image
   generation tokens.
+
+## Thirteenth implementation slice
+
+Common game-asset workflows are now presets:
+
+- `spritegen.workflow_presets` defines shared recipes for four-stage towers,
+  character emotion atlases, four-variant atlases, single props, tiles, and UI
+  icons.
+- `spritegen project presets` lists available presets, and
+  `spritegen project init --preset ...` applies one while still allowing explicit
+  overrides.
+- The desktop Asset panel exposes the same recipes through **Workflow** and
+  **Apply Preset**, filling the asset type, reusable rules, evolution settings,
+  stage labels, and default layout.

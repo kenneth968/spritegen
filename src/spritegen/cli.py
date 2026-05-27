@@ -29,6 +29,7 @@ from .projects import (
     apply_asset_type_enhancement,
     apply_project_enhancement,
 )
+from .workflow_presets import get_workflow_preset, list_workflow_presets
 from . import (
     SpriteConfig,
     SpriteDefinition,
@@ -186,6 +187,17 @@ def cmd_project(args: argparse.Namespace) -> int:
     store = ProjectStore(root=args.project_root)
     planner = PromptPlanner()
 
+    if args.project_command == "presets":
+        print("Available workflow presets:")
+        for preset in list_workflow_presets():
+            print(f"  - {preset.key}: {preset.label}")
+            print(f"    {preset.description}")
+            print(
+                f"    asset_type={preset.asset_type}, "
+                f"evolutions={preset.evolution_count}, layout={preset.default_layout}"
+            )
+        return 0
+
     if args.project_command == "layout":
         project = store.load_project(args.project)
 
@@ -254,10 +266,24 @@ def cmd_project(args: argparse.Namespace) -> int:
         return 1
 
     if args.project_command == "init":
-        if args.evolutions < 1:
+        preset = get_workflow_preset(args.preset) if args.preset else None
+        asset_type_name = args.asset_type or (preset.asset_type if preset else "tower")
+        asset_type_context = args.asset_type_context
+        if asset_type_context is None and preset:
+            asset_type_context = preset.shared_prompt
+        evolutions = args.evolutions
+        if evolutions is None:
+            evolutions = preset.evolution_count if preset else 4
+        evolution_context = args.evolution_context
+        if evolution_context is None and preset:
+            evolution_context = preset.evolution_prompt
+        evolution_labels = list(preset.evolution_labels) if preset else []
+        layout_name = args.layout or (preset.default_layout if preset else "single_sprite")
+
+        if evolutions < 1:
             print("--evolutions must be at least 1")
             return 1
-        get_layout(args.layout)
+        get_layout(layout_name)
         palette = [c.strip() for c in args.palette.split(",") if c.strip()]
         project = ProjectSpec(
             name=args.name,
@@ -280,13 +306,14 @@ def cmd_project(args: argparse.Namespace) -> int:
         )
         project.add_asset_type(
             AssetTypeSpec(
-                name=args.asset_type,
-                shared_prompt=args.asset_type_context or "",
+                name=asset_type_name,
+                shared_prompt=asset_type_context or "",
                 evolution=EvolutionPlan(
-                    count=args.evolutions,
-                    shared_prompt=args.evolution_context or "",
+                    count=evolutions,
+                    labels=evolution_labels,
+                    shared_prompt=evolution_context or "",
                 ),
-                default_layout=args.layout,
+                default_layout=layout_name,
             )
         )
         path = store.save_project(project)
@@ -694,6 +721,11 @@ def main() -> int:
         required=True,
     )
 
+    project_subparsers.add_parser(
+        "presets",
+        help="List built-in workflow presets for common game-asset shapes",
+    )
+
     project_layout = project_subparsers.add_parser(
         "layout",
         help="Manage project-specific atlas layouts",
@@ -749,6 +781,11 @@ def main() -> int:
     project_init.add_argument("--prompt-provider", default="openai")
     project_init.add_argument("--prompt-model", default="gpt-5.5")
     project_init.add_argument(
+        "--preset",
+        choices=sorted(preset.key for preset in list_workflow_presets()),
+        help="Apply a common asset workflow preset",
+    )
+    project_init.add_argument(
         "--color-mode",
         default="full_color",
         choices=sorted(COLOR_TREATMENT_MODES),
@@ -765,11 +802,11 @@ def main() -> int:
         default=True,
         help="Whether generated layout slices should have simple backgrounds removed",
     )
-    project_init.add_argument("--asset-type", default="tower")
-    project_init.add_argument("--asset-type-context", default="")
-    project_init.add_argument("--evolutions", type=int, default=4)
-    project_init.add_argument("--evolution-context", default="")
-    project_init.add_argument("--layout", default="single_sprite")
+    project_init.add_argument("--asset-type")
+    project_init.add_argument("--asset-type-context")
+    project_init.add_argument("--evolutions", type=int)
+    project_init.add_argument("--evolution-context")
+    project_init.add_argument("--layout")
 
     project_asset = project_subparsers.add_parser(
         "asset",

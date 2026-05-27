@@ -20,6 +20,7 @@ from spritegen.enhancement import PromptEnhancer
 from spritegen.project_export import ProjectAssetExporter
 from spritegen.project_generation import ProjectAssetGenerator
 from spritegen.slicer import Slicer
+from spritegen.workflow_presets import get_workflow_preset, list_workflow_presets
 
 
 def test_character_emotion_layout_regions_are_exact():
@@ -35,6 +36,22 @@ def test_character_emotion_layout_regions_are_exact():
     assert layout.regions[-1].x == 768
     assert layout.regions[-1].y == 768
     assert layout.validate() == []
+
+
+def test_workflow_presets_create_asset_type_specs():
+    preset_keys = {preset.key for preset in list_workflow_presets()}
+    assert {"tower_4_stage", "character_emotion_atlas", "ui_icon"} <= preset_keys
+
+    tower = get_workflow_preset("tower_4_stage").to_asset_type()
+    assert tower.name == "tower"
+    assert tower.evolution.count == 4
+    assert tower.evolution.labels == ["base", "upgraded", "advanced", "ultimate"]
+    assert tower.default_layout == "single_sprite"
+
+    character = get_workflow_preset("character_emotion_atlas").to_asset_type()
+    assert character.name == "character"
+    assert character.evolution.count == 1
+    assert character.default_layout == "character_full_plus_8_emotions"
 
 
 def test_project_store_round_trips_prompt_plan(tmp_path):

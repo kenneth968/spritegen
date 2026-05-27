@@ -49,6 +49,7 @@ from ..projects import (
     slugify,
 )
 from ..user_settings import UserSettings, UserSettingsStore
+from ..workflow_presets import get_workflow_preset, list_workflow_presets
 from .generation_thread import (
     AssetTypeEnhancementThread,
     EnhancementThread,
@@ -332,6 +333,16 @@ class MainWindow(QWidget):
 
         asset_group = QGroupBox("Asset")
         asset_layout = QFormLayout(asset_group)
+
+        preset_row = QHBoxLayout()
+        self.workflow_preset_combo = QComboBox()
+        for preset in list_workflow_presets():
+            self.workflow_preset_combo.addItem(preset.label, preset.key)
+        self.apply_workflow_preset_btn = QPushButton("Apply Preset")
+        self.apply_workflow_preset_btn.clicked.connect(self._on_apply_workflow_preset)
+        preset_row.addWidget(self.workflow_preset_combo, 1)
+        preset_row.addWidget(self.apply_workflow_preset_btn)
+        asset_layout.addRow("Workflow:", preset_row)
 
         self.asset_type_edit = QLineEdit("tower")
         asset_layout.addRow("Type:", self.asset_type_edit)
@@ -701,6 +712,15 @@ class MainWindow(QWidget):
             self.status_label.setText(f"Saved {project.name} / {asset.name}")
         except Exception as exc:
             QMessageBox.warning(self, "Save Failed", str(exc))
+
+    def _on_apply_workflow_preset(self) -> None:
+        try:
+            preset = get_workflow_preset(self.workflow_preset_combo.currentData())
+            asset_type = preset.to_asset_type()
+            self._apply_asset_type_spec(asset_type)
+            self.status_label.setText(f"Applied workflow preset: {preset.label}")
+        except Exception as exc:
+            QMessageBox.warning(self, "Preset Failed", str(exc))
 
     def _on_preview_prompts(self) -> None:
         try:
@@ -1260,6 +1280,7 @@ class MainWindow(QWidget):
         self.improve_type_btn.setEnabled(not busy)
         self.enhance_btn.setEnabled(not busy)
         self.generate_btn.setEnabled(not busy)
+        self.apply_workflow_preset_btn.setEnabled(not busy)
         self.preview_prompts_btn.setEnabled(not busy)
         self.add_grid_layout_btn.setEnabled(not busy)
         self.export_sprites_btn.setEnabled(not busy)

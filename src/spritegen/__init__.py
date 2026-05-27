@@ -37,6 +37,7 @@ from .projects import (
 from .enhancement import PromptEnhancer
 from .project_export import ProjectAssetExporter, ProjectExportResult
 from .project_generation import ProjectAssetGenerator, ProjectGenerationResult
+from .workflow_presets import WorkflowPreset, get_workflow_preset, list_workflow_presets
 from . import mycomed
 
 __all__ = [
@@ -64,6 +65,9 @@ __all__ = [
     "ProjectExportResult",
     "ProjectAssetGenerator",
     "ProjectGenerationResult",
+    "WorkflowPreset",
+    "get_workflow_preset",
+    "list_workflow_presets",
     "create_mycomed_style",
     "mycomed",
 ]
