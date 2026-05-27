@@ -86,7 +86,7 @@ class SpriteGenerator:
         if model == "dall-e-3":
             size_str = "1024x1024"
 
-        api_key = os.environ.get("OPENAI_API_KEY", "")
+        api_key = self.config.api_key or os.environ.get("OPENAI_API_KEY", "")
         if not api_key:
             raise ImageGenerationError("OPENAI_API_KEY is required for OpenAI image generation")
 
@@ -318,7 +318,11 @@ import base64
 import sys
 import os
 
-api_key = os.environ.get("OPENROUTER_API_KEY", "") or os.environ.get("OPENAI_API_KEY", "")
+api_key = (
+    os.environ.get("SPRITEGEN_SESSION_API_KEY", "")
+    or os.environ.get("OPENROUTER_API_KEY", "")
+    or os.environ.get("OPENAI_API_KEY", "")
+)
 if not api_key:
     print("ERROR:AUTH:No OPENROUTER_API_KEY or OPENAI_API_KEY found in environment")
     sys.exit(1)
@@ -379,7 +383,12 @@ except Exception as e:
     print(f"ERROR:UNEXPECTED:" + type(e).__name__ + ":" + str(e)[:200])
     sys.exit(1)
 """
-        result = self._run_python_script(script)
+        env = (
+            {"SPRITEGEN_SESSION_API_KEY": self.config.api_key}
+            if self.config.api_key
+            else None
+        )
+        result = self._run_python_script(script, env=env)
         if result.startswith("ERROR:"):
             raise ImageGenerationError(result)
         return self._b64_to_png(result)
@@ -432,13 +441,18 @@ except Exception as e:
     ) -> bytes:
         raise ImageGenerationError("Replicate image generation not yet implemented")
 
-    def _run_python_script(self, script: str) -> str:
+    def _run_python_script(self, script: str, env: dict[str, str] | None = None) -> str:
         try:
+            run_env = None
+            if env:
+                run_env = os.environ.copy()
+                run_env.update(env)
             result = subprocess.run(
                 [sys.executable, "-c", script],
                 capture_output=True,
                 text=True,
                 timeout=API_TIMEOUT_SECONDS,
+                env=run_env,
             )
             if result.returncode != 0:
                 error_msg = (

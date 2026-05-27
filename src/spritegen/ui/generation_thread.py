@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal
@@ -159,9 +158,6 @@ class ProjectGenerationThread(QThread):
 
     def run(self) -> None:
         try:
-            if self.api_key:
-                self._set_provider_key()
-
             store = ProjectStore(self.project_root)
             known_assets = store.load_assets(self.project)
             self.progress.emit("Building prompt packets...")
@@ -171,14 +167,9 @@ class ProjectGenerationThread(QThread):
                 known_assets=known_assets,
                 provider=self.provider,
                 model=self.model,
+                api_key=self.api_key,
                 output_root=Path(self.output_root),
             )
             self.finished.emit(result)
         except Exception as exc:
             self.error.emit(str(exc))
-
-    def _set_provider_key(self) -> None:
-        if self.provider == "openai":
-            os.environ["OPENAI_API_KEY"] = self.api_key or ""
-        elif self.provider == "openrouter":
-            os.environ["OPENROUTER_API_KEY"] = self.api_key or ""

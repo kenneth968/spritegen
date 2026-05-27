@@ -63,6 +63,7 @@ class ProjectAssetGenerator:
         known_assets: list[AssetSpec] | None = None,
         provider: str | None = None,
         model: str | None = None,
+        api_key: str | None = None,
         output_root: Path | str | None = None,
         remove_background: bool | None = None,
     ) -> ProjectGenerationResult:
@@ -78,6 +79,7 @@ class ProjectAssetGenerator:
             packets=packets,
             provider=provider,
             model=model,
+            api_key=api_key,
             output_root=output_root,
             remove_background=remove_background,
         )
@@ -89,6 +91,7 @@ class ProjectAssetGenerator:
         packets: list[PromptPacket],
         provider: str | None = None,
         model: str | None = None,
+        api_key: str | None = None,
         output_root: Path | str | None = None,
         remove_background: bool | None = None,
     ) -> ProjectGenerationResult:
@@ -109,7 +112,13 @@ class ProjectAssetGenerator:
             else remove_background
         )
 
-        generator = self._create_generator(project, image_provider, image_model, base_output)
+        generator = self._create_generator(
+            project,
+            image_provider,
+            image_model,
+            base_output,
+            api_key=api_key,
+        )
         outputs: list[GeneratedPacketOutput] = []
 
         for packet in packets:
@@ -177,6 +186,7 @@ class ProjectAssetGenerator:
         provider: str,
         model: str,
         output_dir: Path,
+        api_key: str | None = None,
     ) -> SpriteGenerator:
         style = StylePreset(
             name=f"{project.slug or project.name}_project",
@@ -189,6 +199,7 @@ class ProjectAssetGenerator:
         config = SpriteConfig(
             api_provider=provider,
             api_model=model,
+            api_key=api_key,
             sheet_width=1024,
             sheet_height=1024,
             sprite_width=1024,

@@ -114,6 +114,99 @@ class TestSpriteMetadata:
 
 
 class TestOpenAIIntegration:
+    def test_openai_generation_uses_config_api_key(self, monkeypatch):
+        import base64
+        import json
+        from io import BytesIO
+
+        from PIL import Image
+        from spritegen.generator import SpriteGenerator
+        from spritegen.style import StyleManager, StylePreset
+        from spritegen.config import SpriteConfig
+
+        captured = {}
+
+        image = Image.new("RGBA", (1, 1), (255, 255, 255, 255))
+        buffer = BytesIO()
+        image.save(buffer, format="PNG")
+        encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return json.dumps({"data": [{"b64_json": encoded}]}).encode("utf-8")
+
+        def fake_urlopen(request, timeout=None):
+            captured["authorization"] = request.headers["Authorization"]
+            return FakeResponse()
+
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+
+        style = StylePreset(
+            name="test_style",
+            base_prompt="pixel art",
+            negative_prompt="",
+            color_palette=[],
+            visual_tags=[],
+            seed="test456",
+        )
+        config = SpriteConfig(
+            api_provider="openai",
+            api_model="gpt-image-2",
+            api_key="session-openai-key",
+        )
+        generator = SpriteGenerator(
+            style=style,
+            config=config,
+            style_manager=StyleManager(),
+        )
+
+        data = generator._call_openai("test prompt", "", (1024, 1024), "gpt-image-2")
+
+        assert data == buffer.getvalue()
+        assert captured["authorization"] == "Bearer session-openai-key"
+
+    def test_openrouter_generation_script_uses_config_api_key(self):
+        from spritegen.generator import SpriteGenerator
+        from spritegen.style import StyleManager, StylePreset
+        from spritegen.config import SpriteConfig
+
+        captured = {}
+
+        style = StylePreset(
+            name="test_style",
+            base_prompt="pixel art",
+            negative_prompt="",
+            color_palette=[],
+            visual_tags=[],
+            seed="test456",
+        )
+        config = SpriteConfig(
+            api_provider="openrouter",
+            api_model="google/test",
+            api_key="session-openrouter-key",
+        )
+        generator = SpriteGenerator(style=style, config=config, style_manager=StyleManager())
+
+        def fake_run_python_script(script, env=None):
+            captured["script"] = script
+            captured["env"] = env
+            return ""
+
+        generator._run_python_script = fake_run_python_script
+        generator._b64_to_png = lambda value: b""
+
+        generator._call_openrouter("test prompt", "", (1024, 1024), "google/test")
+
+        assert "session-openrouter-key" not in captured["script"]
+        assert captured["env"] == {"SPRITEGEN_SESSION_API_KEY": "session-openrouter-key"}
+
     def test_openrouter_image_config_uses_supported_keys(self):
         from spritegen.generator import SpriteGenerator
         from spritegen.style import StyleManager, StylePreset

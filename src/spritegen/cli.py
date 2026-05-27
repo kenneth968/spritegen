@@ -343,6 +343,7 @@ def cmd_project(args: argparse.Namespace) -> int:
             packets=packets,
             provider=args.provider,
             model=args.model,
+            api_key=args.api_key,
             output_root=args.output_root,
             remove_background=args.remove_background,
         )
@@ -687,6 +688,7 @@ def main() -> int:
     project_generate.add_argument("--asset", required=True, help="Asset slug or JSON path")
     project_generate.add_argument("--provider")
     project_generate.add_argument("--model")
+    project_generate.add_argument("--api-key", help="Session-only image API key override")
     project_generate.add_argument("--output-root")
     project_generate.add_argument(
         "--remove-background",

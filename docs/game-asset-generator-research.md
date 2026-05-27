@@ -110,3 +110,16 @@ Post-processing is now explicit project configuration:
   the same boolean flag.
 - The desktop app exposes the same setting as a project checkbox, and generated
   manifests record the effective background-removal choice.
+
+## Sixth implementation slice
+
+API keys are now session inputs instead of only environment variables:
+
+- `SpriteConfig` can carry a session-only `api_key` for image generation.
+- OpenAI and OpenRouter image calls use that key before falling back to
+  `OPENAI_API_KEY` / `OPENROUTER_API_KEY`.
+- `spritegen project generate --api-key ...` passes a one-run image key without
+  writing it to project JSON.
+- The desktop app labels the shared key field as **Session API Key** and passes
+  it through project generation directly instead of mutating process environment
+  variables.

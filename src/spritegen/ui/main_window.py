@@ -326,7 +326,7 @@ class MainWindow(QWidget):
 
         self.api_key_override = QLineEdit()
         self.api_key_override.setEchoMode(QLineEdit.Password)
-        config_layout.addRow("API Key:", self.api_key_override)
+        config_layout.addRow("Session API Key:", self.api_key_override)
 
         model_help = QLabel(
             '<a href="https://models.dev/?search=minim">Find provider model IDs</a>'

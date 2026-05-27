@@ -40,6 +40,8 @@ a local `.venv`, installs the desktop dependencies, and opens the app.
 The desktop app exposes separate provider/model fields for image generation and prompt
 improvement. For OpenRouter model IDs, use [models.dev](https://models.dev/?search=minim)
 or OpenRouter's model list, then paste the exact model name into the matching model field.
+Paste an OpenAI or OpenRouter key into **Session API Key** to use it without saving it
+in project JSON, or set `OPENAI_API_KEY` / `OPENROUTER_API_KEY` in your environment.
 Saved projects and assets can be reopened from the Project and Asset selectors, so new
 generations can reuse the same universe, style, palette, color mode, and prior assets.
 Use **Improve Project**, **Improve Type Rules**, and **Enhance Asset** to run the
@@ -89,6 +91,12 @@ spritegen project enhance --project myceliumtd --asset puffball
 # Generate all prompt packets for the asset, save raw images, slice layout regions,
 # and write a generation_manifest.json beside the output.
 spritegen project generate --project myceliumtd --asset puffball
+```
+
+For one-off CLI runs without environment variables, pass a session-only key:
+
+```bash
+spritegen project generate --project myceliumtd --asset puffball --api-key sk-or-...
 ```
 
 Use `--no-remove-background` on `project init` for assets where the generated

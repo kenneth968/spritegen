@@ -42,6 +42,7 @@ class SpriteConfig:
         "openai", "anthropic", "replicate", "mock", "huggingface", "pollinations", "openrouter"
     ] = "openai"
     api_model: str = "dall-e-3"
+    api_key: str | None = None
     style_file: Path | None = None
 
     def get_layout(self, sprite_count: int) -> SheetLayout:

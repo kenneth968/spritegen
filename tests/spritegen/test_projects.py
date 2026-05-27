@@ -192,6 +192,49 @@ def test_project_generator_saves_manifest_and_slices(tmp_path):
     assert result.outputs[0].slices[0].exists()
 
 
+def test_project_generator_passes_session_api_key_to_image_generator(tmp_path, monkeypatch):
+    seen = {}
+
+    def fake_generate_raw_image(self, prompt, negative_prompt, width, height):
+        seen["api_key"] = self.config.api_key
+        from PIL import Image
+        from io import BytesIO
+
+        image = Image.new("RGBA", (width, height), (255, 255, 255, 255))
+        buffer = BytesIO()
+        image.save(buffer, format="PNG")
+        return buffer.getvalue()
+
+    monkeypatch.setattr(
+        "spritegen.project_generation.SpriteGenerator.generate_raw_image",
+        fake_generate_raw_image,
+    )
+
+    project = ProjectSpec(
+        name="MyceliumTD",
+        summary="Fungal tower defense game",
+        visual_style="clean cartoon sprites",
+        shared_context="Forest floor fungi.",
+    )
+    project.provider_defaults.image_provider = "openai"
+    project.provider_defaults.image_model = "gpt-image-2"
+    project.add_asset_type(AssetTypeSpec(name="tower", shared_prompt="Readable towers."))
+    asset = AssetSpec(
+        name="Puffball",
+        asset_type="tower",
+        description="Spore cloud tower.",
+    )
+
+    ProjectAssetGenerator(ProjectStore(tmp_path / "projects")).generate(
+        project=project,
+        asset=asset,
+        output_root=tmp_path / "generated",
+        api_key="session-image-key",
+    )
+
+    assert seen["api_key"] == "session-image-key"
+
+
 def test_project_generator_can_keep_backgrounds(tmp_path):
     from PIL import Image
 
