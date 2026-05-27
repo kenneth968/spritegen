@@ -39,6 +39,8 @@ a local `.venv`, installs the desktop dependencies, and opens the app.
 The desktop app exposes separate provider/model fields for image generation and prompt
 improvement. For OpenRouter model IDs, use [models.dev](https://models.dev/?search=minim)
 or OpenRouter's model list, then paste the exact model name into the matching model field.
+Saved projects and assets can be reopened from the Project and Asset selectors, so new
+generations can reuse the same universe, style, palette, color mode, and prior assets.
 
 For a distributable Windows executable:
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import sys
+import json
 from pathlib import Path
 
 from PySide6.QtCore import Qt
@@ -39,6 +40,7 @@ from ..projects import (
     ProjectStore,
     ProviderDefaults,
     PromptPlanner,
+    slugify,
 )
 from .generation_thread import EnhancementThread, ProjectGenerationThread
 
@@ -133,9 +135,11 @@ class MainWindow(QWidget):
     def __init__(self) -> None:
         super().__init__()
         self._thread = None
+        self._current_project: ProjectSpec | None = None
         self._project_root = str(Path("projects").absolute())
         self._last_output_dir = str(Path("projects").absolute())
         self._setup_ui()
+        self._refresh_project_list()
 
     def _setup_ui(self) -> None:
         self.setWindowTitle("spritegen")
@@ -200,11 +204,23 @@ class MainWindow(QWidget):
 
         root_row = QHBoxLayout()
         self.project_root_edit = QLineEdit(self._project_root)
+        self.project_root_edit.editingFinished.connect(self._refresh_project_list)
         root_btn = QPushButton("Browse")
         root_btn.clicked.connect(self._browse_project_root)
         root_row.addWidget(self.project_root_edit)
         root_row.addWidget(root_btn)
         project_layout.addRow("Project Dir:", root_row)
+
+        project_open_row = QHBoxLayout()
+        self.project_combo = QComboBox()
+        self.refresh_projects_btn = QPushButton("Refresh")
+        self.refresh_projects_btn.clicked.connect(self._refresh_project_list)
+        self.load_project_btn = QPushButton("Load")
+        self.load_project_btn.clicked.connect(self._on_load_project)
+        project_open_row.addWidget(self.project_combo, 1)
+        project_open_row.addWidget(self.refresh_projects_btn)
+        project_open_row.addWidget(self.load_project_btn)
+        project_layout.addRow("Open Project:", project_open_row)
 
         layout.addWidget(project_group)
 
@@ -226,6 +242,20 @@ class MainWindow(QWidget):
         for name in sorted(PRESET_LAYOUTS):
             self.layout_combo.addItem(name, name)
         asset_layout.addRow("Layout:", self.layout_combo)
+
+        asset_open_row = QHBoxLayout()
+        self.asset_combo = QComboBox()
+        self.refresh_assets_btn = QPushButton("Refresh")
+        self.refresh_assets_btn.clicked.connect(self._refresh_asset_list)
+        self.load_asset_btn = QPushButton("Load")
+        self.load_asset_btn.clicked.connect(self._on_load_asset)
+        self.new_asset_btn = QPushButton("New")
+        self.new_asset_btn.clicked.connect(self._on_new_asset)
+        asset_open_row.addWidget(self.asset_combo, 1)
+        asset_open_row.addWidget(self.refresh_assets_btn)
+        asset_open_row.addWidget(self.load_asset_btn)
+        asset_open_row.addWidget(self.new_asset_btn)
+        asset_layout.addRow("Saved Asset:", asset_open_row)
 
         self.asset_name_edit = QLineEdit("Puffball")
         asset_layout.addRow("Name:", self.asset_name_edit)
@@ -339,10 +369,79 @@ class MainWindow(QWidget):
         )
         if folder:
             self.project_root_edit.setText(folder)
+            self._refresh_project_list()
+
+    def _refresh_project_list(self, selected_slug: str | None = None) -> None:
+        if not hasattr(self, "project_combo"):
+            return
+        selected = selected_slug or self.project_combo.currentData()
+        self.project_combo.clear()
+        store = ProjectStore(self.project_root_edit.text())
+        for project in store.list_projects():
+            self.project_combo.addItem(f"{project.name} ({project.slug})", project.slug)
+        if selected:
+            index = self.project_combo.findData(selected)
+            if index >= 0:
+                self.project_combo.setCurrentIndex(index)
+        self._refresh_asset_list()
+
+    def _refresh_asset_list(self, selected_slug: str | None = None) -> None:
+        if not hasattr(self, "asset_combo"):
+            return
+        selected = selected_slug or self.asset_combo.currentData()
+        self.asset_combo.clear()
+        project_slug = self._project_slug_from_fields()
+        if not project_slug:
+            return
+        store = ProjectStore(self.project_root_edit.text())
+        for asset in store.load_assets_for_slug(project_slug):
+            self.asset_combo.addItem(f"{asset.name} ({asset.asset_type})", asset.slug)
+        if selected:
+            index = self.asset_combo.findData(selected)
+            if index >= 0:
+                self.asset_combo.setCurrentIndex(index)
+
+    def _on_load_project(self) -> None:
+        slug = self.project_combo.currentData()
+        if not slug:
+            self.status_label.setText("No saved project selected")
+            return
+        try:
+            project = ProjectStore(self.project_root_edit.text()).load_project(slug)
+            self._apply_project_spec(project)
+            self._refresh_asset_list()
+            self.status_label.setText(f"Loaded project: {project.name}")
+        except Exception as exc:
+            QMessageBox.warning(self, "Load Project Failed", str(exc))
+
+    def _on_load_asset(self) -> None:
+        slug = self.asset_combo.currentData()
+        if not slug:
+            self.status_label.setText("No saved asset selected")
+            return
+        try:
+            store = ProjectStore(self.project_root_edit.text())
+            project = self._current_project or store.load_project(self._project_slug_from_fields())
+            asset = store.load_asset(project, slug)
+            self._apply_asset_spec(project, asset)
+            self._load_asset_preview(project, asset)
+            self.status_label.setText(f"Loaded asset: {asset.name}")
+        except Exception as exc:
+            QMessageBox.warning(self, "Load Asset Failed", str(exc))
+
+    def _on_new_asset(self) -> None:
+        self.asset_name_edit.clear()
+        self.asset_description_edit.clear()
+        self.asset_details_edit.clear()
+        self.enhanced_prompt_edit.clear()
+        self.preview_panel.clear()
+        self.status_label.setText("Ready for a new asset")
 
     def _on_save_plan(self) -> None:
         try:
             project, asset = self._save_current_specs()
+            self._refresh_project_list(project.slug)
+            self._refresh_asset_list(asset.slug)
             self.status_label.setText(f"Saved {project.name} / {asset.name}")
         except Exception as exc:
             QMessageBox.warning(self, "Save Failed", str(exc))
@@ -380,6 +479,7 @@ class MainWindow(QWidget):
         known_assets = store.load_assets(project)
         packets = PromptPlanner().build_prompt_packets(project, asset, known_assets=known_assets)
         store.save_prompt_plan(project, asset, packets)
+        self._refresh_asset_list(asset.slug)
         self._set_busy(False, "Enhanced prompt saved")
         self._thread = None
 
@@ -422,6 +522,7 @@ class MainWindow(QWidget):
         for output in result.outputs:
             self.preview_panel.add_image_path(output.raw_image)
         self._set_busy(False, f"Generated {len(result.outputs)} image(s)")
+        self._refresh_asset_list(result.asset_slug)
         self._thread = None
 
     def _on_thread_error(self, message: str) -> None:
@@ -438,6 +539,7 @@ class MainWindow(QWidget):
         known_assets = store.load_assets(project)
         packets = PromptPlanner().build_prompt_packets(project, asset, known_assets=known_assets)
         store.save_prompt_plan(project, asset, packets)
+        self._current_project = project
         return project, asset
 
     def _build_project_spec(self) -> ProjectSpec:
@@ -445,6 +547,7 @@ class MainWindow(QWidget):
         if not name:
             raise ValueError("Project name is required")
         asset_type = self.asset_type_edit.text().strip() or "asset"
+        slug = slugify(name)
         project = ProjectSpec(
             name=name,
             summary=self.project_summary_edit.text().strip(),
@@ -463,6 +566,10 @@ class MainWindow(QWidget):
                 custom_prompt=self.color_prompt_edit.toPlainText().strip(),
             ),
         )
+        existing_project = self._existing_project(slug)
+        if existing_project:
+            for existing_asset_type in existing_project.asset_types.values():
+                project.add_asset_type(existing_asset_type)
         project.add_asset_type(
             AssetTypeSpec(
                 name=asset_type,
@@ -488,6 +595,86 @@ class MainWindow(QWidget):
 
     def _palette_values(self) -> list[str]:
         return [value.strip() for value in self.palette_edit.text().split(",") if value.strip()]
+
+    def _existing_project(self, project_slug: str) -> ProjectSpec | None:
+        if self._current_project and self._current_project.slug == project_slug:
+            return self._current_project
+        store = ProjectStore(self.project_root_edit.text())
+        path = store.project_path(project_slug)
+        if not path.exists():
+            return None
+        try:
+            return store.load_project(path)
+        except Exception:
+            return None
+
+    def _project_slug_from_fields(self) -> str:
+        name = self.project_name_edit.text().strip()
+        if self._current_project and self._current_project.name == name:
+            return self._current_project.slug or slugify(name)
+        return slugify(name) if name else ""
+
+    def _apply_project_spec(self, project: ProjectSpec) -> None:
+        self._current_project = project
+        self.project_name_edit.setText(project.name)
+        self.project_summary_edit.setText(project.summary)
+        self.style_edit.setPlainText(project.visual_style)
+        self.context_edit.setPlainText(project.shared_context)
+        self.palette_edit.setText(",".join(project.palette))
+        self.negative_prompt_edit.setText(project.negative_prompt)
+        self._set_combo_value(self.image_provider_combo, project.provider_defaults.image_provider)
+        self.image_model_edit.setText(project.provider_defaults.image_model)
+        self._set_combo_value(self.prompt_provider_combo, project.provider_defaults.prompt_provider)
+        self.prompt_model_edit.setText(project.provider_defaults.prompt_model)
+        self._set_combo_value(self.color_mode_combo, project.color_treatment.mode)
+        self.color_prompt_edit.setPlainText(project.color_treatment.custom_prompt)
+        if project.asset_types:
+            self._apply_asset_type_spec(next(iter(project.asset_types.values())))
+
+    def _apply_asset_type_spec(self, asset_type: AssetTypeSpec) -> None:
+        self.asset_type_edit.setText(asset_type.name)
+        self.asset_type_context_edit.setText(asset_type.shared_prompt)
+        self.evolutions_spin.setValue(
+            max(self.evolutions_spin.minimum(), min(self.evolutions_spin.maximum(), asset_type.evolution.count))
+        )
+        self._set_combo_value(self.layout_combo, asset_type.default_layout)
+
+    def _apply_asset_spec(self, project: ProjectSpec, asset: AssetSpec) -> None:
+        if asset.asset_type in project.asset_types:
+            self._apply_asset_type_spec(project.asset_types[asset.asset_type])
+        self.asset_type_edit.setText(asset.asset_type)
+        self.asset_name_edit.setText(asset.name)
+        self.asset_description_edit.setPlainText(asset.description)
+        self.asset_details_edit.setPlainText(asset.details)
+        self.enhanced_prompt_edit.setPlainText(asset.enhanced_prompt)
+        if asset.layout:
+            self._set_combo_value(self.layout_combo, asset.layout)
+
+    def _set_combo_value(self, combo: QComboBox, value: str) -> None:
+        index = combo.findData(value)
+        if index >= 0:
+            combo.setCurrentIndex(index)
+
+    def _load_asset_preview(self, project: ProjectSpec, asset: AssetSpec) -> None:
+        self.preview_panel.clear()
+        store = ProjectStore(self.project_root_edit.text())
+        output_dir = store.generated_dir(project.slug or slugify(project.name)) / (
+            asset.slug or slugify(asset.name)
+        )
+        self._last_output_dir = str(output_dir)
+        manifest_path = output_dir / "generation_manifest.json"
+        if not manifest_path.exists():
+            return
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return
+        for output in manifest.get("outputs", []):
+            raw_image = output.get("raw_image") if isinstance(output, dict) else None
+            if raw_image:
+                path = Path(raw_image)
+                if path.exists():
+                    self.preview_panel.add_image_path(path)
 
     def _api_key_for(self, provider: str) -> str:
         override = self.api_key_override.text().strip()

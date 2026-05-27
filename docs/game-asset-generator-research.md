@@ -76,3 +76,6 @@ makes production color rules explicit:
   this into both the prompt-improvement brief and the final image prompt.
 - The desktop provider area links to `https://models.dev/?search=minim` so users
   can find exact model IDs for providers such as OpenRouter.
+- The desktop app can now refresh and load saved projects and saved assets from
+  the selected project directory, making the workflow a reusable asset library
+  instead of a single-entry form.
