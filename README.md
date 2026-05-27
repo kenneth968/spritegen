@@ -59,6 +59,8 @@ Use **Starter / Create Starter** to bootstrap a saved example project, first ass
 prompt plan without filling the forms by hand.
 Use **Improve Project**, **Improve Type Rules**, and **Enhance Asset** to run the
 prompt-improvement model at the right level of the workflow before generating images.
+Turn on **Improve prompt before Generate** when you want the Generate action to run
+asset prompt improvement first, save the improved prompt, and then generate from it.
 Use **Preview Prompts** to inspect the exact image prompts, including prior saved
 assets that will be used as style and universe anchors, before spending image tokens.
 Set **Image Variants** above 1 when you want several candidate atlases for the same
@@ -143,6 +145,9 @@ spritegen project enhance --project myceliumtd --asset puffball
 # Use --variants to create multiple candidate images for each prompt packet.
 spritegen project generate --project myceliumtd --asset puffball --variants 2
 
+# Optionally improve the asset prompt first with the prompt model, then generate.
+spritegen project generate --project myceliumtd --asset puffball --enhance-first
+
 # Copy the sliced, game-ready PNGs into a clean export folder for an engine.
 # Add --variant when you only want the chosen candidate from a variant run.
 spritegen project export --project myceliumtd --asset puffball --variant 2
@@ -172,6 +177,9 @@ through per-asset export manifests.
 `spritegen project enhance` sends the user's rough asset idea as the user prompt and the
 bundled Markdown guides in `src/spritegen/prompt_guides/` as system/developer guidance
 where the selected provider supports it. The image model is only used by `project generate`.
+`spritegen project generate --enhance-first` performs that same asset-level prompt
+improvement immediately before generation, using the project's prompt provider/model
+unless `--prompt-provider`, `--prompt-model`, or `--prompt-api-key` are supplied.
 
 For character atlases, ask the image model for the built-in layout, then slice the result:
 

@@ -545,6 +545,10 @@ class MainWindow(QWidget):
         provider_actions.addWidget(self.refresh_models_btn)
         config_layout.addRow("Local Setup:", provider_actions)
 
+        self.enhance_before_generate_check = QCheckBox("Improve prompt before Generate")
+        self.enhance_before_generate_check.setChecked(False)
+        config_layout.addRow("Generate:", self.enhance_before_generate_check)
+
         layout.addWidget(config_group)
 
         actions = QHBoxLayout()
@@ -1166,6 +1170,13 @@ class MainWindow(QWidget):
         api_key = self._api_key_for(provider, "image")
         if not self._provider_can_run(provider, api_key):
             return
+        prompt_provider = self.prompt_provider_combo.currentData()
+        prompt_api_key = self._api_key_for(prompt_provider, "prompt")
+        if self.enhance_before_generate_check.isChecked() and not self._provider_can_run(
+            prompt_provider,
+            prompt_api_key,
+        ):
+            return
 
         output_root = (
             Path(self.project_root_edit.text())
@@ -1184,6 +1195,10 @@ class MainWindow(QWidget):
             model=self.image_model_edit.text().strip(),
             api_key=api_key,
             variants_per_packet=self.generation_variants_spin.value(),
+            enhance_before_generate=self.enhance_before_generate_check.isChecked(),
+            prompt_provider=prompt_provider,
+            prompt_model=self.prompt_model_edit.text().strip(),
+            prompt_api_key=prompt_api_key,
         )
         self._thread.progress.connect(self.status_label.setText)
         self._thread.finished.connect(self._on_generation_finished)
@@ -1191,6 +1206,12 @@ class MainWindow(QWidget):
         self._thread.start()
 
     def _on_generation_finished(self, result) -> None:
+        try:
+            project = ProjectStore(self.project_root_edit.text()).load_project(result.project_slug)
+            asset = ProjectStore(self.project_root_edit.text()).load_asset(project, result.asset_slug)
+            self.enhanced_prompt_edit.setPlainText(asset.enhanced_prompt)
+        except Exception:
+            pass
         self._last_output_dir = str(result.output_dir)
         self._last_gallery_path = str(result.gallery_path)
         self._last_project_gallery_path = self._write_project_gallery()

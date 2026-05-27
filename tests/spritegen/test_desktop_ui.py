@@ -387,6 +387,65 @@ def test_main_window_exports_project_pack(tmp_path):
     app.processEvents()
 
 
+def test_generation_thread_can_enhance_before_generate(tmp_path, monkeypatch):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    pytest.importorskip("PySide6")
+
+    from spritegen.enhancement import PromptEnhancer
+    from spritegen.projects import AssetSpec, AssetTypeSpec, ProjectSpec, ProjectStore
+    from spritegen.ui.generation_thread import ProjectGenerationThread
+
+    def fake_enhance(self, brief, provider, model, api_key=None, system_prompt=None):
+        assert provider == "mock"
+        assert model == "mock"
+        assert "Raw asset idea: Spore cloud tower." in brief
+        assert "Asset Prompt Guide" in system_prompt
+        return "enhanced thread puffball prompt"
+
+    monkeypatch.setattr(PromptEnhancer, "enhance", fake_enhance)
+
+    store = ProjectStore(tmp_path / "projects")
+    project = ProjectSpec(
+        name="MyceliumTD",
+        summary="Fungal tower defense game",
+        visual_style="clean cartoon sprites",
+        shared_context="Forest floor fungi.",
+    )
+    project.provider_defaults.image_provider = "mock"
+    project.provider_defaults.image_model = "mock"
+    project.provider_defaults.prompt_provider = "mock"
+    project.provider_defaults.prompt_model = "mock"
+    project.add_asset_type(AssetTypeSpec(name="tower"))
+    asset = AssetSpec(
+        name="Puffball",
+        asset_type="tower",
+        description="Spore cloud tower.",
+    )
+    store.save_project(project)
+    store.save_asset(project, asset)
+
+    thread = ProjectGenerationThread(
+        project=project,
+        asset=asset,
+        project_root=str(tmp_path / "projects"),
+        output_root=str(tmp_path / "generated"),
+        provider="mock",
+        model="mock",
+        api_key=None,
+        enhance_before_generate=True,
+        prompt_provider="mock",
+        prompt_model="mock",
+        prompt_api_key=None,
+    )
+
+    thread.run()
+
+    saved_asset = store.load_asset(project, "puffball")
+    manifest = json.loads((tmp_path / "generated" / "generation_manifest.json").read_text())
+    assert saved_asset.enhanced_prompt == "enhanced thread puffball prompt"
+    assert "enhanced thread puffball prompt" in manifest["outputs"][0]["prompt"]
+
+
 def test_preview_panel_displays_raw_and_sliced_outputs(tmp_path):
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     pytest.importorskip("PySide6")

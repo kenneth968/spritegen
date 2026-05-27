@@ -570,6 +570,25 @@ def cmd_project(args: argparse.Namespace) -> int:
         project = store.load_project(args.project)
         asset = store.load_asset(project, args.asset)
         known_assets = store.load_assets(project)
+        if args.enhance_first and not args.dry_run:
+            asset_type = project.get_asset_type(asset.asset_type)
+            prompt_provider = args.prompt_provider or project.provider_defaults.prompt_provider
+            prompt_model = args.prompt_model or project.provider_defaults.prompt_model
+            enhanced = PromptEnhancer().enhance(
+                planner.build_enhancement_brief(project, asset_type, asset, known_assets),
+                provider=prompt_provider,
+                model=prompt_model,
+                api_key=args.prompt_api_key,
+                system_prompt=planner.build_enhancement_system_prompt(
+                    project,
+                    asset_type,
+                    asset,
+                ),
+            )
+            asset.enhanced_prompt = enhanced
+            store.save_asset(project, asset)
+            known_assets = store.load_assets(project)
+            print(f"Enhanced asset prompt with {prompt_provider} / {prompt_model}")
         packets = planner.build_prompt_packets(project, asset, known_assets=known_assets)
         plan_path = store.save_prompt_plan(project, asset, packets)
         if args.variants < 1:
@@ -579,6 +598,8 @@ def cmd_project(args: argparse.Namespace) -> int:
         if args.dry_run:
             image_count = len(packets) * args.variants
             print(f"Dry run: would generate {image_count} image(s)")
+            if args.enhance_first:
+                print("Dry run: would enhance the asset prompt before generation")
             print(f"Prompt plan: {plan_path}")
             for packet in packets:
                 label = packet.stage_label or "single"
@@ -1140,6 +1161,17 @@ def main() -> int:
         action=argparse.BooleanOptionalAction,
         default=None,
         help="Override the saved project background-removal setting for this run",
+    )
+    project_generate.add_argument(
+        "--enhance-first",
+        action="store_true",
+        help="Improve the asset prompt with the prompt provider before image generation",
+    )
+    project_generate.add_argument("--prompt-provider", help="Prompt provider for --enhance-first")
+    project_generate.add_argument("--prompt-model", help="Prompt model for --enhance-first")
+    project_generate.add_argument(
+        "--prompt-api-key",
+        help="Session-only prompt API key override for --enhance-first",
     )
     project_generate.add_argument(
         "--dry-run",

@@ -181,6 +181,10 @@ class ProjectGenerationThread(QThread):
         model: str,
         api_key: str | None,
         variants_per_packet: int = 1,
+        enhance_before_generate: bool = False,
+        prompt_provider: str = "mock",
+        prompt_model: str = "mock",
+        prompt_api_key: str | None = None,
         parent=None,
     ) -> None:
         super().__init__(parent)
@@ -192,11 +196,38 @@ class ProjectGenerationThread(QThread):
         self.model = model
         self.api_key = api_key
         self.variants_per_packet = variants_per_packet
+        self.enhance_before_generate = enhance_before_generate
+        self.prompt_provider = prompt_provider
+        self.prompt_model = prompt_model
+        self.prompt_api_key = prompt_api_key
 
     def run(self) -> None:
         try:
             store = ProjectStore(self.project_root)
             known_assets = store.load_assets(self.project)
+            if self.enhance_before_generate:
+                self.progress.emit("Improving asset prompt...")
+                planner = PromptPlanner()
+                asset_type = self.project.get_asset_type(self.asset.asset_type)
+                enhanced = PromptEnhancer().enhance(
+                    planner.build_enhancement_brief(
+                        self.project,
+                        asset_type,
+                        self.asset,
+                        known_assets,
+                    ),
+                    provider=self.prompt_provider,
+                    model=self.prompt_model,
+                    api_key=self.prompt_api_key,
+                    system_prompt=planner.build_enhancement_system_prompt(
+                        self.project,
+                        asset_type,
+                        self.asset,
+                    ),
+                )
+                self.asset.enhanced_prompt = enhanced
+                store.save_asset(self.project, self.asset)
+                known_assets = store.load_assets(self.project)
             self.progress.emit("Building prompt packets...")
             result = ProjectAssetGenerator(store=store).generate(
                 project=self.project,

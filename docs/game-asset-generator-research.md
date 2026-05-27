@@ -384,3 +384,17 @@ Project output can now be handed off as one pack:
   from `asset_export_manifest.json` unless the caller asks for all variants.
 - `spritegen project export-project` / `export-all` exposes the pack flow for
   CLI users, and the desktop app adds **Export Project** for the same operation.
+
+## Twenty-sixth implementation slice
+
+Generation can now include prompt improvement in the same flow:
+
+- `spritegen project generate --enhance-first` runs the asset-level prompt
+  enhancer, saves the improved prompt on the asset JSON, rebuilds the prompt plan,
+  and then generates images from the improved prompt.
+- The flag uses the project's prompt provider/model by default, while
+  `--prompt-provider`, `--prompt-model`, and `--prompt-api-key` allow one-run
+  overrides without changing the image-generation provider.
+- The desktop app adds **Improve prompt before Generate**, so a user can keep the
+  separate prompt model but still run enhancement and image generation with one
+  Generate action.

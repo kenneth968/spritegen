@@ -539,6 +539,74 @@ def test_project_generate_cli_dry_run_counts_variants(monkeypatch, tmp_path, cap
     assert "sprout: single_sprite x 3 variant(s)" in output
 
 
+def test_project_generate_cli_can_enhance_before_generation(monkeypatch, tmp_path, capsys):
+    import sys
+    from spritegen.cli import main
+
+    def fake_enhance(self, brief, provider, model, api_key=None, system_prompt=None):
+        assert provider == "mock"
+        assert model == "mock"
+        assert "Raw asset idea: Spore cloud tower." in brief
+        assert "Asset Prompt Guide" in system_prompt
+        return "enhanced puffball tower prompt with teal spore cloud identity"
+
+    monkeypatch.setattr(PromptEnhancer, "enhance", fake_enhance)
+
+    store = ProjectStore(tmp_path / "projects")
+    project = ProjectSpec(
+        name="MyceliumTD",
+        summary="Fungal tower defense game",
+        visual_style="clean cartoon sprites",
+        shared_context="Forest floor fungi.",
+    )
+    project.provider_defaults.image_provider = "mock"
+    project.provider_defaults.image_model = "mock"
+    project.provider_defaults.prompt_provider = "mock"
+    project.provider_defaults.prompt_model = "mock"
+    project.add_asset_type(AssetTypeSpec(name="tower"))
+    asset = AssetSpec(
+        name="Puffball",
+        asset_type="tower",
+        description="Spore cloud tower.",
+    )
+    store.save_project(project)
+    store.save_asset(project, asset)
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "spritegen",
+            "project",
+            "--project-root",
+            str(tmp_path / "projects"),
+            "generate",
+            "--project",
+            "myceliumtd",
+            "--asset",
+            "puffball",
+            "--enhance-first",
+            "--provider",
+            "mock",
+            "--model",
+            "mock",
+            "--output-root",
+            str(tmp_path / "generated"),
+        ],
+    )
+
+    assert main() == 0
+
+    output = capsys.readouterr().out
+    saved_asset = store.load_asset(project, "puffball")
+    manifest = json.loads((tmp_path / "generated" / "generation_manifest.json").read_text())
+    assert "Enhanced asset prompt with mock / mock" in output
+    assert saved_asset.enhanced_prompt == (
+        "enhanced puffball tower prompt with teal spore cloud identity"
+    )
+    assert "enhanced puffball tower prompt" in manifest["outputs"][0]["prompt"]
+
+
 def test_project_exporter_copies_game_ready_slices(tmp_path):
     project = ProjectSpec(
         name="MyceliumTD",
