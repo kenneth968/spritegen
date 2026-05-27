@@ -13,6 +13,7 @@ from pathlib import Path
 
 from .layouts import PRESET_LAYOUTS, AssetLayout, get_layout
 from .enhancement import PromptEnhancer
+from .project_export import ProjectAssetExporter
 from .project_generation import ProjectAssetGenerator
 from .projects import (
     AssetSpec,
@@ -434,6 +435,23 @@ def cmd_project(args: argparse.Namespace) -> int:
             print(f"  - {label}: {output.raw_image} ({len(output.slices)} slices)")
         return 0
 
+    if args.project_command == "export":
+        project = store.load_project(args.project)
+        asset = store.load_asset(project, args.asset)
+        result = ProjectAssetExporter(store=store).export_saved_asset(
+            project=project,
+            asset=asset,
+            output_dir=args.output,
+            manifest_path=args.manifest,
+            include_raw=args.include_raw,
+        )
+        print(f"Exported sprites: {result.output_dir}")
+        print(f"Export manifest: {result.manifest_path}")
+        print(f"Sprites: {len(result.sprites)}")
+        if result.raw_images:
+            print(f"Raw images: {len(result.raw_images)}")
+        return 0
+
     return 1
 
 
@@ -823,6 +841,20 @@ def main() -> int:
         "--dry-run",
         action="store_true",
         help="Write/update the prompt plan without calling an image API",
+    )
+
+    project_export = project_subparsers.add_parser(
+        "export",
+        help="Copy generated slices into a game-ready export folder",
+    )
+    project_export.add_argument("--project", required=True, help="Project slug or JSON path")
+    project_export.add_argument("--asset", required=True, help="Asset slug or JSON path")
+    project_export.add_argument("--output", help="Export directory")
+    project_export.add_argument("--manifest", help="Generation manifest path override")
+    project_export.add_argument(
+        "--include-raw",
+        action="store_true",
+        help="Also copy raw generated atlases into the export folder",
     )
 
     args = parser.parse_args()

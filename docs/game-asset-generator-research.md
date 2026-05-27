@@ -171,3 +171,15 @@ Custom layout creation moved into the desktop workflow:
   picker, and set as the current asset type's default layout.
 - This closes the gap where users could define custom contact sheets from the CLI
   but not from the app they are expected to double-click and use.
+
+## Eleventh implementation slice
+
+Generated assets can now be exported as game-ready files:
+
+- `spritegen.project_export` copies generated slice PNGs from
+  `generation_manifest.json` into a clean `sprites/` folder and writes an
+  `asset_export_manifest.json` with portable relative paths.
+- `spritegen project export` exposes that flow for CLI users and can optionally
+  copy raw generated atlases with `--include-raw`.
+- The desktop **Export Sprites** button saves the current asset plan, exports the
+  latest generated slices, and points **Open Folder** at the export directory.

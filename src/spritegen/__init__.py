@@ -35,6 +35,7 @@ from .projects import (
     apply_project_enhancement,
 )
 from .enhancement import PromptEnhancer
+from .project_export import ProjectAssetExporter, ProjectExportResult
 from .project_generation import ProjectAssetGenerator, ProjectGenerationResult
 from . import mycomed
 
@@ -59,6 +60,8 @@ __all__ = [
     "apply_asset_type_enhancement",
     "apply_project_enhancement",
     "PromptEnhancer",
+    "ProjectAssetExporter",
+    "ProjectExportResult",
     "ProjectAssetGenerator",
     "ProjectGenerationResult",
     "create_mycomed_style",

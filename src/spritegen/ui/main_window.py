@@ -32,6 +32,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..layouts import PRESET_LAYOUTS, AssetLayout
+from ..project_export import ProjectAssetExporter
 from ..projects import (
     AssetSpec,
     AssetTypeSpec,
@@ -522,8 +523,11 @@ class MainWindow(QWidget):
         header_label.setStyleSheet("font-size: 18px; font-weight: bold;")
         self.open_folder_btn = QPushButton("Open Folder")
         self.open_folder_btn.clicked.connect(self._open_output_folder)
+        self.export_sprites_btn = QPushButton("Export Sprites")
+        self.export_sprites_btn.clicked.connect(self._on_export_asset)
         header.addWidget(header_label)
         header.addStretch()
+        header.addWidget(self.export_sprites_btn)
         header.addWidget(self.open_folder_btn)
         layout.addLayout(header)
 
@@ -937,6 +941,20 @@ class MainWindow(QWidget):
         self._refresh_asset_list(result.asset_slug)
         self._thread = None
 
+    def _on_export_asset(self) -> None:
+        try:
+            project, asset = self._save_current_specs()
+            result = ProjectAssetExporter(ProjectStore(self.project_root_edit.text())).export_saved_asset(
+                project=project,
+                asset=asset,
+            )
+            self._last_output_dir = str(result.output_dir)
+            self.status_label.setText(
+                f"Exported {len(result.sprites)} sprite(s) to {result.output_dir}"
+            )
+        except Exception as exc:
+            QMessageBox.warning(self, "Export Failed", str(exc))
+
     def _on_thread_error(self, message: str) -> None:
         self._set_busy(False, f"Error: {message}")
         QMessageBox.warning(self, "spritegen", message)
@@ -1194,6 +1212,7 @@ class MainWindow(QWidget):
         self.enhance_btn.setEnabled(not busy)
         self.generate_btn.setEnabled(not busy)
         self.add_grid_layout_btn.setEnabled(not busy)
+        self.export_sprites_btn.setEnabled(not busy)
         self.check_provider_setup_btn.setEnabled(not busy)
         self.save_provider_settings_btn.setEnabled(not busy)
         self.clear_saved_keys_btn.setEnabled(not busy)

@@ -154,6 +154,78 @@ def test_main_window_loads_saved_project_and_asset(tmp_path):
     app.processEvents()
 
 
+def test_main_window_exports_loaded_asset_slices(tmp_path):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    pytest.importorskip("PySide6")
+
+    from PIL import Image
+    from PySide6.QtWidgets import QApplication
+    from spritegen.projects import AssetSpec, AssetTypeSpec, ProjectSpec, ProjectStore
+    from spritegen.user_settings import UserSettingsStore
+    from spritegen.ui.main_window import MainWindow
+
+    store = ProjectStore(tmp_path / "projects")
+    project = ProjectSpec(
+        name="MyceliumTD",
+        summary="Fungal tower defense game",
+        visual_style="inked sprites",
+        shared_context="Forest floor fungi.",
+    )
+    project.add_asset_type(AssetTypeSpec(name="tower"))
+    asset = AssetSpec(
+        name="Puffball",
+        asset_type="tower",
+        description="Spore cloud tower.",
+    )
+    store.save_project(project)
+    store.save_asset(project, asset)
+    output_dir = store.generated_dir(project.slug) / asset.slug
+    slice_dir = output_dir / "single"
+    slice_dir.mkdir(parents=True)
+    raw_path = output_dir / "single.png"
+    sprite_path = slice_dir / "single_sprite.png"
+    Image.new("RGBA", (32, 32), (255, 0, 0, 255)).save(raw_path)
+    Image.new("RGBA", (16, 16), (0, 255, 0, 255)).save(sprite_path)
+    (output_dir / "generation_manifest.json").write_text(
+        json.dumps(
+            {
+                "project": project.to_dict(),
+                "asset": asset.to_dict(),
+                "outputs": [
+                    {
+                        "stage_index": None,
+                        "stage_label": None,
+                        "layout_name": "single_sprite",
+                        "raw_image": "single.png",
+                        "slices": ["single/single_sprite.png"],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow(settings_store=UserSettingsStore(tmp_path / "settings.json"))
+    window.project_root_edit.setText(str(tmp_path / "projects"))
+    window._refresh_project_list()
+    window.project_combo.setCurrentIndex(window.project_combo.findData("myceliumtd"))
+    window._on_load_project()
+    window.asset_combo.setCurrentIndex(window.asset_combo.findData("puffball"))
+    window._on_load_asset()
+
+    window._on_export_asset()
+
+    exported = tmp_path / "projects" / "myceliumtd" / "exports" / "puffball"
+    assert (exported / "sprites" / "single_sprite.png").exists()
+    assert (exported / "asset_export_manifest.json").exists()
+    assert str(exported) in window.status_label.text()
+    assert window._last_output_dir == str(exported)
+
+    window.close()
+    app.processEvents()
+
+
 def test_preview_panel_displays_raw_and_sliced_outputs(tmp_path):
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     pytest.importorskip("PySide6")

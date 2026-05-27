@@ -54,6 +54,8 @@ Use **Custom Layout** to add reusable equal-cell atlases, contact sheets, tile g
 or pose sheets to the current project without leaving the app.
 The output panel previews both the raw generated atlas and the sliced sprite files from
 `generation_manifest.json`, so desktop users can inspect the game-ready files directly.
+Use **Export Sprites** after generation to copy the sliced files and a compact export
+manifest into `projects/<project>/exports/<asset>/`.
 
 For a distributable Windows executable:
 
@@ -99,6 +101,9 @@ spritegen project enhance --project myceliumtd --asset puffball
 # Generate all prompt packets for the asset, save raw images, slice layout regions,
 # and write a generation_manifest.json beside the output.
 spritegen project generate --project myceliumtd --asset puffball
+
+# Copy the sliced, game-ready PNGs into a clean export folder for an engine.
+spritegen project export --project myceliumtd --asset puffball
 ```
 
 For one-off CLI runs without environment variables, pass a session-only key:
@@ -110,6 +115,8 @@ spritegen project generate --project myceliumtd --asset puffball --api-key sk-or
 Use `--no-remove-background` on `project init` for assets where the generated
 background is intentional, or pass `--remove-background` / `--no-remove-background`
 to `project generate` to override the project setting for one run.
+Use `spritegen project export --include-raw` when you also want the original generated
+atlases copied beside the sliced sprites.
 
 `spritegen project enhance` sends the user's rough asset idea as the user prompt and the
 bundled Markdown guides in `src/spritegen/prompt_guides/` as system/developer guidance

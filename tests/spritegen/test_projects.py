@@ -1,5 +1,6 @@
 """Tests for project-aware game asset planning."""
 
+import json
 from io import BytesIO
 
 from spritegen.layouts import AssetLayout, get_layout
@@ -16,6 +17,7 @@ from spritegen.projects import (
     apply_project_enhancement,
 )
 from spritegen.enhancement import PromptEnhancer
+from spritegen.project_export import ProjectAssetExporter
 from spritegen.project_generation import ProjectAssetGenerator
 from spritegen.slicer import Slicer
 
@@ -240,6 +242,49 @@ def test_project_generator_saves_manifest_and_slices(tmp_path):
     assert result.outputs[0].raw_image.exists()
     assert result.outputs[0].slices
     assert result.outputs[0].slices[0].exists()
+
+
+def test_project_exporter_copies_game_ready_slices(tmp_path):
+    project = ProjectSpec(
+        name="MyceliumTD",
+        summary="Fungal tower defense game",
+        visual_style="clean cartoon tower defense sprites with bold outlines",
+        shared_context="A forest floor world of friendly fungal towers.",
+    )
+    project.provider_defaults.image_provider = "mock"
+    project.provider_defaults.image_model = "mock"
+    project.add_asset_type(
+        AssetTypeSpec(
+            name="tower",
+            shared_prompt="Each tower has readable upgrade stages.",
+            evolution=EvolutionPlan(count=2, labels=["sprout", "ultimate"]),
+        )
+    )
+    asset = AssetSpec(
+        name="Puffball",
+        asset_type="tower",
+        description="A mushroom that attacks with spore clouds.",
+    )
+    store = ProjectStore(tmp_path / "projects")
+    store.save_project(project)
+    store.save_asset(project, asset)
+    ProjectAssetGenerator(store).generate(project=project, asset=asset)
+
+    result = ProjectAssetExporter(store).export_saved_asset(
+        project=project,
+        asset=asset,
+        include_raw=True,
+    )
+
+    assert result.manifest_path.exists()
+    assert len(result.sprites) == 2
+    assert len(result.raw_images) == 2
+    assert all(exported.path.exists() for exported in result.sprites)
+    assert all(exported.path.parent.name == "sprites" for exported in result.sprites)
+    export_manifest = json.loads(result.manifest_path.read_text(encoding="utf-8"))
+    assert export_manifest["version"] == 1
+    assert export_manifest["asset"]["slug"] == "puffball"
+    assert export_manifest["sprites"][0]["file"].startswith("sprites/")
 
 
 def test_project_generator_passes_session_api_key_to_image_generator(tmp_path, monkeypatch):
