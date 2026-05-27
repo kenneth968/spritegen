@@ -37,6 +37,7 @@ from .projects import (
 from .enhancement import PromptEnhancer
 from .provider_models import (
     IMAGE_ROLE,
+    MODEL_DISCOVERY_SOURCES,
     MODEL_ROLES,
     PROMPT_ROLE,
     ModelDiscoveryError,
@@ -49,6 +50,7 @@ from .provider_models import (
 )
 from .project_export import ProjectAssetExporter, ProjectExportResult
 from .project_generation import ProjectAssetGenerator, ProjectGenerationResult
+from .project_starters import ProjectStarter, get_project_starter, list_project_starters
 from .workflow_presets import WorkflowPreset, get_workflow_preset, list_workflow_presets
 from . import mycomed
 
@@ -74,6 +76,7 @@ __all__ = [
     "apply_project_enhancement",
     "PromptEnhancer",
     "IMAGE_ROLE",
+    "MODEL_DISCOVERY_SOURCES",
     "MODEL_ROLES",
     "PROMPT_ROLE",
     "ModelDiscoveryError",
@@ -87,6 +90,9 @@ __all__ = [
     "ProjectExportResult",
     "ProjectAssetGenerator",
     "ProjectGenerationResult",
+    "ProjectStarter",
+    "get_project_starter",
+    "list_project_starters",
     "WorkflowPreset",
     "get_workflow_preset",
     "list_workflow_presets",

@@ -112,6 +112,51 @@ def test_openrouter_online_discovery_filters_by_role_and_search(monkeypatch):
     assert "openai/gpt-5.4-image-2" in models
 
 
+def test_models_dev_discovery_uses_openrouter_model_ids(monkeypatch):
+    from spritegen import provider_models
+    from spritegen.provider_models import PROMPT_ROLE, discover_model_suggestions
+
+    payload = {
+        "openrouter": {
+            "models": {
+                "minimax/minimax-m2.7": {
+                    "id": "minimax/minimax-m2.7",
+                    "name": "MiniMax-M2.7",
+                    "modalities": {"input": ["text"], "output": ["text"]},
+                    "limit": {"context": 196608},
+                    "release_date": "2026-03-18",
+                },
+                "google/gemini-3.1-flash-image-preview": {
+                    "id": "google/gemini-3.1-flash-image-preview",
+                    "name": "Nano Banana 2",
+                    "modalities": {"input": ["text", "image"], "output": ["image", "text"]},
+                },
+            }
+        }
+    }
+
+    def fake_fetch_json(url, timeout):
+        assert url == "https://models.dev/api.json"
+        assert timeout == 9
+        return payload
+
+    monkeypatch.setattr(provider_models, "_fetch_json", fake_fetch_json)
+
+    results = discover_model_suggestions(
+        "openrouter",
+        PROMPT_ROLE,
+        search="minimax",
+        limit=10,
+        timeout=9,
+        source="models-dev",
+    )
+
+    assert [suggestion.model for suggestion in results] == ["minimax/minimax-m2.7"]
+    assert results[0].label == "MiniMax-M2.7"
+    assert "context: 196,608 tokens" in results[0].note
+    assert results[0].source_url == "https://models.dev/?search=minimax"
+
+
 def test_cli_lists_suggested_models(monkeypatch, capsys):
     from spritegen.cli import main
 
@@ -142,11 +187,12 @@ def test_cli_lists_online_model_results(monkeypatch, capsys):
     from spritegen.cli import main
     from spritegen.provider_models import IMAGE_ROLE, ModelSuggestion
 
-    def fake_discover(provider, role, search="", limit=20, timeout=15):
+    def fake_discover(provider, role, search="", limit=20, timeout=15, source="auto"):
         assert provider == "openrouter"
         assert role == IMAGE_ROLE
         assert search == "banana"
         assert limit == 5
+        assert source == "auto"
         return [
             ModelSuggestion(
                 provider="openrouter",
@@ -183,3 +229,51 @@ def test_cli_lists_online_model_results(monkeypatch, capsys):
     assert "OpenRouter image model suggestions" in output
     assert "live/banana-image" in output
     assert "Live result" in output
+
+
+def test_cli_can_use_models_dev_catalog_source(monkeypatch, capsys):
+    from spritegen import cli
+    from spritegen.cli import main
+    from spritegen.provider_models import PROMPT_ROLE, ModelSuggestion
+
+    def fake_discover(provider, role, search="", limit=20, timeout=15, source="auto"):
+        assert provider == "openrouter"
+        assert role == PROMPT_ROLE
+        assert search == "minimax"
+        assert source == "models-dev"
+        return [
+            ModelSuggestion(
+                provider="openrouter",
+                role=PROMPT_ROLE,
+                model="minimax/minimax-m3",
+                label="MiniMax-M2.7",
+                note="models.dev result",
+                source_url="https://models.dev/?search=minimax",
+            )
+        ]
+
+    monkeypatch.setattr(cli, "discover_model_suggestions", fake_discover)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "spritegen",
+            "models",
+            "--provider",
+            "openrouter",
+            "--role",
+            "prompt",
+            "--online",
+            "--catalog-source",
+            "models-dev",
+            "--search",
+            "minimax",
+        ],
+    )
+
+    assert main() == 0
+
+    output = capsys.readouterr().out
+    assert "minimax/minimax-m3" in output
+    assert "models.dev result" in output
+    assert "https://models.dev/?search=minimax" in output

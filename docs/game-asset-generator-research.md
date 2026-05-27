@@ -235,6 +235,9 @@ Model discovery now reaches beyond the static fallback list:
 - `spritegen models --online --search ...` merges live OpenRouter results with
   the offline defaults, so users can find current model IDs without waiting for a
   package update.
+- `spritegen models --online --catalog-source models-dev --search ...` can query
+  the models.dev OpenRouter catalog directly when users find newer model names
+  there first.
 - The desktop **Refresh Models** button fetches current OpenRouter image and
   prompt models into the suggestion pickers without overwriting any custom model
   text the user has typed.
@@ -272,3 +275,16 @@ Project coherence now uses visual references where the provider supports them:
 - Providers without implemented multimodal image input continue using the
   existing text anchors from prior assets rather than guessing unsupported API
   payloads.
+
+## Eighteenth implementation slice
+
+First-run project setup now has executable examples:
+
+- `spritegen.project_starters` defines starter projects that produce the same
+  `ProjectSpec`, `AssetSpec`, and prompt packets as hand-authored projects.
+- `spritegen project starters` lists available starter projects, and
+  `spritegen project starter --starter mycelium_td` creates a saved project,
+  first asset, and prompt plan in one command.
+- The desktop Project panel exposes the same flow through **Starter** and
+  **Create Starter**, so a double-click user can begin from a coherent MyceliumTD
+  or rogue-character example without editing JSON or learning the CLI first.

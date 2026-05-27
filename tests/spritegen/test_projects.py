@@ -19,6 +19,7 @@ from spritegen.projects import (
 from spritegen.enhancement import PromptEnhancer
 from spritegen.project_export import ProjectAssetExporter
 from spritegen.project_generation import ProjectAssetGenerator
+from spritegen.project_starters import get_project_starter, list_project_starters
 from spritegen.slicer import Slicer
 from spritegen.workflow_presets import get_workflow_preset, list_workflow_presets
 
@@ -83,6 +84,88 @@ def test_workflow_presets_create_asset_type_specs():
     assert character.name == "character"
     assert character.evolution.count == 1
     assert character.default_layout == "character_full_plus_8_emotions"
+
+
+def test_project_starters_create_project_and_first_asset():
+    starter_keys = {starter.key for starter in list_project_starters()}
+    assert {"mycelium_td", "rogue_character"} <= starter_keys
+
+    starter = get_project_starter("mycelium_td")
+    project = starter.build_project(
+        image_provider="openrouter",
+        image_model="google/test-image",
+        prompt_provider="openai",
+        prompt_model="gpt-5.5",
+    )
+    asset = starter.build_first_asset()
+    packets = PromptPlanner().build_prompt_packets(project, asset)
+
+    assert project.name == "MyceliumTD"
+    assert project.provider_defaults.image_provider == "openrouter"
+    assert project.provider_defaults.prompt_provider == "openai"
+    assert project.color_treatment.mode == "limited_palette"
+    assert project.get_asset_type("tower").evolution.count == 4
+    assert asset.name == "Puffball"
+    assert len(packets) == 4
+    assert "Friendly fungal towers" in packets[0].prompt
+    assert "spore clouds" in packets[0].prompt
+
+
+def test_project_starter_cli_saves_project_asset_and_prompt_plan(monkeypatch, tmp_path, capsys):
+    import sys
+    from spritegen.cli import main
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "spritegen",
+            "project",
+            "--project-root",
+            str(tmp_path / "projects"),
+            "starters",
+        ],
+    )
+
+    assert main() == 0
+    assert "mycelium_td" in capsys.readouterr().out
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "spritegen",
+            "project",
+            "--project-root",
+            str(tmp_path / "projects"),
+            "starter",
+            "--starter",
+            "mycelium_td",
+            "--provider",
+            "openrouter",
+            "--image-model",
+            "google/test-image",
+            "--prompt-provider",
+            "openai",
+            "--prompt-model",
+            "gpt-5.5",
+        ],
+    )
+
+    assert main() == 0
+
+    output = capsys.readouterr().out
+    store = ProjectStore(tmp_path / "projects")
+    project = store.load_project("myceliumtd")
+    asset = store.load_asset(project, "puffball")
+    plan_path = tmp_path / "projects" / "myceliumtd" / "prompt_plans" / "puffball.json"
+
+    assert "Created starter project: MyceliumTD" in output
+    assert "Saved starter asset: Puffball" in output
+    assert project.provider_defaults.image_provider == "openrouter"
+    assert project.provider_defaults.prompt_provider == "openai"
+    assert asset.name == "Puffball"
+    assert plan_path.exists()
 
 
 def test_project_layout_cli_adds_hero_plus_grid(monkeypatch, tmp_path, capsys):

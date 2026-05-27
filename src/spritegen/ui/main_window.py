@@ -40,6 +40,7 @@ from ..provider_models import (
     default_model,
 )
 from ..project_export import ProjectAssetExporter
+from ..project_starters import get_project_starter, list_project_starters
 from ..projects import (
     AssetSpec,
     AssetTypeSpec,
@@ -308,6 +309,16 @@ class MainWindow(QWidget):
         root_row.addWidget(self.project_root_edit)
         root_row.addWidget(root_btn)
         project_layout.addRow("Project Dir:", root_row)
+
+        starter_row = QHBoxLayout()
+        self.project_starter_combo = QComboBox()
+        for starter in list_project_starters():
+            self.project_starter_combo.addItem(starter.label, starter.key)
+        self.create_project_starter_btn = QPushButton("Create Starter")
+        self.create_project_starter_btn.clicked.connect(self._on_apply_project_starter)
+        starter_row.addWidget(self.project_starter_combo, 1)
+        starter_row.addWidget(self.create_project_starter_btn)
+        project_layout.addRow("Starter:", starter_row)
 
         project_open_row = QHBoxLayout()
         self.project_combo = QComboBox()
@@ -770,6 +781,48 @@ class MainWindow(QWidget):
             self.status_label.setText(f"Saved {project.name} / {asset.name}")
         except Exception as exc:
             QMessageBox.warning(self, "Save Failed", str(exc))
+
+    def _on_apply_project_starter(self) -> None:
+        try:
+            starter = get_project_starter(self.project_starter_combo.currentData())
+            image_provider = self.image_provider_combo.currentData()
+            prompt_provider = self.prompt_provider_combo.currentData()
+            project = starter.build_project(
+                image_provider=image_provider,
+                image_model=(
+                    self.image_model_edit.text().strip()
+                    or default_model(image_provider, IMAGE_ROLE)
+                ),
+                prompt_provider=prompt_provider,
+                prompt_model=(
+                    self.prompt_model_edit.text().strip()
+                    or default_model(prompt_provider, PROMPT_ROLE)
+                ),
+            )
+            asset = starter.build_first_asset()
+            asset_type = project.get_asset_type(asset.asset_type)
+            project.get_layout(asset.layout or asset_type.default_layout)
+
+            self._apply_project_spec(project)
+            self._apply_asset_spec(project, asset)
+
+            store = ProjectStore(self.project_root_edit.text())
+            store.save_project(project)
+            known_assets = store.load_assets(project)
+            store.save_asset(project, asset)
+            packets = PromptPlanner().build_prompt_packets(
+                project,
+                asset,
+                known_assets=known_assets,
+            )
+            store.save_prompt_plan(project, asset, packets)
+            self._refresh_project_list(project.slug)
+            self._refresh_asset_list(asset.slug)
+            self.status_label.setText(
+                f"Created starter {project.name} / {asset.name} ({len(packets)} prompt(s))"
+            )
+        except Exception as exc:
+            QMessageBox.warning(self, "Starter Failed", str(exc))
 
     def _on_apply_workflow_preset(self) -> None:
         try:
@@ -1400,6 +1453,7 @@ class MainWindow(QWidget):
         self.improve_type_btn.setEnabled(not busy)
         self.enhance_btn.setEnabled(not busy)
         self.generate_btn.setEnabled(not busy)
+        self.create_project_starter_btn.setEnabled(not busy)
         self.apply_workflow_preset_btn.setEnabled(not busy)
         self.preview_prompts_btn.setEnabled(not busy)
         self.add_grid_layout_btn.setEnabled(not busy)

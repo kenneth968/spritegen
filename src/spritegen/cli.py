@@ -15,6 +15,7 @@ from .layouts import PRESET_LAYOUTS, AssetLayout, get_layout
 from .enhancement import PromptEnhancer
 from .provider_models import (
     IMAGE_ROLE,
+    MODEL_DISCOVERY_SOURCES,
     MODEL_ROLES,
     PROMPT_ROLE,
     ModelDiscoveryError,
@@ -25,6 +26,7 @@ from .provider_models import (
 )
 from .project_export import ProjectAssetExporter
 from .project_generation import ProjectAssetGenerator
+from .project_starters import get_project_starter, list_project_starters
 from .projects import (
     AssetSpec,
     AssetTypeSpec,
@@ -199,6 +201,7 @@ def cmd_models(args: argparse.Namespace) -> int:
                 args.role,
                 search=args.search,
                 limit=args.limit,
+                source=args.catalog_source,
             )
         except ModelDiscoveryError as exc:
             print(f"Online model discovery failed: {exc}")
@@ -233,6 +236,9 @@ def cmd_models(args: argparse.Namespace) -> int:
             print(f"    {suggestion.note}")
 
     sources = model_source_urls(args.provider, args.role)
+    for suggestion in [*online_suggestions, *suggestions]:
+        if suggestion.source_url and suggestion.source_url not in sources:
+            sources.append(suggestion.source_url)
     if sources:
         print("Sources:")
         for url in sources:
@@ -264,6 +270,47 @@ def cmd_project(args: argparse.Namespace) -> int:
                 f"    asset_type={preset.asset_type}, "
                 f"evolutions={preset.evolution_count}, layout={preset.default_layout}"
             )
+        return 0
+
+    if args.project_command == "starters":
+        print("Available project starters:")
+        for starter in list_project_starters():
+            asset_types = ", ".join(asset_type.name for asset_type in starter.asset_types)
+            print(f"  - {starter.key}: {starter.label}")
+            print(f"    {starter.description}")
+            print(f"    project={starter.project_name}, asset_types={asset_types}")
+        return 0
+
+    if args.project_command in {"starter", "start"}:
+        starter = get_project_starter(args.starter)
+        project = starter.build_project(
+            image_provider=args.provider,
+            image_model=args.image_model,
+            prompt_provider=args.prompt_provider,
+            prompt_model=args.prompt_model,
+        )
+        asset = starter.build_first_asset()
+        asset_type = project.get_asset_type(asset.asset_type)
+        project.get_layout(asset.layout or asset_type.default_layout)
+
+        project_path = store.save_project(project)
+        known_assets = store.load_assets(project)
+        asset_path = store.save_asset(project, asset)
+        packets = planner.build_prompt_packets(project, asset, known_assets=known_assets)
+        plan_path = store.save_prompt_plan(project, asset, packets)
+
+        print(f"Created starter project: {project.name}")
+        print(f"Project file: {project_path}")
+        print(f"Saved starter asset: {asset.name}")
+        print(f"Asset file: {asset_path}")
+        print(f"Saved prompt plan: {plan_path}")
+        if args.print_prompts:
+            for packet in packets:
+                label = packet.stage_label or "single"
+                print(f"\n--- {asset.name} / {label} ---")
+                print(packet.prompt)
+        else:
+            print(f"Prompt packets: {len(packets)}")
         return 0
 
     if args.project_command == "layout":
@@ -784,6 +831,12 @@ def main() -> int:
         default=20,
         help="Maximum online model suggestions to fetch",
     )
+    models_parser.add_argument(
+        "--catalog-source",
+        default="auto",
+        choices=MODEL_DISCOVERY_SOURCES,
+        help="Online model catalog to use for OpenRouter discovery",
+    )
 
     evo_parser = subparsers.add_parser(
         "evolution-chain", help="Generate a tower evolution chain"
@@ -846,6 +899,33 @@ def main() -> int:
         "presets",
         help="List built-in workflow presets for common game-asset shapes",
     )
+
+    project_subparsers.add_parser(
+        "starters",
+        help="List starter projects that create a project, first asset, and prompt plan",
+    )
+
+    starter_choices = sorted(starter.key for starter in list_project_starters())
+    for starter_command, starter_help in (
+        ("starter", "Create a starter project with its first asset"),
+        ("start", "Alias for starter"),
+    ):
+        project_starter = project_subparsers.add_parser(starter_command, help=starter_help)
+        project_starter.add_argument(
+            "--starter",
+            required=True,
+            choices=starter_choices,
+            help="Starter template to create",
+        )
+        project_starter.add_argument("--provider", default="mock")
+        project_starter.add_argument("--image-model", default=default_model("mock", IMAGE_ROLE))
+        project_starter.add_argument("--prompt-provider", default="mock")
+        project_starter.add_argument("--prompt-model", default=default_model("mock", PROMPT_ROLE))
+        project_starter.add_argument(
+            "--print-prompts",
+            action="store_true",
+            help="Print full image prompts for the starter asset",
+        )
 
     project_layout = project_subparsers.add_parser(
         "layout",

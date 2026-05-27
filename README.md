@@ -53,6 +53,8 @@ JSON; they live in the local user settings file or in `OPENAI_API_KEY` /
 `OPENROUTER_API_KEY` environment variables.
 Saved projects and assets can be reopened from the Project and Asset selectors, so new
 generations can reuse the same universe, style, palette, color mode, and prior assets.
+Use **Starter / Create Starter** to bootstrap a saved example project, first asset, and
+prompt plan without filling the forms by hand.
 Use **Improve Project**, **Improve Type Rules**, and **Enhance Asset** to run the
 prompt-improvement model at the right level of the workflow before generating images.
 Use **Preview Prompts** to inspect the exact image prompts, including prior saved
@@ -102,6 +104,11 @@ spritegen project presets
 spritegen models --provider openrouter --role image
 spritegen models --provider openrouter --role prompt
 spritegen models --provider openrouter --role prompt --online --search minimax
+spritegen models --provider openrouter --role prompt --online --catalog-source models-dev --search minimax
+
+# Or create a ready-to-edit starter project with its first asset and prompt plan.
+spritegen project starters
+spritegen project starter --starter mycelium_td
 
 spritegen project asset \
   --project myceliumtd \

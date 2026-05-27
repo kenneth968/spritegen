@@ -18,7 +18,9 @@ OPENROUTER_IMAGE_DOCS_URL = (
     "https://openrouter.ai/docs/guides/overview/multimodal/image-generation"
 )
 OPENROUTER_MODELS_URL = "https://openrouter.ai/docs/guides/overview/models"
+MODELS_DEV_API_URL = "https://models.dev/api.json"
 MODELS_DEV_OPENROUTER_SEARCH_URL = "https://models.dev/?search=minim"
+MODEL_DISCOVERY_SOURCES = ("auto", "openrouter", "models-dev")
 
 
 @dataclass(frozen=True)
@@ -164,12 +166,49 @@ def discover_model_suggestions(
     search: str = "",
     limit: int = 20,
     timeout: int = 15,
+    source: str = "auto",
 ) -> list[ModelSuggestion]:
     if provider != "openrouter":
         return []
     if role not in MODEL_ROLES:
         raise ValueError(f"Unknown model role: {role}")
-    return _discover_openrouter_models(role=role, search=search, limit=limit, timeout=timeout)
+    if source not in MODEL_DISCOVERY_SOURCES:
+        raise ValueError(f"Unknown model discovery source: {source}")
+    if source == "openrouter":
+        return _discover_openrouter_models(role=role, search=search, limit=limit, timeout=timeout)
+    if source == "models-dev":
+        return _discover_models_dev_openrouter_models(
+            role=role,
+            search=search,
+            limit=limit,
+            timeout=timeout,
+        )
+
+    openrouter_error: ModelDiscoveryError | None = None
+    try:
+        openrouter_results = _discover_openrouter_models(
+            role=role,
+            search=search,
+            limit=limit,
+            timeout=timeout,
+        )
+    except ModelDiscoveryError as exc:
+        openrouter_error = exc
+    else:
+        if openrouter_results:
+            return openrouter_results
+
+    try:
+        return _discover_models_dev_openrouter_models(
+            role=role,
+            search=search,
+            limit=limit,
+            timeout=timeout,
+        )
+    except ModelDiscoveryError:
+        if openrouter_error:
+            raise openrouter_error
+        raise
 
 
 def combined_model_suggestions(
@@ -253,6 +292,94 @@ def _openrouter_model_to_suggestion(
         note="; ".join(note_parts),
         source_url=OPENROUTER_MODELS_URL,
     )
+
+
+def _discover_models_dev_openrouter_models(
+    role: str,
+    search: str = "",
+    limit: int = 20,
+    timeout: int = 15,
+) -> list[ModelSuggestion]:
+    output_modality = "image" if role == IMAGE_ROLE else "text"
+    try:
+        payload = _fetch_json(MODELS_DEV_API_URL, timeout)
+    except Exception as exc:
+        raise ModelDiscoveryError(f"Could not fetch models.dev catalog: {exc}") from exc
+
+    provider = payload.get("openrouter")
+    if not isinstance(provider, dict):
+        raise ModelDiscoveryError("models.dev catalog did not include OpenRouter")
+    models = provider.get("models")
+    if not isinstance(models, dict):
+        raise ModelDiscoveryError("models.dev OpenRouter catalog did not include models")
+
+    results: list[ModelSuggestion] = []
+    search_text = search.strip().lower()
+    for key, item in models.items():
+        if not isinstance(item, dict):
+            continue
+        suggestion = _models_dev_model_to_suggestion(
+            key,
+            item,
+            role,
+            output_modality,
+            search=search,
+        )
+        if suggestion is None:
+            continue
+        if search_text and search_text not in _suggestion_search_text(suggestion):
+            continue
+        results.append(suggestion)
+        if len(results) >= limit:
+            break
+    return results
+
+
+def _models_dev_model_to_suggestion(
+    key: str,
+    item: dict,
+    role: str,
+    output_modality: str,
+    search: str = "",
+) -> ModelSuggestion | None:
+    model_id = str(item.get("id") or key).strip()
+    if not model_id:
+        return None
+    modalities = item.get("modalities") if isinstance(item.get("modalities"), dict) else {}
+    outputs = [
+        str(value)
+        for value in modalities.get("output", [])
+        if isinstance(value, str)
+    ]
+    if output_modality not in outputs:
+        return None
+    label = str(item.get("name") or model_id)
+    note_parts = [f"Outputs: {','.join(outputs)}"]
+    limit = item.get("limit") if isinstance(item.get("limit"), dict) else {}
+    context = limit.get("context")
+    if isinstance(context, int) and context > 0:
+        note_parts.append(f"context: {context:,} tokens")
+    release_date = str(item.get("release_date") or "").strip()
+    if release_date:
+        note_parts.append(f"released: {release_date}")
+    last_updated = str(item.get("last_updated") or "").strip()
+    if last_updated and last_updated != release_date:
+        note_parts.append(f"updated: {last_updated}")
+    return ModelSuggestion(
+        provider="openrouter",
+        role=role,
+        model=model_id,
+        label=label,
+        note="; ".join(note_parts),
+        source_url=_models_dev_search_url(search),
+    )
+
+
+def _models_dev_search_url(search: str = "") -> str:
+    search_text = search.strip()
+    if not search_text:
+        return "https://models.dev/"
+    return f"https://models.dev/?{urlencode({'search': search_text})}"
 
 
 def _suggestion_search_text(suggestion: ModelSuggestion) -> str:

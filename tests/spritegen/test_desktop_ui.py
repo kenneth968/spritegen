@@ -427,6 +427,49 @@ def test_main_window_applies_character_workflow_preset(tmp_path):
     app.processEvents()
 
 
+def test_main_window_creates_project_starter(tmp_path):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    pytest.importorskip("PySide6")
+
+    from PySide6.QtWidgets import QApplication
+    from spritegen.projects import ProjectStore
+    from spritegen.user_settings import UserSettingsStore
+    from spritegen.ui.main_window import MainWindow
+
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow(settings_store=UserSettingsStore(tmp_path / "settings.json"))
+    window.project_root_edit.setText(str(tmp_path / "projects"))
+    index = window.project_starter_combo.findData("mycelium_td")
+    assert index >= 0
+    window.project_starter_combo.setCurrentIndex(index)
+
+    window._on_apply_project_starter()
+
+    assert window.project_name_edit.text() == "MyceliumTD"
+    assert window.asset_name_edit.text() == "Puffball"
+    assert window.asset_type_edit.text() == "tower"
+    assert window.evolutions_spin.value() == 4
+    assert window.color_mode_combo.currentData() == "limited_palette"
+    assert "Created starter MyceliumTD / Puffball" in window.status_label.text()
+
+    store = ProjectStore(tmp_path / "projects")
+    project = store.load_project("myceliumtd")
+    asset = store.load_asset(project, "puffball")
+    plan_path = tmp_path / "projects" / "myceliumtd" / "prompt_plans" / "puffball.json"
+
+    assert project.get_asset_type("tower").evolution.labels == [
+        "base",
+        "upgraded",
+        "advanced",
+        "ultimate",
+    ]
+    assert asset.description == "A mushroom tower that attacks by releasing spore clouds."
+    assert plan_path.exists()
+
+    window.close()
+    app.processEvents()
+
+
 def test_main_window_previews_prompt_plan_with_prior_assets(tmp_path):
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     pytest.importorskip("PySide6")
