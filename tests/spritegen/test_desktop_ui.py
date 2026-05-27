@@ -505,6 +505,44 @@ def test_main_window_saves_local_provider_setup(tmp_path, monkeypatch):
     app.processEvents()
 
 
+def test_main_window_model_suggestions_are_editable(tmp_path):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    pytest.importorskip("PySide6")
+
+    from PySide6.QtWidgets import QApplication
+    from spritegen.user_settings import UserSettingsStore
+    from spritegen.ui.main_window import MainWindow
+
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow(settings_store=UserSettingsStore(tmp_path / "settings.json"))
+
+    window._set_combo_value(window.image_provider_combo, "openrouter")
+    window._on_image_provider_changed()
+    assert window.image_model_suggestions.count() >= 2
+    assert window.image_model_edit.text() == "google/gemini-3.1-flash-image-preview"
+
+    image_index = window.image_model_suggestions.findData("openai/gpt-5.4-image-2")
+    assert image_index >= 0
+    window.image_model_suggestions.setCurrentIndex(image_index)
+    window._apply_model_suggestion("image")
+    assert window.image_model_edit.text() == "openai/gpt-5.4-image-2"
+
+    window.image_model_edit.setText("custom/openrouter-image-model")
+    assert window.image_model_edit.text() == "custom/openrouter-image-model"
+
+    window._set_combo_value(window.prompt_provider_combo, "openrouter")
+    window._on_prompt_provider_changed()
+    assert window.prompt_model_edit.text() == "openai/gpt-5.5"
+    prompt_index = window.prompt_model_suggestions.findData("minimax/minimax-m2.7")
+    assert prompt_index >= 0
+    window.prompt_model_suggestions.setCurrentIndex(prompt_index)
+    window._apply_model_suggestion("prompt")
+    assert window.prompt_model_edit.text() == "minimax/minimax-m2.7"
+
+    window.close()
+    app.processEvents()
+
+
 def test_main_window_checks_provider_setup_without_network(tmp_path, monkeypatch):
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     pytest.importorskip("PySide6")

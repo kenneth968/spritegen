@@ -35,6 +35,15 @@ from .projects import (
     apply_project_enhancement,
 )
 from .enhancement import PromptEnhancer
+from .provider_models import (
+    IMAGE_ROLE,
+    MODEL_ROLES,
+    PROMPT_ROLE,
+    ModelSuggestion,
+    default_model,
+    model_source_urls,
+    model_suggestions,
+)
 from .project_export import ProjectAssetExporter, ProjectExportResult
 from .project_generation import ProjectAssetGenerator, ProjectGenerationResult
 from .workflow_presets import WorkflowPreset, get_workflow_preset, list_workflow_presets
@@ -61,6 +70,13 @@ __all__ = [
     "apply_asset_type_enhancement",
     "apply_project_enhancement",
     "PromptEnhancer",
+    "IMAGE_ROLE",
+    "MODEL_ROLES",
+    "PROMPT_ROLE",
+    "ModelSuggestion",
+    "default_model",
+    "model_source_urls",
+    "model_suggestions",
     "ProjectAssetExporter",
     "ProjectExportResult",
     "ProjectAssetGenerator",

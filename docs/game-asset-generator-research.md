@@ -209,3 +209,18 @@ Common game-asset workflows are now presets:
 - The desktop Asset panel exposes the same recipes through **Workflow** and
   **Apply Preset**, filling the asset type, reusable rules, evolution settings,
   stage labels, and default layout.
+
+## Fourteenth implementation slice
+
+Provider model setup now has shared suggestions without blocking custom IDs:
+
+- `spritegen.provider_models` centralizes known image-generation and prompt-
+  improvement model IDs for mock, Pollinations, OpenAI, and OpenRouter.
+- `spritegen models --provider ... --role image|prompt` prints suggested model
+  IDs and the reference pages users should check for current provider catalogs.
+- The desktop provider panel shows image and prompt model suggestion pickers
+  beside editable model fields, so users can start from current defaults while
+  still pasting newer OpenRouter or models.dev IDs.
+- OpenRouter image suggestions are aligned with the documented model discovery
+  path: filter the Models API by `output_modalities=image` and use
+  `image_config.image_size` values such as `1K`, `2K`, or `4K` during generation.

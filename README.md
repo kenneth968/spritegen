@@ -39,8 +39,10 @@ On Windows, double-click `launch_spritegen.cmd` from the project folder. The lau
 a local `.venv`, installs the desktop dependencies, and opens the app.
 
 The desktop app exposes separate provider/model fields for image generation and prompt
-improvement. For OpenRouter model IDs, use [models.dev](https://models.dev/?search=minim)
-or OpenRouter's model list, then paste the exact model name into the matching model field.
+improvement. Each provider has suggested model IDs in a picker beside the editable
+model field, so a user can choose a known-good default or paste a newer/custom model.
+For OpenRouter model IDs, use [models.dev](https://models.dev/?search=minim) or
+OpenRouter's model list, then paste the exact model name into the matching model field.
 Paste provider keys into **Image API Key** and **Prompt API Key**. Use **Check Setup**
 to confirm the selected providers have models and keys, or **Save Local Setup** to
 remember provider defaults and keys on this computer. Keys are never written to project
@@ -88,6 +90,10 @@ spritegen project init \
 
 # See available presets, such as tower_4_stage and character_emotion_atlas.
 spritegen project presets
+
+# See suggested provider model IDs for image generation or prompt improvement.
+spritegen models --provider openrouter --role image
+spritegen models --provider openrouter --role prompt
 
 spritegen project asset \
   --project myceliumtd \

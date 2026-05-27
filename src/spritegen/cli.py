@@ -13,6 +13,14 @@ from pathlib import Path
 
 from .layouts import PRESET_LAYOUTS, AssetLayout, get_layout
 from .enhancement import PromptEnhancer
+from .provider_models import (
+    IMAGE_ROLE,
+    MODEL_ROLES,
+    PROMPT_ROLE,
+    default_model,
+    model_source_urls,
+    model_suggestions,
+)
 from .project_export import ProjectAssetExporter
 from .project_generation import ProjectAssetGenerator
 from .projects import (
@@ -170,6 +178,33 @@ def cmd_layout(args: argparse.Namespace) -> int:
         return 0
 
     return 1
+
+
+def cmd_models(args: argparse.Namespace) -> int:
+    role_label = "image" if args.role == IMAGE_ROLE else "prompt"
+    provider_label = args.provider.title() if args.provider != "openai" else "OpenAI"
+    if args.provider == "openrouter":
+        provider_label = "OpenRouter"
+    elif args.provider == "pollinations":
+        provider_label = "Pollinations"
+
+    suggestions = model_suggestions(args.provider, args.role)
+    print(f"{provider_label} {role_label} model suggestions:")
+    if not suggestions:
+        print("  - none")
+    for suggestion in suggestions:
+        default_marker = " (default)" if suggestion.model == default_model(args.provider, args.role) else ""
+        print(f"  - {suggestion.model}{default_marker}")
+        print(f"    {suggestion.label}")
+        if suggestion.note:
+            print(f"    {suggestion.note}")
+
+    sources = model_source_urls(args.provider, args.role)
+    if sources:
+        print("Sources:")
+        for url in sources:
+            print(f"  - {url}")
+    return 0
 
 
 def print_layout(layout: AssetLayout) -> None:
@@ -664,6 +699,23 @@ def main() -> int:
     layout_slice.add_argument("--output", default="output/sprites", help="Output directory")
     layout_slice.add_argument("--prefix", help="Filename prefix")
 
+    models_parser = subparsers.add_parser(
+        "models",
+        help="List suggested provider model IDs",
+    )
+    models_parser.add_argument(
+        "--provider",
+        default="openrouter",
+        choices=["mock", "pollinations", "openai", "openrouter"],
+        help="Provider to list model suggestions for",
+    )
+    models_parser.add_argument(
+        "--role",
+        default=IMAGE_ROLE,
+        choices=MODEL_ROLES,
+        help="Model role: image generation or prompt improvement",
+    )
+
     evo_parser = subparsers.add_parser(
         "evolution-chain", help="Generate a tower evolution chain"
     )
@@ -777,9 +829,9 @@ def main() -> int:
     project_init.add_argument("--palette", default="", help="Comma-separated colors")
     project_init.add_argument("--negative-prompt", default="")
     project_init.add_argument("--provider", default="openai")
-    project_init.add_argument("--image-model", default="gpt-image-2")
+    project_init.add_argument("--image-model", default=default_model("openai", IMAGE_ROLE))
     project_init.add_argument("--prompt-provider", default="openai")
-    project_init.add_argument("--prompt-model", default="gpt-5.5")
+    project_init.add_argument("--prompt-model", default=default_model("openai", PROMPT_ROLE))
     project_init.add_argument(
         "--preset",
         choices=sorted(preset.key for preset in list_workflow_presets()),
@@ -906,6 +958,8 @@ def main() -> int:
         return cmd_style(args)
     elif args.command == "layout":
         return cmd_layout(args)
+    elif args.command == "models":
+        return cmd_models(args)
     elif args.command == "project":
         return cmd_project(args)
     else:

@@ -32,6 +32,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..layouts import PRESET_LAYOUTS, AssetLayout
+from ..provider_models import IMAGE_ROLE, PROMPT_ROLE, default_model, model_suggestions
 from ..project_export import ProjectAssetExporter
 from ..projects import (
     AssetSpec,
@@ -67,20 +68,6 @@ PROVIDER_LABELS = {
     "pollinations": "Pollinations",
     "openai": "OpenAI",
     "openrouter": "OpenRouter",
-}
-
-DEFAULT_IMAGE_MODELS = {
-    "mock": "mock",
-    "pollinations": "flux",
-    "openai": "gpt-image-2",
-    "openrouter": "google/gemini-3.1-flash-image-preview",
-}
-
-DEFAULT_PROMPT_MODELS = {
-    "mock": "mock",
-    "pollinations": "openai",
-    "openai": "gpt-5.5",
-    "openrouter": "openai/gpt-5.5",
 }
 
 COLOR_MODE_LABELS = {
@@ -460,15 +447,27 @@ class MainWindow(QWidget):
         self.image_provider_combo.currentIndexChanged.connect(self._on_image_provider_changed)
         config_layout.addRow("Image Provider:", self.image_provider_combo)
 
-        self.image_model_edit = QLineEdit(DEFAULT_IMAGE_MODELS["mock"])
+        self.image_model_edit = QLineEdit(default_model("mock", IMAGE_ROLE))
         config_layout.addRow("Image Model:", self.image_model_edit)
+
+        self.image_model_suggestions = QComboBox()
+        self.image_model_suggestions.activated.connect(
+            lambda _index: self._apply_model_suggestion(IMAGE_ROLE)
+        )
+        config_layout.addRow("Image Suggestions:", self.image_model_suggestions)
 
         self.prompt_provider_combo = self._provider_combo(PROMPT_PROVIDERS)
         self.prompt_provider_combo.currentIndexChanged.connect(self._on_prompt_provider_changed)
         config_layout.addRow("Prompt Provider:", self.prompt_provider_combo)
 
-        self.prompt_model_edit = QLineEdit(DEFAULT_PROMPT_MODELS["mock"])
+        self.prompt_model_edit = QLineEdit(default_model("mock", PROMPT_ROLE))
         config_layout.addRow("Prompt Model:", self.prompt_model_edit)
+
+        self.prompt_model_suggestions = QComboBox()
+        self.prompt_model_suggestions.activated.connect(
+            lambda _index: self._apply_model_suggestion(PROMPT_ROLE)
+        )
+        config_layout.addRow("Prompt Suggestions:", self.prompt_model_suggestions)
 
         self.image_api_key_edit = QLineEdit()
         self.image_api_key_edit.setEchoMode(QLineEdit.Password)
@@ -569,26 +568,56 @@ class MainWindow(QWidget):
 
     def _on_image_provider_changed(self, *_args) -> None:
         provider = self.image_provider_combo.currentData()
-        self.image_model_edit.setText(DEFAULT_IMAGE_MODELS.get(provider, ""))
+        self._refresh_model_suggestions(IMAGE_ROLE, provider)
+        self.image_model_edit.setText(default_model(provider, IMAGE_ROLE))
         self._refresh_api_key_field("image")
 
     def _on_prompt_provider_changed(self, *_args) -> None:
         provider = self.prompt_provider_combo.currentData()
-        self.prompt_model_edit.setText(DEFAULT_PROMPT_MODELS.get(provider, ""))
+        self._refresh_model_suggestions(PROMPT_ROLE, provider)
+        self.prompt_model_edit.setText(default_model(provider, PROMPT_ROLE))
         self._refresh_api_key_field("prompt")
 
     def _apply_user_settings(self) -> None:
         self._set_combo_value(self.image_provider_combo, self._user_settings.image_provider)
+        self._refresh_model_suggestions(IMAGE_ROLE, self.image_provider_combo.currentData())
         self.image_model_edit.setText(
             self._user_settings.image_model
-            or DEFAULT_IMAGE_MODELS.get(self.image_provider_combo.currentData(), "")
+            or default_model(self.image_provider_combo.currentData(), IMAGE_ROLE)
         )
         self._set_combo_value(self.prompt_provider_combo, self._user_settings.prompt_provider)
+        self._refresh_model_suggestions(PROMPT_ROLE, self.prompt_provider_combo.currentData())
         self.prompt_model_edit.setText(
             self._user_settings.prompt_model
-            or DEFAULT_PROMPT_MODELS.get(self.prompt_provider_combo.currentData(), "")
+            or default_model(self.prompt_provider_combo.currentData(), PROMPT_ROLE)
         )
         self._refresh_api_key_fields()
+
+    def _refresh_model_suggestions(self, role: str, provider: str) -> None:
+        combo = (
+            self.image_model_suggestions
+            if role == IMAGE_ROLE
+            else self.prompt_model_suggestions
+        )
+        combo.blockSignals(True)
+        combo.clear()
+        for suggestion in model_suggestions(provider, role):
+            combo.addItem(f"{suggestion.label} ({suggestion.model})", suggestion.model)
+        combo.blockSignals(False)
+
+    def _apply_model_suggestion(self, role: str) -> None:
+        combo = (
+            self.image_model_suggestions
+            if role == IMAGE_ROLE
+            else self.prompt_model_suggestions
+        )
+        model = combo.currentData()
+        if not model:
+            return
+        if role == IMAGE_ROLE:
+            self.image_model_edit.setText(model)
+        else:
+            self.prompt_model_edit.setText(model)
 
     def _refresh_api_key_fields(self) -> None:
         self._refresh_api_key_field("image")
