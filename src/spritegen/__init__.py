@@ -22,6 +22,14 @@ from .generator import SpriteGenerator, create_mycomed_style
 from .slicer import Slicer
 from .style import StyleManager
 from .models import GeneratedSheet, SpriteMetadata
+from .layouts import AssetLayout, LayoutRegion
+from .projects import (
+    AssetSpec,
+    AssetTypeSpec,
+    ProjectSpec,
+    ProjectStore,
+    PromptPlanner,
+)
 from . import mycomed
 
 __all__ = [
@@ -33,6 +41,13 @@ __all__ = [
     "StyleManager",
     "GeneratedSheet",
     "SpriteMetadata",
+    "AssetLayout",
+    "LayoutRegion",
+    "AssetSpec",
+    "AssetTypeSpec",
+    "ProjectSpec",
+    "ProjectStore",
+    "PromptPlanner",
     "create_mycomed_style",
     "mycomed",
 ]

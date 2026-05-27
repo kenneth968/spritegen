@@ -15,11 +15,12 @@ Usage:
 from __future__ import annotations
 
 import io
+import json
 from pathlib import Path
-from typing import Literal
 
 from .config import SpriteConfig
-from .models import GeneratedSheet, SpriteMetadata
+from .layouts import AssetLayout, LayoutRegion
+from .models import GeneratedSheet
 
 
 try:
@@ -71,6 +72,35 @@ class Slicer:
         if self.config.transparent_bg:
             sprite = self._make_transparent(sprite)
 
+        return sprite
+
+    def extract_region(
+        self,
+        image_data: bytes,
+        region: LayoutRegion,
+        remove_background: bool | None = None,
+    ) -> Image.Image | None:
+        if not HAS_PIL:
+            raise SlicerError("PIL/Pillow is required for slicing")
+
+        img = Image.open(io.BytesIO(image_data))
+        if img.mode != "RGBA":
+            img = img.convert("RGBA")
+
+        sprite = img.crop(
+            (
+                region.x,
+                region.y,
+                region.x + region.width,
+                region.y + region.height,
+            )
+        )
+
+        should_remove_bg = (
+            region.remove_background if remove_background is None else remove_background
+        )
+        if should_remove_bg and self.config.transparent_bg:
+            sprite = self._make_transparent(sprite)
         return sprite
 
     def _make_transparent(self, img: Image.Image) -> Image.Image:
@@ -229,6 +259,60 @@ class Slicer:
 
         return saved_paths
 
+    def slice_layout_image(
+        self,
+        image_data: bytes,
+        layout: AssetLayout,
+        prefix: str | None = None,
+    ) -> list[Path]:
+        errors = layout.validate()
+        if errors:
+            raise SlicerError("; ".join(errors))
+
+        saved_paths: list[Path] = []
+        for region in layout.regions:
+            sprite = self.extract_region(image_data, region)
+            if sprite is None:
+                raise SlicerError(f"Failed to extract region: {region.name}")
+
+            filename = f"{prefix}_{region.name}" if prefix else region.name
+            path = self.output_dir / f"{filename}.png"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            sprite.save(str(path), format="PNG")
+            saved_paths.append(path)
+
+        self.save_layout_metadata(layout, saved_paths, prefix=prefix)
+        return saved_paths
+
+    def save_layout_metadata(
+        self,
+        layout: AssetLayout,
+        paths: list[Path],
+        prefix: str | None = None,
+        path: Path | str | None = None,
+    ) -> Path:
+        metadata = {
+            "layout": layout.to_dict(),
+            "sprites": [
+                {
+                    "name": region.name,
+                    "file": str(paths[index]),
+                    "position": (region.x, region.y),
+                    "size": (region.width, region.height),
+                    "prompt_role": region.prompt_role,
+                }
+                for index, region in enumerate(layout.regions)
+            ],
+        }
+        if path is None:
+            metadata_name = f"{prefix}_layout_metadata.json" if prefix else "layout_metadata.json"
+            path = self.output_dir / metadata_name
+        else:
+            path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+        return path
+
     def slice_to_grid(
         self,
         sheet: GeneratedSheet,
@@ -293,7 +377,5 @@ class Slicer:
             path = Path(path)
 
         path.parent.mkdir(parents=True, exist_ok=True)
-        import json
-
         path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
         return path

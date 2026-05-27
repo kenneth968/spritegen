@@ -10,6 +10,16 @@ import argparse
 import sys
 from pathlib import Path
 
+from .layouts import PRESET_LAYOUTS, get_layout
+from .projects import (
+    AssetSpec,
+    AssetTypeSpec,
+    EvolutionPlan,
+    ProjectSpec,
+    ProjectStore,
+    ProviderDefaults,
+    PromptPlanner,
+)
 from . import (
     SpriteConfig,
     SpriteDefinition,
@@ -18,7 +28,8 @@ from . import (
     Slicer,
     create_mycomed_style,
 )
-from .mycomed import EVOLUTION_STAGES, get_evolution_chain
+from .models import SpriteMetadata
+from .mycomed import EVOLUTION_STAGES
 
 
 def cmd_generate(args: argparse.Namespace) -> int:
@@ -81,13 +92,34 @@ def cmd_slice(args: argparse.Namespace) -> int:
 
     sheet_data = Path(args.sheet).read_bytes()
     from .models import GeneratedSheet
-    from .config import SheetLayout
 
     layout = config.get_layout(args.count or 4)
+    sprites = []
+    for i in range(args.count or layout.sprite_count):
+        sprites.append(
+            SpriteDefinition(
+                name=f"sprite_{i + 1}",
+                prompt="manual slice",
+                index=i,
+            )
+        )
+
     sheet = GeneratedSheet(
         image_data=sheet_data,
         layout=layout,
-        sprites=[],
+        sprites=[
+            SpriteMetadata(
+                name=sprite.name,
+                sprite_index=sprite.index,
+                position=(
+                    (sprite.index % layout.columns) * layout.cell_width + layout.margin,
+                    (sprite.index // layout.columns) * layout.cell_height + layout.margin,
+                ),
+                size=(layout.cell_width - layout.padding, layout.cell_height - layout.padding),
+                prompt=sprite.prompt,
+            )
+            for sprite in sprites
+        ],
         style_seed="unknown",
         generation_params={},
     )
@@ -97,6 +129,109 @@ def cmd_slice(args: argparse.Namespace) -> int:
         print(f"Saved: {path}")
 
     return 0
+
+
+def cmd_layout(args: argparse.Namespace) -> int:
+    if args.layout_command == "list":
+        print("Available layouts:")
+        for name, layout in sorted(PRESET_LAYOUTS.items()):
+            print(f"  - {name}: {layout.width}x{layout.height}, {len(layout.regions)} regions")
+        return 0
+
+    if args.layout_command == "info":
+        layout = get_layout(args.name)
+        print(f"Layout: {layout.name}")
+        print(f"Canvas: {layout.width}x{layout.height}")
+        print(layout.prompt_instructions)
+        for region in layout.regions:
+            print(
+                f"  - {region.name}: ({region.x},{region.y}) "
+                f"{region.width}x{region.height} - {region.prompt_role}"
+            )
+        return 0
+
+    if args.layout_command == "slice":
+        layout = get_layout(args.layout)
+        image_data = Path(args.image).read_bytes()
+        slicer = Slicer(output_dir=Path(args.output))
+        paths = slicer.slice_layout_image(image_data, layout, prefix=args.prefix)
+        for path in paths:
+            print(f"Saved: {path}")
+        return 0
+
+    return 1
+
+
+def cmd_project(args: argparse.Namespace) -> int:
+    store = ProjectStore(root=args.project_root)
+    planner = PromptPlanner()
+
+    if args.project_command == "init":
+        if args.evolutions < 1:
+            print("--evolutions must be at least 1")
+            return 1
+        get_layout(args.layout)
+        palette = [c.strip() for c in args.palette.split(",") if c.strip()]
+        project = ProjectSpec(
+            name=args.name,
+            summary=args.summary or "",
+            visual_style=args.style,
+            shared_context=args.context,
+            palette=palette,
+            negative_prompt=args.negative_prompt or "",
+            provider_defaults=ProviderDefaults(
+                image_provider=args.provider,
+                image_model=args.image_model,
+                prompt_provider=args.prompt_provider,
+                prompt_model=args.prompt_model,
+            ),
+        )
+        project.add_asset_type(
+            AssetTypeSpec(
+                name=args.asset_type,
+                shared_prompt=args.asset_type_context or "",
+                evolution=EvolutionPlan(
+                    count=args.evolutions,
+                    shared_prompt=args.evolution_context or "",
+                ),
+                default_layout=args.layout,
+            )
+        )
+        path = store.save_project(project)
+        print(f"Created project: {project.name}")
+        print(f"Project file: {path}")
+        return 0
+
+    if args.project_command == "asset":
+        project = store.load_project(args.project)
+        asset_type = project.get_asset_type(args.asset_type)
+        asset = AssetSpec(
+            name=args.name,
+            asset_type=args.asset_type,
+            description=args.description,
+            details=args.details or "",
+            enhanced_prompt=args.enhanced_prompt or "",
+            layout=args.layout,
+        )
+        known_assets = store.load_assets(project)
+        asset_path = store.save_asset(project, asset)
+        packets = planner.build_prompt_packets(project, asset, known_assets=known_assets)
+        plan_path = store.save_prompt_plan(project, asset, packets)
+
+        print(f"Saved asset: {asset_path}")
+        print(f"Saved prompt plan: {plan_path}")
+        print(f"Enhancement brief model: {project.provider_defaults.prompt_model}")
+        print(planner.build_enhancement_brief(project, asset_type, asset, known_assets))
+        if args.print_prompts:
+            for packet in packets:
+                label = packet.stage_label or "single"
+                print(f"\n--- {asset.name} / {label} ---")
+                print(packet.prompt)
+        else:
+            print(f"Prompt packets: {len(packets)}")
+        return 0
+
+    return 1
 
 
 def cmd_evolution_chain(args: argparse.Namespace) -> int:
@@ -139,8 +274,6 @@ def cmd_evolution_chain(args: argparse.Namespace) -> int:
         return 1
 
     generator = SpriteGenerator(style=style, config=config, style_manager=style_mgr)
-    slicer = Slicer(output_dir=config.output_dir, config=config)
-
     stages = EVOLUTION_STAGES[args.tower]
     print(f"Generating {args.tower} evolution chain ({len(stages)} stages)...")
 
@@ -269,6 +402,20 @@ def main() -> int:
     )
     slice_parser.add_argument("--count", type=int, help="Number of sprites")
 
+    layout_parser = subparsers.add_parser("layout", help="Manage and slice atlas layouts")
+    layout_subparsers = layout_parser.add_subparsers(
+        dest="layout_command",
+        required=True,
+    )
+    layout_subparsers.add_parser("list", help="List built-in atlas layouts")
+    layout_info = layout_subparsers.add_parser("info", help="Show a layout")
+    layout_info.add_argument("--name", required=True)
+    layout_slice = layout_subparsers.add_parser("slice", help="Slice an image by layout")
+    layout_slice.add_argument("--image", required=True, help="Generated atlas image")
+    layout_slice.add_argument("--layout", required=True, help="Layout preset name")
+    layout_slice.add_argument("--output", default="output/sprites", help="Output directory")
+    layout_slice.add_argument("--prefix", help="Filename prefix")
+
     evo_parser = subparsers.add_parser(
         "evolution-chain", help="Generate a tower evolution chain"
     )
@@ -308,9 +455,57 @@ def main() -> int:
     style_create.add_argument("--negative-prompt", default="")
     style_create.add_argument("--colors")
     style_create.add_argument("--tags")
-    style_list = style_subparsers.add_parser("list", help="List styles")
+    style_subparsers.add_parser("list", help="List styles")
     style_info = style_subparsers.add_parser("info", help="Show style info")
     style_info.add_argument("--name", required=True)
+
+    project_parser = subparsers.add_parser(
+        "project",
+        help="Create project-aware prompt plans",
+    )
+    project_parser.add_argument(
+        "--project-root",
+        default="projects",
+        help="Directory where project specs are stored",
+    )
+    project_subparsers = project_parser.add_subparsers(
+        dest="project_command",
+        required=True,
+    )
+
+    project_init = project_subparsers.add_parser("init", help="Create a project spec")
+    project_init.add_argument("--name", required=True)
+    project_init.add_argument("--summary", default="")
+    project_init.add_argument("--style", required=True, help="Shared visual style")
+    project_init.add_argument("--context", required=True, help="Shared project universe")
+    project_init.add_argument("--palette", default="", help="Comma-separated colors")
+    project_init.add_argument("--negative-prompt", default="")
+    project_init.add_argument("--provider", default="openai")
+    project_init.add_argument("--image-model", default="gpt-image-2")
+    project_init.add_argument("--prompt-provider", default="openai")
+    project_init.add_argument("--prompt-model", default="gpt-5.5")
+    project_init.add_argument("--asset-type", default="tower")
+    project_init.add_argument("--asset-type-context", default="")
+    project_init.add_argument("--evolutions", type=int, default=4)
+    project_init.add_argument("--evolution-context", default="")
+    project_init.add_argument("--layout", default="single_sprite")
+
+    project_asset = project_subparsers.add_parser(
+        "asset",
+        help="Create an asset spec and prompt plan",
+    )
+    project_asset.add_argument("--project", required=True, help="Project slug or JSON path")
+    project_asset.add_argument("--asset-type", default="tower")
+    project_asset.add_argument("--name", required=True)
+    project_asset.add_argument("--description", required=True)
+    project_asset.add_argument("--details", default="")
+    project_asset.add_argument("--enhanced-prompt", default="")
+    project_asset.add_argument("--layout")
+    project_asset.add_argument(
+        "--print-prompts",
+        action="store_true",
+        help="Print full image prompts for every packet",
+    )
 
     args = parser.parse_args()
 
@@ -322,6 +517,10 @@ def main() -> int:
         return cmd_evolution_chain(args)
     elif args.command == "style":
         return cmd_style(args)
+    elif args.command == "layout":
+        return cmd_layout(args)
+    elif args.command == "project":
+        return cmd_project(args)
     else:
         parser.print_help()
         return 1

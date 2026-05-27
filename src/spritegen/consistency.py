@@ -14,9 +14,8 @@ Usage:
 
 from __future__ import annotations
 
-import json
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -58,17 +57,17 @@ class ConsistencyReport:
 
     def summary(self) -> str:
         lines = [
-            f"Style Consistency Report",
-            f"========================",
+            "Style Consistency Report",
+            "========================",
             f"Sheets analyzed: {self.sheet_count}",
             f"Dimension consistent: {self.dimension_consistent}",
-            f"",
-            f"Scores (0.0 = inconsistent, 1.0 = perfectly consistent):",
+            "",
+            "Scores (0.0 = inconsistent, 1.0 = perfectly consistent):",
             f"  Color consistency:      {self.color_consistency_score:.3f}",
             f"  Brightness consistency: {self.brightness_consistency_score:.3f}",
             f"  Saturation consistency: {self.saturation_consistency_score:.3f}",
             f"  Palette adherence:      {self.mean_palette_adherence:.3f}",
-            f"",
+            "",
             f"Overall score: {self.overall_consistency_score:.3f}",
             f"Pass threshold: {self.pass_threshold:.3f}",
             f"Result: {'PASS' if self.passed else 'FAIL'}",

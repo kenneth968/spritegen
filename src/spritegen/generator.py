@@ -20,12 +20,8 @@ Usage:
 from __future__ import annotations
 
 import io
-import json
 import subprocess
 import sys
-import time
-from pathlib import Path
-from typing import Any
 
 from .config import SpriteConfig, SpriteDefinition, SheetLayout
 from .models import GeneratedSheet, SpriteMetadata
@@ -336,7 +332,10 @@ payload = json.dumps({{
             "content": {prompt_json}
         }}
     ],
-    "response_modalities": ["image", "text"],
+    "modalities": ["image", "text"],
+    "image_config": {{
+        "size": "{size[0]}x{size[1]}"
+    }},
 }}).encode()
 
 try:
@@ -387,20 +386,6 @@ except Exception as e:
         negative_prompt: str,
         size: tuple[int, int],
     ) -> bytes:
-        script = f"""
-import anthropic
-client = anthropic.Anthropic()
-response = client.messages.create(
-    model="claude-3-5-sonnet-20241022",
-    max_tokens=1024,
-    messages=[{{
-        "role": "user",
-        "content": f"Generate an image: {prompt}. Return as base64 PNG."
-    }}]
-)
-print(response.content[0].source.media_type)
-"""
-        result = self._run_python_script(script)
         raise ImageGenerationError("Anthropic image generation not yet implemented")
 
     def _call_replicate(
@@ -410,15 +395,6 @@ print(response.content[0].source.media_type)
         size: tuple[int, int],
         model: str,
     ) -> bytes:
-        script = f'''
-import replicate
-output = replicate.run(
-    "{model}",
-    input={{"prompt": "{prompt}"}}
-)
-print(output)
-'''
-        result = self._run_python_script(script)
         raise ImageGenerationError("Replicate image generation not yet implemented")
 
     def _run_python_script(self, script: str) -> str:

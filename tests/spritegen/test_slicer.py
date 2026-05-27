@@ -2,7 +2,6 @@
 
 import pytest
 from io import BytesIO
-from pathlib import Path
 from spritegen.config import SpriteConfig, SheetLayout
 from spritegen.models import GeneratedSheet, SpriteMetadata
 from spritegen.slicer import Slicer, SlicerError

@@ -1,11 +1,9 @@
 """Tests for sprite generation pipeline."""
 
-import pytest
 from pathlib import Path
-from spritegen.config import SpriteConfig, SheetLayout, SpriteDefinition
+from spritegen.config import SpriteConfig, SheetLayout
 from spritegen.models import GeneratedSheet, SpriteMetadata
-from spritegen.style import StyleManager, StylePreset, PRESET_STYLES
-from spritegen.generator import SpriteGenerator, create_mycomed_style
+from spritegen.style import StyleManager, PRESET_STYLES
 
 
 class TestSheetLayout:
@@ -119,7 +117,7 @@ class TestOpenAIIntegration:
     def test_openai_script_generation(self):
         from spritegen.generator import SpriteGenerator
         from spritegen.style import StyleManager, StylePreset
-        from spritegen.config import SpriteConfig, SpriteDefinition
+        from spritegen.config import SpriteConfig
 
         mgr = StyleManager()
         style = StylePreset(
@@ -168,5 +166,5 @@ print(response.data[0].b64_json)
             generator._call_openai("test prompt", "blurry", (512, 512), "dall-e-3")
         except ImageGenerationError as e:
             assert "billing" in str(e).lower() or "ERROR" in str(e)
-        except Exception as e:
+        except Exception:
             pass
