@@ -357,6 +357,50 @@ def test_main_window_adds_project_grid_layout(tmp_path):
     app.processEvents()
 
 
+def test_main_window_adds_project_hero_grid_layout(tmp_path):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    pytest.importorskip("PySide6")
+
+    from PySide6.QtWidgets import QApplication
+    from spritegen.projects import ProjectStore
+    from spritegen.user_settings import UserSettingsStore
+    from spritegen.ui.main_window import MainWindow
+
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow(settings_store=UserSettingsStore(tmp_path / "settings.json"))
+    window.project_root_edit.setText(str(tmp_path / "projects"))
+    window.project_name_edit.setText("MyceliumTD")
+    window.asset_type_edit.setText("character")
+    window.layout_name_edit.setText("Rogue Character Sheet")
+    window.layout_width_spin.setValue(1024)
+    window.layout_height_spin.setValue(1024)
+    window.hero_width_spin.setValue(512)
+    window.layout_rows_spin.setValue(4)
+    window.layout_columns_spin.setValue(2)
+    window.layout_region_prefix_edit.setText("head")
+    window.hero_region_name_edit.setText("full body")
+
+    window._on_add_hero_grid_layout()
+
+    assert window.layout_combo.currentData() == "rogue_character_sheet"
+    assert "Saved layout rogue_character_sheet" in window.status_label.text()
+
+    project = ProjectStore(tmp_path / "projects").load_project("myceliumtd")
+    layout = project.custom_layouts["rogue_character_sheet"]
+    assert layout.width == 1024
+    assert layout.height == 1024
+    assert len(layout.regions) == 9
+    assert layout.regions[0].name == "full_body"
+    assert layout.regions[0].width == 512
+    assert layout.regions[-1].name == "head_8"
+    assert layout.regions[-1].x == 768
+    assert layout.regions[-1].y == 768
+    assert project.asset_types["character"].default_layout == "rogue_character_sheet"
+
+    window.close()
+    app.processEvents()
+
+
 def test_main_window_applies_character_workflow_preset(tmp_path):
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     pytest.importorskip("PySide6")

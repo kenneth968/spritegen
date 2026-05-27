@@ -240,3 +240,20 @@ Model discovery now reaches beyond the static fallback list:
   text the user has typed.
 - Offline defaults remain the fallback for no-network use and for providers that
   do not expose a model-list endpoint in this tool yet.
+
+## Sixteenth implementation slice
+
+Custom atlas layout creation now covers character-sheet composites:
+
+- `AssetLayout.hero_plus_grid` creates one large hero/full-body region plus a
+  same-identity grid of smaller supporting cells, matching the requested
+  512x1024 character plus eight 256x256 expression-head layout shape while
+  allowing custom dimensions.
+- `spritegen project layout add-hero-grid` saves that layout into project JSON,
+  so it can drive prompt planning, generation, slicing, and export like any
+  built-in layout.
+- The desktop **Custom Layout** panel now has an **Add Hero + Grid** action and
+  hero-region controls, so users can define this composite shape without editing
+  JSON by hand.
+- The layout prompt instructions explicitly call out hard seams, same identity,
+  shared palette/materials/style, and exact slice boundaries.

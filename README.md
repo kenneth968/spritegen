@@ -59,7 +59,8 @@ assets that will be used as style and universe anchors, before spending image to
 Use **Workflow / Apply Preset** to fill common asset-type settings such as four-stage
 towers or a full-body character plus eight emotion heads.
 Use **Custom Layout** to add reusable equal-cell atlases, contact sheets, tile grids,
-or pose sheets to the current project without leaving the app.
+pose sheets, or a large hero region plus a grid of smaller related cells to the
+current project without leaving the app.
 The output panel previews both the raw generated atlas and the sliced sprite files from
 `generation_manifest.json`, so desktop users can inspect the game-ready files directly.
 Use **Export Sprites** after generation to copy the sliced files and a compact export
@@ -148,8 +149,8 @@ spritegen layout slice \
 ```
 
 For project-specific atlas shapes, save a custom layout on the project and reuse it
-for future assets. In the desktop app, use **Custom Layout** for equal-cell grids; the
-same layouts can also be managed from the CLI:
+for future assets. In the desktop app, use **Custom Layout** for equal-cell grids
+or hero-plus-grid character sheets; the same layouts can also be managed from the CLI:
 
 ```bash
 spritegen project layout --project myceliumtd add-grid \
@@ -168,6 +169,16 @@ spritegen project asset \
   --description "Puffball tower shown in six readable pose variants" \
   --layout tower_contact_sheet \
   --print-prompts
+
+spritegen project layout --project myceliumtd add-hero-grid \
+  --name rogue_character_sheet \
+  --width 1024 \
+  --height 1024 \
+  --hero-width 512 \
+  --grid-rows 4 \
+  --grid-columns 2 \
+  --hero-region-name full_body \
+  --grid-region-prefix head
 ```
 
 ## Tower Types

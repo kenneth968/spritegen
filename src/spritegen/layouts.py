@@ -7,6 +7,7 @@ result back into game-ready files.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -203,6 +204,82 @@ class AssetLayout:
             ),
         )
 
+    @classmethod
+    def hero_plus_grid(
+        cls,
+        name: str,
+        width: int,
+        height: int,
+        hero_width: int,
+        grid_rows: int,
+        grid_columns: int,
+        hero_region_name: str = "full_body",
+        grid_region_prefix: str = "head",
+        hero_side: str = "left",
+    ) -> "AssetLayout":
+        if hero_side not in {"left", "right"}:
+            raise ValueError("hero_side must be left or right")
+        if hero_width <= 0 or hero_width >= width:
+            raise ValueError("hero_width must be smaller than the canvas width")
+        if grid_rows < 1 or grid_columns < 1:
+            raise ValueError("Grid rows and columns must be at least 1")
+
+        grid_width = width - hero_width
+        if grid_width % grid_columns or height % grid_rows:
+            raise ValueError("Remaining grid area must divide evenly by rows and columns")
+
+        hero_name = _layout_token(hero_region_name, "full_body")
+        grid_prefix = _layout_token(grid_region_prefix, "cell")
+        grid_cell_w = grid_width // grid_columns
+        grid_cell_h = height // grid_rows
+        hero_x = 0 if hero_side == "left" else width - hero_width
+        grid_x = hero_width if hero_side == "left" else 0
+        hero_label = "left" if hero_side == "left" else "right"
+        grid_label = "right" if hero_side == "left" else "left"
+
+        regions = [
+            LayoutRegion(
+                name=hero_name,
+                x=hero_x,
+                y=0,
+                width=hero_width,
+                height=height,
+                prompt_role="large hero character or primary asset region",
+            )
+        ]
+        for idx in range(grid_rows * grid_columns):
+            row = idx // grid_columns
+            col = idx % grid_columns
+            regions.append(
+                LayoutRegion(
+                    name=f"{grid_prefix}_{idx + 1}",
+                    x=grid_x + col * grid_cell_w,
+                    y=row * grid_cell_h,
+                    width=grid_cell_w,
+                    height=grid_cell_h,
+                    prompt_role=(
+                        f"supporting variant cell {idx + 1}, same identity as "
+                        f"{hero_name}"
+                    ),
+                )
+            )
+
+        return cls(
+            name=_layout_token(name, "hero_grid"),
+            width=width,
+            height=height,
+            regions=regions,
+            prompt_instructions=(
+                f"Create a clean {width}x{height} atlas. The {hero_label} "
+                f"{hero_width}x{height} hero area is one large full-body or "
+                f"primary asset. The {grid_label} {grid_width}x{height} area is "
+                f"a {grid_columns} by {grid_rows} grid of {grid_cell_w}x{grid_cell_h} "
+                "supporting cells that keep the same identity, costume, materials, "
+                "palette, and rendering style as the hero area. Keep hard, straight "
+                "seams between every region so the image can be sliced exactly."
+            ),
+        )
+
 
 PRESET_LAYOUTS: dict[str, AssetLayout] = {
     "single_sprite": AssetLayout.single_sprite(),
@@ -224,3 +301,8 @@ def get_layout(name: str) -> AssetLayout:
     except KeyError:
         known = ", ".join(sorted(PRESET_LAYOUTS))
         raise ValueError(f"Unknown layout '{name}'. Available layouts: {known}")
+
+
+def _layout_token(value: str, fallback: str) -> str:
+    token = re.sub(r"[^a-zA-Z0-9]+", "_", value.strip().lower()).strip("_")
+    return token or fallback

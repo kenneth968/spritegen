@@ -401,6 +401,18 @@ class MainWindow(QWidget):
         grid_row.addWidget(self.layout_columns_spin)
         custom_layout_form.addRow("Grid:", grid_row)
 
+        hero_row = QHBoxLayout()
+        self.hero_width_spin = QSpinBox()
+        self.hero_width_spin.setRange(64, 4096)
+        self.hero_width_spin.setSingleStep(64)
+        self.hero_width_spin.setValue(512)
+        self.hero_region_name_edit = QLineEdit("full_body")
+        hero_row.addWidget(QLabel("Width"))
+        hero_row.addWidget(self.hero_width_spin)
+        hero_row.addWidget(QLabel("Name"))
+        hero_row.addWidget(self.hero_region_name_edit)
+        custom_layout_form.addRow("Hero:", hero_row)
+
         self.layout_region_prefix_edit = QLineEdit("cell")
         custom_layout_form.addRow("Region Prefix:", self.layout_region_prefix_edit)
 
@@ -411,7 +423,12 @@ class MainWindow(QWidget):
 
         self.add_grid_layout_btn = QPushButton("Add Grid Layout")
         self.add_grid_layout_btn.clicked.connect(self._on_add_grid_layout)
-        custom_layout_form.addRow("Save:", self.add_grid_layout_btn)
+        self.add_hero_grid_layout_btn = QPushButton("Add Hero + Grid")
+        self.add_hero_grid_layout_btn.clicked.connect(self._on_add_hero_grid_layout)
+        layout_actions = QHBoxLayout()
+        layout_actions.addWidget(self.add_grid_layout_btn)
+        layout_actions.addWidget(self.add_hero_grid_layout_btn)
+        custom_layout_form.addRow("Save:", layout_actions)
 
         asset_layout.addRow(custom_layout_group)
 
@@ -799,23 +816,31 @@ class MainWindow(QWidget):
 
     def _on_add_grid_layout(self) -> None:
         try:
-            project = self._build_project_spec()
-            layout = self._build_grid_layout()
-            project.add_layout(layout)
-            asset_type_name = self.asset_type_edit.text().strip() or "asset"
-            if asset_type_name in project.asset_types:
-                project.asset_types[asset_type_name].default_layout = layout.name
-            self._current_project = project
-            store = ProjectStore(self.project_root_edit.text())
-            store.save_project(project)
-            self._refresh_project_list(project.slug)
-            self._refresh_layout_combo(project, layout.name)
-            self.status_label.setText(
-                f"Saved layout {layout.name}: "
-                f"{layout.width}x{layout.height}, {len(layout.regions)} regions"
-            )
+            self._save_custom_layout(self._build_grid_layout())
         except Exception as exc:
             QMessageBox.warning(self, "Layout Failed", str(exc))
+
+    def _on_add_hero_grid_layout(self) -> None:
+        try:
+            self._save_custom_layout(self._build_hero_grid_layout())
+        except Exception as exc:
+            QMessageBox.warning(self, "Layout Failed", str(exc))
+
+    def _save_custom_layout(self, layout: AssetLayout) -> None:
+        project = self._build_project_spec()
+        project.add_layout(layout)
+        asset_type_name = self.asset_type_edit.text().strip() or "asset"
+        if asset_type_name in project.asset_types:
+            project.asset_types[asset_type_name].default_layout = layout.name
+        self._current_project = project
+        store = ProjectStore(self.project_root_edit.text())
+        store.save_project(project)
+        self._refresh_project_list(project.slug)
+        self._refresh_layout_combo(project, layout.name)
+        self.status_label.setText(
+            f"Saved layout {layout.name}: "
+            f"{layout.width}x{layout.height}, {len(layout.regions)} regions"
+        )
 
     def _build_grid_layout(self) -> AssetLayout:
         name = self.layout_name_edit.text().strip()
@@ -839,6 +864,32 @@ class MainWindow(QWidget):
             rows=rows,
             columns=columns,
             region_prefix=region_prefix,
+        )
+        prompt_instructions = self.layout_prompt_edit.toPlainText().strip()
+        if prompt_instructions:
+            layout.prompt_instructions = prompt_instructions
+        return layout
+
+    def _build_hero_grid_layout(self) -> AssetLayout:
+        name = self.layout_name_edit.text().strip()
+        if not name:
+            raise ValueError("Layout name is required")
+        width = self.layout_width_spin.value()
+        height = self.layout_height_spin.value()
+        hero_width = self.hero_width_spin.value()
+        rows = self.layout_rows_spin.value()
+        columns = self.layout_columns_spin.value()
+        hero_name = self.hero_region_name_edit.text().strip() or "full_body"
+        prefix = self.layout_region_prefix_edit.text().strip() or "cell"
+        layout = AssetLayout.hero_plus_grid(
+            name=name,
+            width=width,
+            height=height,
+            hero_width=hero_width,
+            grid_rows=rows,
+            grid_columns=columns,
+            hero_region_name=hero_name,
+            grid_region_prefix=prefix,
         )
         prompt_instructions = self.layout_prompt_edit.toPlainText().strip()
         if prompt_instructions:
@@ -1352,6 +1403,7 @@ class MainWindow(QWidget):
         self.apply_workflow_preset_btn.setEnabled(not busy)
         self.preview_prompts_btn.setEnabled(not busy)
         self.add_grid_layout_btn.setEnabled(not busy)
+        self.add_hero_grid_layout_btn.setEnabled(not busy)
         self.export_sprites_btn.setEnabled(not busy)
         self.check_provider_setup_btn.setEnabled(not busy)
         self.save_provider_settings_btn.setEnabled(not busy)

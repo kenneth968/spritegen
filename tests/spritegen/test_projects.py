@@ -38,6 +38,37 @@ def test_character_emotion_layout_regions_are_exact():
     assert layout.validate() == []
 
 
+def test_hero_plus_grid_layout_regions_are_exact():
+    layout = AssetLayout.hero_plus_grid(
+        name="rogue_character_sheet",
+        width=1024,
+        height=1024,
+        hero_width=512,
+        grid_rows=4,
+        grid_columns=2,
+        hero_region_name="full_body",
+        grid_region_prefix="head",
+    )
+
+    assert layout.width == 1024
+    assert layout.height == 1024
+    assert len(layout.regions) == 9
+    assert layout.regions[0].name == "full_body"
+    assert layout.regions[0].x == 0
+    assert layout.regions[0].width == 512
+    assert layout.regions[0].height == 1024
+    assert layout.regions[1].name == "head_1"
+    assert layout.regions[1].x == 512
+    assert layout.regions[1].y == 0
+    assert layout.regions[1].width == 256
+    assert layout.regions[-1].name == "head_8"
+    assert layout.regions[-1].x == 768
+    assert layout.regions[-1].y == 768
+    assert "left 512x1024 hero area" in layout.prompt_instructions
+    assert "right 512x1024 area is a 2 by 4 grid" in layout.prompt_instructions
+    assert layout.validate() == []
+
+
 def test_workflow_presets_create_asset_type_specs():
     preset_keys = {preset.key for preset in list_workflow_presets()}
     assert {"tower_4_stage", "character_emotion_atlas", "ui_icon"} <= preset_keys
@@ -52,6 +83,60 @@ def test_workflow_presets_create_asset_type_specs():
     assert character.name == "character"
     assert character.evolution.count == 1
     assert character.default_layout == "character_full_plus_8_emotions"
+
+
+def test_project_layout_cli_adds_hero_plus_grid(monkeypatch, tmp_path, capsys):
+    import sys
+    from spritegen.cli import main
+
+    project = ProjectSpec(
+        name="MyceliumTD",
+        summary="Fungal tower defense game",
+        visual_style="clean cartoon sprites",
+        shared_context="Friendly fungal towers.",
+    )
+    store = ProjectStore(tmp_path / "projects")
+    store.save_project(project)
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "spritegen",
+            "project",
+            "--project-root",
+            str(tmp_path / "projects"),
+            "layout",
+            "--project",
+            "myceliumtd",
+            "add-hero-grid",
+            "--name",
+            "Rogue Character Sheet",
+            "--width",
+            "1024",
+            "--height",
+            "1024",
+            "--hero-width",
+            "512",
+            "--grid-rows",
+            "4",
+            "--grid-columns",
+            "2",
+            "--hero-region-name",
+            "full body",
+            "--grid-region-prefix",
+            "head",
+        ],
+    )
+
+    assert main() == 0
+
+    output = capsys.readouterr().out
+    saved = store.load_project("myceliumtd")
+    layout = saved.custom_layouts["rogue_character_sheet"]
+    assert "Saved layout: rogue_character_sheet" in output
+    assert layout.regions[0].name == "full_body"
+    assert layout.regions[-1].name == "head_8"
 
 
 def test_project_store_round_trips_prompt_plan(tmp_path):

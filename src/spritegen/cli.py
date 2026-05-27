@@ -38,6 +38,7 @@ from .projects import (
     PromptPlanner,
     apply_asset_type_enhancement,
     apply_project_enhancement,
+    slugify,
 )
 from .workflow_presets import get_workflow_preset, list_workflow_presets
 from . import (
@@ -291,6 +292,26 @@ def cmd_project(args: argparse.Namespace) -> int:
                 rows=args.rows,
                 columns=args.columns,
                 region_prefix=args.region_prefix,
+            )
+            if args.prompt_instructions:
+                layout.prompt_instructions = args.prompt_instructions
+            project.add_layout(layout)
+            path = store.save_project(project)
+            print(f"Saved layout: {layout.name}")
+            print(f"Project file: {path}")
+            return 0
+
+        if args.layout_action == "add-hero-grid":
+            layout = AssetLayout.hero_plus_grid(
+                name=slugify(args.name).replace("-", "_"),
+                width=args.width,
+                height=args.height,
+                hero_width=args.hero_width,
+                grid_rows=args.grid_rows,
+                grid_columns=args.grid_columns,
+                hero_region_name=args.hero_region_name,
+                grid_region_prefix=args.grid_region_prefix,
+                hero_side=args.hero_side,
             )
             if args.prompt_instructions:
                 layout.prompt_instructions = args.prompt_instructions
@@ -849,6 +870,24 @@ def main() -> int:
     project_layout_add_grid.add_argument("--columns", type=int, required=True)
     project_layout_add_grid.add_argument("--region-prefix", default="cell")
     project_layout_add_grid.add_argument("--prompt-instructions", default="")
+    project_layout_add_hero_grid = project_layout_subparsers.add_parser(
+        "add-hero-grid",
+        help="Add a large hero region plus a grid of smaller related cells",
+    )
+    project_layout_add_hero_grid.add_argument("--name", required=True)
+    project_layout_add_hero_grid.add_argument("--width", type=int, default=1024)
+    project_layout_add_hero_grid.add_argument("--height", type=int, default=1024)
+    project_layout_add_hero_grid.add_argument("--hero-width", type=int, default=512)
+    project_layout_add_hero_grid.add_argument("--grid-rows", type=int, required=True)
+    project_layout_add_hero_grid.add_argument("--grid-columns", type=int, required=True)
+    project_layout_add_hero_grid.add_argument("--hero-region-name", default="full_body")
+    project_layout_add_hero_grid.add_argument("--grid-region-prefix", default="head")
+    project_layout_add_hero_grid.add_argument(
+        "--hero-side",
+        choices=["left", "right"],
+        default="left",
+    )
+    project_layout_add_hero_grid.add_argument("--prompt-instructions", default="")
     project_layout_import = project_layout_subparsers.add_parser(
         "import",
         help="Import a layout JSON file into the project",
