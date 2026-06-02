@@ -33,6 +33,76 @@ def test_provider_model_catalog_exposes_defaults_and_sources():
     assert "https://openrouter.ai/docs/guides/overview/multimodal/image-generation" not in prompt_sources
 
 
+def test_validate_model_choice_distinguishes_known_wrong_role_and_custom_ids():
+    from spritegen.provider_models import (
+        IMAGE_ROLE,
+        MODEL_VALIDATION_ERROR,
+        MODEL_VALIDATION_OK,
+        MODEL_VALIDATION_WARNING,
+        PROMPT_ROLE,
+        validate_model_choice,
+    )
+
+    image_result = validate_model_choice(
+        "openrouter",
+        IMAGE_ROLE,
+        "google/gemini-3.1-flash-image-preview",
+    )
+    assert image_result.status == MODEL_VALIDATION_OK
+    assert image_result.suggestion is not None
+    assert image_result.suggestion.role == IMAGE_ROLE
+
+    wrong_role_result = validate_model_choice(
+        "openrouter",
+        IMAGE_ROLE,
+        "minimax/minimax-m2.7",
+    )
+    assert wrong_role_result.status == MODEL_VALIDATION_ERROR
+    assert "known OpenRouter prompt model" in wrong_role_result.message
+    assert "not an image model" in wrong_role_result.message
+
+    custom_result = validate_model_choice(
+        "openrouter",
+        IMAGE_ROLE,
+        "new-provider/current-image-model",
+    )
+    assert custom_result.status == MODEL_VALIDATION_WARNING
+    assert "Custom OpenRouter image model" in custom_result.message
+    assert "models.dev" in " ".join(custom_result.source_urls)
+
+    empty_result = validate_model_choice("openrouter", PROMPT_ROLE, "")
+    assert empty_result.status == MODEL_VALIDATION_ERROR
+    assert empty_result.message == "No prompt model selected"
+
+
+def test_validate_model_choice_accepts_cached_online_suggestions():
+    from spritegen.provider_models import (
+        IMAGE_ROLE,
+        MODEL_VALIDATION_OK,
+        ModelSuggestion,
+        validate_model_choice,
+    )
+
+    result = validate_model_choice(
+        "openrouter",
+        IMAGE_ROLE,
+        "live/image-model",
+        extra=(
+            ModelSuggestion(
+                provider="openrouter",
+                role=IMAGE_ROLE,
+                model="live/image-model",
+                label="Live Image Model",
+                source_url="https://models.dev/?search=live",
+            ),
+        ),
+    )
+
+    assert result.status == MODEL_VALIDATION_OK
+    assert result.suggestion is not None
+    assert result.suggestion.label == "Live Image Model"
+
+
 def test_openrouter_online_discovery_filters_by_role_and_search(monkeypatch):
     from spritegen import provider_models
     from spritegen.provider_models import (
@@ -324,3 +394,70 @@ def test_cli_can_use_models_dev_catalog_source(monkeypatch, capsys):
     assert "minimax/minimax-m3" in output
     assert "models.dev result" in output
     assert "https://models.dev/?search=minimax" in output
+
+
+def test_cli_validates_model_role_and_returns_error(monkeypatch, capsys):
+    from spritegen.cli import main
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "spritegen",
+            "models",
+            "--provider",
+            "openrouter",
+            "--role",
+            "image",
+            "--validate",
+            "minimax/minimax-m2.7",
+        ],
+    )
+
+    assert main() == 1
+
+    output = capsys.readouterr().out
+    assert "OpenRouter image model validation" in output
+    assert "known OpenRouter prompt model" in output
+    assert "not an image model" in output
+
+
+def test_cli_validation_uses_online_suggestions(monkeypatch, capsys):
+    from spritegen import cli
+    from spritegen.cli import main
+    from spritegen.provider_models import IMAGE_ROLE, ModelSuggestion
+
+    def fake_discover(provider, role, search="", limit=20, timeout=15, source="auto"):
+        assert provider == "openrouter"
+        assert role == IMAGE_ROLE
+        return [
+            ModelSuggestion(
+                provider="openrouter",
+                role=IMAGE_ROLE,
+                model="live/image-model",
+                label="Live Image Model",
+                source_url="https://models.dev/?search=live",
+            )
+        ]
+
+    monkeypatch.setattr(cli, "discover_model_suggestions", fake_discover)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "spritegen",
+            "models",
+            "--provider",
+            "openrouter",
+            "--role",
+            "image",
+            "--online",
+            "--validate",
+            "live/image-model",
+        ],
+    )
+
+    assert main() == 0
+
+    output = capsys.readouterr().out
+    assert "ok: live/image-model is a known OpenRouter image model" in output

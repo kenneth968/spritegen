@@ -49,8 +49,10 @@ including OpenRouter model names, then paste the exact model name into the match
 model field. Use **Refresh Models** to pull current OpenRouter and OpenAI catalog
 results into those pickers; the built-in suggestions remain available when offline.
 Paste provider keys into **Image API Key** and **Prompt API Key**. Use **Check Setup**
-to confirm the selected providers have models and keys, or **Save Local Setup** to
-remember provider defaults and keys on this computer. Keys are never written to project
+to confirm the selected providers have keys and that known model IDs are in the
+right image/prompt role. Newer custom IDs from OpenRouter or models.dev stay usable
+with a warning until they appear in refreshed suggestions. Use **Save Local Setup**
+to remember provider defaults and keys on this computer. Keys are never written to project
 JSON; they live in the local user settings file or in `OPENAI_API_KEY` /
 `OPENROUTER_API_KEY` environment variables.
 Saved projects and assets can be reopened from the Project and Asset selectors, so new
@@ -121,6 +123,8 @@ spritegen models --provider openrouter --role image
 spritegen models --provider openrouter --role prompt
 spritegen models --provider openrouter --role prompt --online --search minimax
 spritegen models --provider openrouter --role prompt --online --catalog-source models-dev --search minimax
+spritegen models --provider openrouter --role image --validate google/gemini-3.1-flash-image-preview
+spritegen models --provider openrouter --role image --validate minimax/minimax-m2.7
 
 # Or create a ready-to-edit starter project with its first asset and prompt plan.
 spritegen project starters

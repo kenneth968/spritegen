@@ -34,10 +34,14 @@ from PySide6.QtWidgets import (
 from ..layouts import PRESET_LAYOUTS, AssetLayout
 from ..provider_models import (
     IMAGE_ROLE,
+    MODEL_VALIDATION_ERROR,
+    MODEL_VALIDATION_WARNING,
     PROMPT_ROLE,
     ModelSuggestion,
+    ModelValidationResult,
     combined_model_suggestions,
     default_model,
+    validate_model_choice,
 )
 from ..project_export import ProjectAssetExporter
 from ..project_gallery import ProjectGalleryWriter
@@ -978,22 +982,66 @@ class MainWindow(QWidget):
 
     def _on_check_provider_setup(self) -> None:
         missing = []
-        if not self.image_model_edit.text().strip():
-            missing.append("image model")
-        if not self.prompt_model_edit.text().strip():
-            missing.append("prompt model")
         image_provider = self.image_provider_combo.currentData()
         prompt_provider = self.prompt_provider_combo.currentData()
+        validations = [
+            self._validate_current_model(
+                IMAGE_ROLE,
+                image_provider,
+                self.image_model_edit.text(),
+            ),
+            self._validate_current_model(
+                PROMPT_ROLE,
+                prompt_provider,
+                self.prompt_model_edit.text(),
+            ),
+        ]
+        model_errors = [
+            validation.message
+            for validation in validations
+            if validation.status == MODEL_VALIDATION_ERROR
+        ]
+        model_warnings = [
+            validation.message
+            for validation in validations
+            if validation.status == MODEL_VALIDATION_WARNING
+        ]
         if image_provider in KEYED_PROVIDERS and not self._api_key_for(image_provider, "image"):
             missing.append(f"{PROVIDER_LABELS[image_provider]} image key")
         if prompt_provider in KEYED_PROVIDERS and not self._api_key_for(prompt_provider, "prompt"):
             missing.append(f"{PROVIDER_LABELS[prompt_provider]} prompt key")
-        if missing:
-            self.status_label.setText("Provider setup needs: " + ", ".join(missing))
+        if missing or model_errors:
+            self.status_label.setText(
+                "Provider setup needs: " + ", ".join([*missing, *model_errors])
+            )
             return
-        self.status_label.setText(
+        ready_status = (
             "Provider setup ready: "
             f"image {PROVIDER_LABELS[image_provider]} / prompt {PROVIDER_LABELS[prompt_provider]}"
+        )
+        if model_warnings:
+            self.status_label.setText(
+                "Provider setup ready with notes: "
+                f"image {PROVIDER_LABELS[image_provider]} / "
+                f"prompt {PROVIDER_LABELS[prompt_provider]}; "
+                + "; ".join(model_warnings)
+            )
+            return
+        self.status_label.setText(ready_status)
+
+    def _validate_current_model(
+        self,
+        role: str,
+        provider: str,
+        model: str,
+    ) -> ModelValidationResult:
+        other_role = PROMPT_ROLE if role == IMAGE_ROLE else IMAGE_ROLE
+        return validate_model_choice(
+            provider,
+            role,
+            model,
+            extra=self._online_model_suggestions.get((role, provider), []),
+            other_extra=self._online_model_suggestions.get((other_role, provider), []),
         )
 
     def _on_save_provider_settings(self) -> None:

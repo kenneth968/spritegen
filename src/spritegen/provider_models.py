@@ -11,6 +11,9 @@ from urllib.request import Request, urlopen
 IMAGE_ROLE = "image"
 PROMPT_ROLE = "prompt"
 MODEL_ROLES = (IMAGE_ROLE, PROMPT_ROLE)
+MODEL_VALIDATION_OK = "ok"
+MODEL_VALIDATION_WARNING = "warning"
+MODEL_VALIDATION_ERROR = "error"
 
 OPENAI_IMAGE_MODELS_URL = "https://developers.openai.com/api/docs/models/gpt-image-2"
 OPENAI_MODELS_URL = "https://developers.openai.com/api/docs/models"
@@ -32,6 +35,17 @@ class ModelSuggestion:
     label: str
     note: str = ""
     source_url: str = ""
+
+
+@dataclass(frozen=True)
+class ModelValidationResult:
+    provider: str
+    role: str
+    model: str
+    status: str
+    message: str
+    suggestion: ModelSuggestion | None = None
+    source_urls: tuple[str, ...] = ()
 
 
 class ModelDiscoveryError(Exception):
@@ -236,6 +250,137 @@ def combined_model_suggestions(
         seen.add(suggestion.model)
         suggestions.append(suggestion)
     return suggestions
+
+
+def validate_model_choice(
+    provider: str,
+    role: str,
+    model: str,
+    extra: list[ModelSuggestion] | tuple[ModelSuggestion, ...] = (),
+    other_extra: list[ModelSuggestion] | tuple[ModelSuggestion, ...] = (),
+) -> ModelValidationResult:
+    if role not in MODEL_ROLES:
+        raise ValueError(f"Unknown model role: {role}")
+
+    model_id = model.strip()
+    role_label = _role_label(role)
+    provider_label = _provider_label(provider)
+    if not model_id:
+        return ModelValidationResult(
+            provider=provider,
+            role=role,
+            model=model_id,
+            status=MODEL_VALIDATION_ERROR,
+            message=f"No {role_label} model selected",
+            source_urls=tuple(model_source_urls(provider, role)),
+        )
+
+    suggestions = _suggestions_for_validation(provider, role, extra)
+    suggestion = _find_model_suggestion(suggestions, model_id)
+    if suggestion:
+        return ModelValidationResult(
+            provider=provider,
+            role=role,
+            model=model_id,
+            status=MODEL_VALIDATION_OK,
+            message=f"{model_id} is a known {provider_label} {role_label} model",
+            suggestion=suggestion,
+            source_urls=tuple(_validation_source_urls(provider, role, suggestion)),
+        )
+
+    other_role = PROMPT_ROLE if role == IMAGE_ROLE else IMAGE_ROLE
+    other_suggestions = _suggestions_for_validation(provider, other_role, other_extra)
+    other_suggestion = _find_model_suggestion(other_suggestions, model_id)
+    if other_suggestion:
+        other_role_label = _role_label(other_role)
+        return ModelValidationResult(
+            provider=provider,
+            role=role,
+            model=model_id,
+            status=MODEL_VALIDATION_ERROR,
+            message=(
+                f"{model_id} is a known {provider_label} {other_role_label} model, "
+                f"not {_role_article_label(role)}"
+            ),
+            suggestion=other_suggestion,
+            source_urls=tuple(_validation_source_urls(provider, other_role, other_suggestion)),
+        )
+
+    return ModelValidationResult(
+        provider=provider,
+        role=role,
+        model=model_id,
+        status=MODEL_VALIDATION_WARNING,
+        message=(
+            f"Custom {provider_label} {role_label} model: {model_id}. "
+            "This ID is not in the built-in or refreshed suggestions; use "
+            "Refresh Models or models.dev to confirm it supports the selected role."
+        ),
+        source_urls=tuple(_custom_model_source_urls(provider, role)),
+    )
+
+
+def _suggestions_for_validation(
+    provider: str,
+    role: str,
+    extra: list[ModelSuggestion] | tuple[ModelSuggestion, ...] = (),
+) -> list[ModelSuggestion]:
+    return [
+        suggestion
+        for suggestion in combined_model_suggestions(provider, role, extra)
+        if suggestion.provider == provider and suggestion.role == role
+    ]
+
+
+def _find_model_suggestion(
+    suggestions: list[ModelSuggestion],
+    model: str,
+) -> ModelSuggestion | None:
+    for suggestion in suggestions:
+        if suggestion.model == model:
+            return suggestion
+    return None
+
+
+def _provider_label(provider: str) -> str:
+    labels = {
+        "mock": "Mock",
+        "pollinations": "Pollinations",
+        "openai": "OpenAI",
+        "openrouter": "OpenRouter",
+    }
+    return labels.get(provider, provider.title())
+
+
+def _role_label(role: str) -> str:
+    return "image" if role == IMAGE_ROLE else "prompt"
+
+
+def _role_article_label(role: str) -> str:
+    return "an image model" if role == IMAGE_ROLE else "a prompt model"
+
+
+def _validation_source_urls(
+    provider: str,
+    role: str,
+    suggestion: ModelSuggestion | None = None,
+) -> list[str]:
+    urls = model_source_urls(provider, role)
+    if suggestion and suggestion.source_url and suggestion.source_url not in urls:
+        urls.append(suggestion.source_url)
+    return urls
+
+
+def _custom_model_source_urls(provider: str, role: str) -> list[str]:
+    urls = model_source_urls(provider, role)
+    for url in model_source_urls(provider):
+        if url not in urls:
+            urls.append(url)
+    if provider == "openrouter" and MODELS_DEV_OPENROUTER_SEARCH_URL not in urls:
+        urls.append(MODELS_DEV_OPENROUTER_SEARCH_URL)
+    if not urls:
+        urls.append("https://models.dev/")
+    return urls
 
 
 def _discover_openrouter_models(

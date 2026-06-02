@@ -958,6 +958,18 @@ def test_main_window_checks_provider_setup_without_network(tmp_path, monkeypatch
 
     assert window.status_label.text() == "Provider setup ready: image OpenRouter / prompt OpenAI"
 
+    window.image_model_edit.setText("minimax/minimax-m2.7")
+    window._on_check_provider_setup()
+
+    assert "known OpenRouter prompt model" in window.status_label.text()
+    assert "not an image model" in window.status_label.text()
+
+    window.image_model_edit.setText("custom/openrouter-image-model")
+    window._on_check_provider_setup()
+
+    assert window.status_label.text().startswith("Provider setup ready with notes:")
+    assert "Custom OpenRouter image model" in window.status_label.text()
+
     window.close()
     app.processEvents()
 

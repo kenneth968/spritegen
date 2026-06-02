@@ -398,3 +398,19 @@ Generation can now include prompt improvement in the same flow:
 - The desktop app adds **Improve prompt before Generate**, so a user can keep the
   separate prompt model but still run enhancement and image generation with one
   Generate action.
+
+## Twenty-seventh implementation slice
+
+Provider setup now catches common model-role mistakes without blocking current
+catalog IDs:
+
+- `spritegen.provider_models.validate_model_choice` checks selected image and
+  prompt models against built-in suggestions plus refreshed OpenRouter/models.dev
+  catalog results.
+- Known prompt-only IDs such as `minimax/minimax-m2.7` are reported as the wrong
+  role when pasted into the image model field, while newer custom IDs remain
+  allowed with a setup warning.
+- `spritegen models --validate ...` exposes the same check for CLI users.
+- Desktop **Check Setup** now combines key checks with model-role validation, so
+  a double-click user can catch swapped image/prompt models before spending API
+  calls.

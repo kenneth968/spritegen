@@ -17,12 +17,14 @@ from .provider_models import (
     IMAGE_ROLE,
     MODEL_DISCOVERY_SOURCES,
     MODEL_ROLES,
+    MODEL_VALIDATION_ERROR,
     PROMPT_ROLE,
     ModelDiscoveryError,
     combined_model_suggestions,
     default_model,
     discover_model_suggestions,
     model_source_urls,
+    validate_model_choice,
 )
 from .project_export import ProjectAssetExporter
 from .project_gallery import ProjectGalleryWriter
@@ -212,6 +214,21 @@ def cmd_models(args: argparse.Namespace) -> int:
         args.role,
         online_suggestions,
     )
+    if args.validate:
+        validation = validate_model_choice(
+            args.provider,
+            args.role,
+            args.validate,
+            extra=online_suggestions,
+        )
+        print(f"{provider_label} {role_label} model validation:")
+        print(f"  {validation.status}: {validation.message}")
+        if validation.source_urls:
+            print("Sources:")
+            for url in validation.source_urls:
+                print(f"  - {url}")
+        return 1 if validation.status == MODEL_VALIDATION_ERROR else 0
+
     if args.search and not args.online:
         search_text = args.search.lower()
         suggestions = [
@@ -899,6 +916,10 @@ def main() -> int:
         default="auto",
         choices=MODEL_DISCOVERY_SOURCES,
         help="Online model catalog to use for OpenRouter discovery",
+    )
+    models_parser.add_argument(
+        "--validate",
+        help="Validate one pasted model ID for the selected provider and role",
     )
 
     evo_parser = subparsers.add_parser(
