@@ -414,3 +414,17 @@ catalog IDs:
 - Desktop **Check Setup** now combines key checks with model-role validation, so
   a double-click user can catch swapped image/prompt models before spending API
   calls.
+
+## Twenty-eighth implementation slice
+
+Generation now has a reusable preflight step:
+
+- `spritegen.preflight.build_generation_preflight` builds the same prompt-packet
+  and layout summary a generation will use, then reports provider key, model-role,
+  variant-count, atlas-size, and expected slice-count issues before any image API
+  call.
+- `spritegen project preflight --project ... --asset ...` exposes that report to
+  CLI users and exits non-zero only when the run has blocking errors.
+- Desktop **Generate** now runs the same preflight and stops before starting the
+  background generation worker when a known wrong-role model or required key is
+  missing.

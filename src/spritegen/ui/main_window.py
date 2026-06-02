@@ -43,6 +43,7 @@ from ..provider_models import (
     default_model,
     validate_model_choice,
 )
+from ..preflight import PREFLIGHT_ERROR, build_generation_preflight
 from ..project_export import ProjectAssetExporter
 from ..project_gallery import ProjectGalleryWriter
 from ..project_starters import get_project_starter, list_project_starters
@@ -1216,14 +1217,19 @@ class MainWindow(QWidget):
 
         provider = self.image_provider_combo.currentData()
         api_key = self._api_key_for(provider, "image")
-        if not self._provider_can_run(provider, api_key):
-            return
         prompt_provider = self.prompt_provider_combo.currentData()
         prompt_api_key = self._api_key_for(prompt_provider, "prompt")
-        if self.enhance_before_generate_check.isChecked() and not self._provider_can_run(
-            prompt_provider,
-            prompt_api_key,
-        ):
+        preflight = self._build_generation_preflight(
+            project,
+            asset,
+            image_api_key=api_key,
+            prompt_api_key=prompt_api_key,
+        )
+        if preflight.status == PREFLIGHT_ERROR:
+            self.status_label.setText(
+                "Preflight needs: "
+                + "; ".join(issue.message for issue in preflight.errors[:3])
+            )
             return
 
         output_root = (
@@ -1252,6 +1258,30 @@ class MainWindow(QWidget):
         self._thread.finished.connect(self._on_generation_finished)
         self._thread.error.connect(self._on_thread_error)
         self._thread.start()
+
+    def _build_generation_preflight(
+        self,
+        project: ProjectSpec,
+        asset: AssetSpec,
+        image_api_key: str,
+        prompt_api_key: str,
+    ):
+        store = ProjectStore(self.project_root_edit.text())
+        known_assets = store.load_assets(project)
+        return build_generation_preflight(
+            project=project,
+            asset=asset,
+            known_assets=known_assets,
+            provider=self.image_provider_combo.currentData(),
+            model=self.image_model_edit.text().strip(),
+            api_key=image_api_key,
+            prompt_provider=self.prompt_provider_combo.currentData(),
+            prompt_model=self.prompt_model_edit.text().strip(),
+            prompt_api_key=prompt_api_key,
+            enhance_first=self.enhance_before_generate_check.isChecked(),
+            variants_per_packet=self.generation_variants_spin.value(),
+            model_suggestions=self._online_model_suggestions,
+        )
 
     def _on_generation_finished(self, result) -> None:
         try:

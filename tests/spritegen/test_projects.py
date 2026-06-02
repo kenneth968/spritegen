@@ -170,6 +170,113 @@ def test_project_starter_cli_saves_project_asset_and_prompt_plan(monkeypatch, tm
     assert plan_path.exists()
 
 
+def test_generation_preflight_reports_run_shape_and_model_errors():
+    from spritegen.preflight import (
+        PREFLIGHT_ERROR,
+        PREFLIGHT_WARNING,
+        build_generation_preflight,
+    )
+
+    project = ProjectSpec(
+        name="MyceliumTD",
+        summary="Fungal tower defense game",
+        visual_style="clean cartoon sprites",
+        shared_context="Friendly fungi defend a damp forest floor.",
+    )
+    project.provider_defaults.image_provider = "openrouter"
+    project.provider_defaults.image_model = "minimax/minimax-m2.7"
+    project.provider_defaults.prompt_provider = "openai"
+    project.provider_defaults.prompt_model = "gpt-5.5"
+    project.add_asset_type(
+        AssetTypeSpec(
+            name="tower",
+            shared_prompt="Rounded fungal silhouettes.",
+            evolution=EvolutionPlan(count=4, labels=["base", "upgraded", "advanced", "ultimate"]),
+        )
+    )
+    asset = AssetSpec(
+        name="Puffball",
+        asset_type="tower",
+        description="A mushroom tower that releases spore clouds.",
+    )
+
+    report = build_generation_preflight(
+        project=project,
+        asset=asset,
+        api_key="openrouter-key",
+        variants_per_packet=2,
+    )
+
+    assert report.status == PREFLIGHT_ERROR
+    assert report.image_count == 8
+    assert report.slice_count == 8
+    assert report.layout_summaries == {"single_sprite": "1024x1024, 1 region(s), 4 packet(s)"}
+    assert any("known OpenRouter prompt model" in issue.message for issue in report.issues)
+    assert any("not an image model" in issue.message for issue in report.issues)
+
+    project.provider_defaults.image_model = "custom/new-openrouter-image"
+    custom_report = build_generation_preflight(
+        project=project,
+        asset=asset,
+        api_key="openrouter-key",
+    )
+
+    assert custom_report.status == PREFLIGHT_WARNING
+    assert custom_report.image_count == 4
+    assert any("Custom OpenRouter image model" in issue.message for issue in custom_report.issues)
+
+
+def test_project_preflight_cli_reports_wrong_model_role(monkeypatch, tmp_path, capsys):
+    import sys
+    from spritegen.cli import main
+
+    project = ProjectSpec(
+        name="MyceliumTD",
+        summary="Fungal tower defense game",
+        visual_style="clean cartoon sprites",
+        shared_context="Friendly fungi defend a damp forest floor.",
+    )
+    project.provider_defaults.image_provider = "openrouter"
+    project.provider_defaults.image_model = "google/gemini-3.1-flash-image-preview"
+    project.add_asset_type(AssetTypeSpec(name="tower", shared_prompt="Readable tower sprite."))
+    asset = AssetSpec(
+        name="Puffball",
+        asset_type="tower",
+        description="A mushroom tower that releases spore clouds.",
+    )
+    store = ProjectStore(tmp_path / "projects")
+    store.save_project(project)
+    store.save_asset(project, asset)
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "spritegen",
+            "project",
+            "--project-root",
+            str(tmp_path / "projects"),
+            "preflight",
+            "--project",
+            "myceliumtd",
+            "--asset",
+            "puffball",
+            "--model",
+            "minimax/minimax-m2.7",
+            "--api-key",
+            "openrouter-key",
+        ],
+    )
+
+    assert main() == 1
+
+    output = capsys.readouterr().out
+    assert "Preflight: errors" in output
+    assert "Images: 1 atlas image(s), 1 sliced sprite(s)" in output
+    assert "known OpenRouter prompt model" in output
+    assert "not an image model" in output
+
+
 def test_project_layout_cli_adds_hero_plus_grid(monkeypatch, tmp_path, capsys):
     import sys
     from spritegen.cli import main

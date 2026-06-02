@@ -26,6 +26,11 @@ from .provider_models import (
     model_source_urls,
     validate_model_choice,
 )
+from .preflight import (
+    PREFLIGHT_ERROR,
+    GenerationPreflightReport,
+    build_generation_preflight,
+)
 from .project_export import ProjectAssetExporter
 from .project_gallery import ProjectGalleryWriter
 from .project_generation import ProjectAssetGenerator
@@ -262,6 +267,33 @@ def cmd_models(args: argparse.Namespace) -> int:
         for url in sources:
             print(f"  - {url}")
     return 0
+
+
+def print_generation_preflight(report: GenerationPreflightReport) -> None:
+    print(f"Preflight: {report.status}")
+    print(f"Project: {report.project_name}")
+    print(f"Asset: {report.asset_name}")
+    print(f"Image model: {report.image_provider} / {report.image_model}")
+    if report.enhance_first:
+        print(f"Prompt model: {report.prompt_provider} / {report.prompt_model}")
+    else:
+        print("Prompt enhancement: disabled")
+    print(
+        f"Images: {report.image_count} atlas image(s), "
+        f"{report.slice_count} sliced sprite(s)"
+    )
+    if report.variants_per_packet > 1:
+        print(f"Variants per prompt packet: {report.variants_per_packet}")
+    if report.layout_summaries:
+        print("Layouts:")
+        for name, summary in report.layout_summaries.items():
+            print(f"  - {name}: {summary}")
+    if report.reference_asset_count:
+        print(f"Reference assets: {report.reference_asset_count}")
+    if report.issues:
+        print("Issues:")
+        for issue in report.issues:
+            print(f"  - {issue.level.upper()}: {issue.message}")
 
 
 def print_layout(layout: AssetLayout) -> None:
@@ -646,6 +678,26 @@ def cmd_project(args: argparse.Namespace) -> int:
                 label = f"{label} / variant {output.variant_index}"
             print(f"  - {label}: {output.raw_image} ({len(output.slices)} slices)")
         return 0
+
+    if args.project_command == "preflight":
+        project = store.load_project(args.project)
+        asset = store.load_asset(project, args.asset)
+        known_assets = store.load_assets(project)
+        report = build_generation_preflight(
+            project=project,
+            asset=asset,
+            known_assets=known_assets,
+            provider=args.provider,
+            model=args.model,
+            api_key=args.api_key,
+            prompt_provider=args.prompt_provider,
+            prompt_model=args.prompt_model,
+            prompt_api_key=args.prompt_api_key,
+            enhance_first=args.enhance_first,
+            variants_per_packet=args.variants,
+        )
+        print_generation_preflight(report)
+        return 1 if report.status == PREFLIGHT_ERROR else 0
 
     if args.project_command == "export":
         project = store.load_project(args.project)
@@ -1198,6 +1250,33 @@ def main() -> int:
         "--dry-run",
         action="store_true",
         help="Write/update the prompt plan without calling an image API",
+    )
+
+    project_preflight = project_subparsers.add_parser(
+        "preflight",
+        help="Check a saved asset generation run before spending API calls",
+    )
+    project_preflight.add_argument("--project", required=True, help="Project slug or JSON path")
+    project_preflight.add_argument("--asset", required=True, help="Asset slug or JSON path")
+    project_preflight.add_argument("--provider")
+    project_preflight.add_argument("--model")
+    project_preflight.add_argument("--api-key", help="Session-only image API key override")
+    project_preflight.add_argument(
+        "--variants",
+        type=int,
+        default=1,
+        help="Candidate images for each prompt packet",
+    )
+    project_preflight.add_argument(
+        "--enhance-first",
+        action="store_true",
+        help="Include prompt-improvement preflight checks",
+    )
+    project_preflight.add_argument("--prompt-provider", help="Prompt provider for --enhance-first")
+    project_preflight.add_argument("--prompt-model", help="Prompt model for --enhance-first")
+    project_preflight.add_argument(
+        "--prompt-api-key",
+        help="Session-only prompt API key override for --enhance-first",
     )
 
     project_export = project_subparsers.add_parser(

@@ -67,6 +67,9 @@ Use **Preview Prompts** to inspect the exact image prompts, including prior save
 assets that will be used as style and universe anchors, before spending image tokens.
 Set **Image Variants** above 1 when you want several candidate atlases for the same
 asset or evolution stage in one generation run.
+Generate runs start with a preflight check for provider keys, known model roles,
+variant count, prompt packets, atlas dimensions, and expected slice count before
+any image API call is made.
 When using OpenRouter or OpenAI for image generation, saved raw atlases from prior
 project assets are also sent as visual reference images when available; other
 providers currently keep using the text anchors.
@@ -125,6 +128,9 @@ spritegen models --provider openrouter --role prompt --online --search minimax
 spritegen models --provider openrouter --role prompt --online --catalog-source models-dev --search minimax
 spritegen models --provider openrouter --role image --validate google/gemini-3.1-flash-image-preview
 spritegen models --provider openrouter --role image --validate minimax/minimax-m2.7
+
+# Check a saved asset run before spending API calls.
+spritegen project preflight --project myceliumtd --asset puffball --api-key "$OPENROUTER_API_KEY"
 
 # Or create a ready-to-edit starter project with its first asset and prompt plan.
 spritegen project starters

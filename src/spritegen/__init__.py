@@ -53,6 +53,14 @@ from .provider_models import (
     model_suggestions,
     validate_model_choice,
 )
+from .preflight import (
+    PREFLIGHT_ERROR,
+    PREFLIGHT_OK,
+    PREFLIGHT_WARNING,
+    GenerationPreflightReport,
+    PreflightIssue,
+    build_generation_preflight,
+)
 from .project_export import ProjectAssetExporter, ProjectExportResult, ProjectPackExportResult
 from .project_gallery import ProjectGalleryWriter
 from .project_generation import ProjectAssetGenerator, ProjectGenerationResult
@@ -97,6 +105,12 @@ __all__ = [
     "model_source_urls",
     "model_suggestions",
     "validate_model_choice",
+    "PREFLIGHT_ERROR",
+    "PREFLIGHT_OK",
+    "PREFLIGHT_WARNING",
+    "GenerationPreflightReport",
+    "PreflightIssue",
+    "build_generation_preflight",
     "ProjectAssetExporter",
     "ProjectExportResult",
     "ProjectPackExportResult",

@@ -974,6 +974,46 @@ def test_main_window_checks_provider_setup_without_network(tmp_path, monkeypatch
     app.processEvents()
 
 
+def test_main_window_generate_stops_on_preflight_model_errors(tmp_path, monkeypatch):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    pytest.importorskip("PySide6")
+
+    from PySide6.QtWidgets import QApplication
+    from spritegen.ui import main_window as main_window_mod
+    from spritegen.user_settings import UserSettingsStore
+    from spritegen.ui.main_window import MainWindow
+
+    started = {"value": False}
+
+    def fake_start(self):
+        started["value"] = True
+
+    monkeypatch.setattr(main_window_mod.ProjectGenerationThread, "start", fake_start)
+
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow(settings_store=UserSettingsStore(tmp_path / "settings.json"))
+    window.project_root_edit.setText(str(tmp_path / "projects"))
+    window.project_name_edit.setText("MyceliumTD")
+    window.asset_name_edit.setText("Puffball")
+    window.asset_type_edit.setText("tower")
+    window.asset_description_edit.setPlainText("A mushroom tower that releases spore clouds.")
+    window._set_combo_value(window.image_provider_combo, "openrouter")
+    window._on_image_provider_changed()
+    window.image_model_edit.setText("minimax/minimax-m2.7")
+    window.image_api_key_edit.setText("openrouter-key")
+
+    window._on_generate()
+
+    assert started["value"] is False
+    assert window._thread is None
+    assert "Preflight needs:" in window.status_label.text()
+    assert "known OpenRouter prompt model" in window.status_label.text()
+    assert "not an image model" in window.status_label.text()
+
+    window.close()
+    app.processEvents()
+
+
 def test_main_window_saves_shared_provider_key_once(tmp_path, monkeypatch):
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     pytest.importorskip("PySide6")
