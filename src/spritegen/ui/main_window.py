@@ -956,6 +956,15 @@ class MainWindow(QWidget):
             )
         if preflight.reference_asset_count:
             lines.append(f"Reference assets: {preflight.reference_asset_count}")
+            for reference in preflight.reference_asset_summaries:
+                lines.append(
+                    f"- {reference.name} [{reference.asset_type}]: "
+                    f"{reference.prompt}"
+                )
+                if reference.details:
+                    lines.append(f"  details: {reference.details}")
+                if reference.layout:
+                    lines.append(f"  layout: {reference.layout}")
         if preflight.issues:
             lines.append("Issues:")
             lines.extend(

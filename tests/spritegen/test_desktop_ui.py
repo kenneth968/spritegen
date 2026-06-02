@@ -810,6 +810,62 @@ def test_main_window_check_run_writes_preflight_summary(tmp_path):
     app.processEvents()
 
 
+def test_main_window_check_run_shows_prior_asset_references(tmp_path):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    pytest.importorskip("PySide6")
+
+    from PySide6.QtWidgets import QApplication
+    from spritegen.projects import AssetSpec, AssetTypeSpec, ProjectSpec, ProjectStore
+    from spritegen.user_settings import UserSettingsStore
+    from spritegen.ui.main_window import MainWindow
+
+    store = ProjectStore(tmp_path / "projects")
+    project = ProjectSpec(
+        name="MyceliumTD",
+        summary="Fungal tower defense game",
+        visual_style="inked mushroom tower sprites",
+        shared_context="Friendly fungi defend a damp forest floor.",
+    )
+    project.add_asset_type(
+        AssetTypeSpec(
+            name="tower",
+            shared_prompt="All towers use rounded silhouettes and mossy materials.",
+        )
+    )
+    existing = AssetSpec(
+        name="Puffball",
+        asset_type="tower",
+        description="Spore cloud tower.",
+        details="White cap, teal spores, soft circular base.",
+        enhanced_prompt="rounded puffball tower with teal spore puffs",
+        layout="single_sprite",
+    )
+    store.save_project(project)
+    store.save_asset(project, existing)
+
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow(settings_store=UserSettingsStore(tmp_path / "settings.json"))
+    window.project_root_edit.setText(str(tmp_path / "projects"))
+    window._refresh_project_list()
+    window.project_combo.setCurrentIndex(window.project_combo.findData("myceliumtd"))
+    window._on_load_project()
+    window.asset_name_edit.setText("Amanita")
+    window.asset_description_edit.setPlainText("Poison mushroom tower.")
+    window.asset_details_edit.setPlainText("Red cap, warning spots, venom aura.")
+
+    window._on_check_run()
+
+    preview = window.prompt_preview_edit.toPlainText()
+    assert "Reference assets: 1" in preview
+    assert "- Puffball [tower]: rounded puffball tower with teal spore puffs" in preview
+    assert "details: White cap, teal spores, soft circular base." in preview
+    assert "layout: single_sprite" in preview
+    assert "Amanita [tower]" not in preview
+
+    window.close()
+    app.processEvents()
+
+
 def test_main_window_saves_local_provider_setup(tmp_path, monkeypatch):
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     pytest.importorskip("PySide6")

@@ -440,3 +440,15 @@ Desktop preflight is now visible before generation:
   layouts, reference assets, and any blocking or warning issues.
 - This lets a desktop user inspect the actual run shape before pressing
   **Generate**, while **Generate** still repeats the preflight guard.
+
+## Thirtieth implementation slice
+
+Preflight now shows which saved project assets will steer coherence:
+
+- `GenerationPreflightReport` carries structured reference-asset summaries
+  derived from the same prompt-packet metadata used by image prompts.
+- CLI `spritegen project preflight` and desktop **Check Run** list each prior
+  asset by name, type, prompt, details, and layout instead of showing only a
+  count.
+- The current asset is excluded from those summaries, so users can see the
+  actual already-saved assets that will shape the next generation.

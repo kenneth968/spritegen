@@ -33,6 +33,16 @@ class PreflightIssue:
     code: str = ""
 
 
+@dataclass(frozen=True)
+class ReferenceAssetSummary:
+    name: str
+    slug: str
+    asset_type: str
+    prompt: str
+    details: str = ""
+    layout: str = ""
+
+
 @dataclass
 class GenerationPreflightReport:
     project_name: str
@@ -47,6 +57,7 @@ class GenerationPreflightReport:
     slice_count: int = 0
     layout_summaries: dict[str, str] = field(default_factory=dict)
     reference_asset_count: int = 0
+    reference_asset_summaries: list[ReferenceAssetSummary] = field(default_factory=list)
     issues: list[PreflightIssue] = field(default_factory=list)
 
     @property
@@ -99,9 +110,6 @@ def build_generation_preflight(
         prompt_model=effective_prompt_model,
         enhance_first=enhance_first,
         variants_per_packet=variants_per_packet,
-        reference_asset_count=len(
-            [known for known in known_assets if known.slug != asset.slug]
-        ),
     )
 
     if variants_per_packet < 1:
@@ -153,6 +161,8 @@ def build_generation_preflight(
         )
         return report
 
+    report.reference_asset_summaries = _reference_asset_summaries_from_packets(packets)
+    report.reference_asset_count = len(report.reference_asset_summaries)
     report.image_count = len(packets) * max(variants_per_packet, 0)
     layout_counts = Counter(packet.layout_name for packet in packets)
     for layout_name, packet_count in sorted(layout_counts.items()):
@@ -183,6 +193,33 @@ def build_generation_preflight(
         )
 
     return report
+
+
+def _reference_asset_summaries_from_packets(packets) -> list[ReferenceAssetSummary]:
+    if not packets:
+        return []
+    raw_summaries = packets[0].metadata.get("known_assets", [])
+    summaries: list[ReferenceAssetSummary] = []
+    for raw_summary in raw_summaries:
+        if not isinstance(raw_summary, dict):
+            continue
+        name = str(raw_summary.get("name") or "").strip()
+        slug = str(raw_summary.get("slug") or "").strip()
+        asset_type = str(raw_summary.get("asset_type") or "").strip()
+        prompt = str(raw_summary.get("prompt") or "").strip()
+        if not name or not slug or not asset_type or not prompt:
+            continue
+        summaries.append(
+            ReferenceAssetSummary(
+                name=name,
+                slug=slug,
+                asset_type=asset_type,
+                prompt=prompt,
+                details=str(raw_summary.get("details") or "").strip(),
+                layout=str(raw_summary.get("layout") or "").strip(),
+            )
+        )
+    return summaries
 
 
 def _add_model_validation_issue(

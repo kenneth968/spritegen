@@ -226,6 +226,63 @@ def test_generation_preflight_reports_run_shape_and_model_errors():
     assert any("Custom OpenRouter image model" in issue.message for issue in custom_report.issues)
 
 
+def test_generation_preflight_lists_prior_asset_reference_summaries(capsys):
+    from spritegen.cli import print_generation_preflight
+    from spritegen.preflight import build_generation_preflight
+
+    project = ProjectSpec(
+        name="MyceliumTD",
+        summary="Fungal tower defense game",
+        visual_style="inked mushroom tower sprites",
+        shared_context="Friendly fungi defend a damp forest floor.",
+    )
+    project.add_asset_type(
+        AssetTypeSpec(
+            name="tower",
+            shared_prompt="All towers use rounded silhouettes and mossy materials.",
+        )
+    )
+    existing = AssetSpec(
+        name="Puffball",
+        asset_type="tower",
+        description="Spore cloud tower.",
+        details="White cap, teal spores, soft circular base.",
+        enhanced_prompt="rounded puffball tower with teal spore puffs",
+        layout="single_sprite",
+    )
+    next_asset = AssetSpec(
+        name="Amanita",
+        asset_type="tower",
+        description="Poison mushroom tower.",
+        details="Red cap, warning spots, venom aura.",
+    )
+
+    report = build_generation_preflight(
+        project=project,
+        asset=next_asset,
+        known_assets=[existing, next_asset],
+    )
+
+    assert report.reference_asset_count == 1
+    assert len(report.reference_asset_summaries) == 1
+    reference = report.reference_asset_summaries[0]
+    assert reference.name == "Puffball"
+    assert reference.slug == "puffball"
+    assert reference.asset_type == "tower"
+    assert reference.prompt == "rounded puffball tower with teal spore puffs"
+    assert reference.details == "White cap, teal spores, soft circular base."
+    assert reference.layout == "single_sprite"
+
+    print_generation_preflight(report)
+
+    output = capsys.readouterr().out
+    assert "Reference assets: 1" in output
+    assert "  - Puffball [tower]: rounded puffball tower with teal spore puffs" in output
+    assert "    details: White cap, teal spores, soft circular base." in output
+    assert "    layout: single_sprite" in output
+    assert "Amanita [tower]" not in output
+
+
 def test_project_preflight_cli_reports_wrong_model_role(monkeypatch, tmp_path, capsys):
     import sys
     from spritegen.cli import main

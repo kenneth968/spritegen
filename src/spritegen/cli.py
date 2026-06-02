@@ -290,6 +290,15 @@ def print_generation_preflight(report: GenerationPreflightReport) -> None:
             print(f"  - {name}: {summary}")
     if report.reference_asset_count:
         print(f"Reference assets: {report.reference_asset_count}")
+        for reference in report.reference_asset_summaries:
+            print(
+                f"  - {reference.name} [{reference.asset_type}]: "
+                f"{reference.prompt}"
+            )
+            if reference.details:
+                print(f"    details: {reference.details}")
+            if reference.layout:
+                print(f"    layout: {reference.layout}")
     if report.issues:
         print("Issues:")
         for issue in report.issues:
