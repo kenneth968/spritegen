@@ -19,13 +19,14 @@ Usage:
 
 from __future__ import annotations
 
+import base64
 import io
 import json
+import os
 import subprocess
 import sys
-import time
+import urllib.request
 from pathlib import Path
-from typing import Any
 
 from .config import SpriteConfig, SpriteDefinition, SheetLayout
 from .models import GeneratedSheet, SpriteMetadata
@@ -55,12 +56,19 @@ class SpriteGenerator:
         prompt: str,
         negative_prompt: str,
         size: tuple[int, int],
+        reference_images: list[Path | str] | None = None,
     ) -> bytes:
         provider = self.config.api_provider
         model = self.config.api_model
 
         if provider == "openai":
-            return self._call_openai(prompt, negative_prompt, size, model)
+            return self._call_openai(
+                prompt,
+                negative_prompt,
+                size,
+                model,
+                reference_images=reference_images,
+            )
         elif provider == "anthropic":
             return self._call_anthropic(prompt, negative_prompt, size)
         elif provider == "replicate":
@@ -72,7 +80,13 @@ class SpriteGenerator:
         elif provider == "pollinations":
             return self._call_pollinations(prompt, size)
         elif provider == "openrouter":
-            return self._call_openrouter(prompt, negative_prompt, size, model)
+            return self._call_openrouter(
+                prompt,
+                negative_prompt,
+                size,
+                model,
+                reference_images=reference_images,
+            )
         else:
             raise ValueError(f"Unknown provider: {provider}")
 
@@ -82,42 +96,144 @@ class SpriteGenerator:
         negative_prompt: str,
         size: tuple[int, int],
         model: str,
+        reference_images: list[Path | str] | None = None,
     ) -> bytes:
         size_str = f"{size[0]}x{size[1]}"
         if model == "dall-e-3":
             size_str = "1024x1024"
 
-        import json
+        api_key = self.config.api_key or os.environ.get("OPENAI_API_KEY", "")
+        if not api_key:
+            raise ImageGenerationError("OPENAI_API_KEY is required for OpenAI image generation")
 
-        prompt_json = json.dumps(prompt)
+        full_prompt = prompt
+        if negative_prompt:
+            full_prompt = f"{prompt}\n\nAvoid: {negative_prompt}"
 
-        script = f'''
-import openai
-import sys
+        image_parts = self._openai_reference_image_parts(reference_images)
+        if image_parts:
+            return self._call_openai_responses(
+                full_prompt=full_prompt,
+                size_str=size_str,
+                model=model,
+                api_key=api_key,
+                image_parts=image_parts,
+            )
 
-client = openai.OpenAI()
-try:
-    response = client.images.generate(
-        model="{model}",
-        prompt={prompt_json},
-        size="{size_str}",
-        n=1
-    )
-    print(response.data[0].b64_json)
-except openai.APIStatusError as e:
-    print(f"ERROR:API_STATUS:" + str(e.response.status_code) + ":" + str(e)[:200])
-    sys.exit(1)
-except openai.APIError as e:
-    print(f"ERROR:API_ERROR:" + str(e)[:200])
-    sys.exit(1)
-except Exception as e:
-    print(f"ERROR:UNEXPECTED:" + type(e).__name__ + ":" + str(e)[:200])
-    sys.exit(1)
-'''
-        result = self._run_python_script(script)
-        if result.startswith("ERROR:"):
-            raise ImageGenerationError(result)
-        return self._b64_to_png(result)
+        payload = {
+            "model": model,
+            "prompt": full_prompt,
+            "size": size_str,
+            "n": 1,
+        }
+        request = urllib.request.Request(
+            "https://api.openai.com/v1/images/generations",
+            data=json.dumps(payload).encode("utf-8"),
+            method="POST",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=API_TIMEOUT_SECONDS) as resp:
+                result = json.loads(resp.read().decode("utf-8"))
+        except Exception as exc:
+            raise ImageGenerationError(f"OpenAI image generation failed: {exc}") from exc
+
+        try:
+            return self._b64_to_png(result["data"][0]["b64_json"])
+        except (KeyError, IndexError, TypeError) as exc:
+            raise ImageGenerationError("OpenAI response did not include b64 image data") from exc
+
+    def _call_openai_responses(
+        self,
+        full_prompt: str,
+        size_str: str,
+        model: str,
+        api_key: str,
+        image_parts: list[dict[str, str]],
+    ) -> bytes:
+        payload = {
+            "model": model,
+            "input": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "input_text", "text": full_prompt},
+                        *image_parts,
+                    ],
+                }
+            ],
+            "tools": [
+                {
+                    "type": "image_generation",
+                    "size": size_str,
+                }
+            ],
+            "tool_choice": {"type": "image_generation"},
+        }
+        request = urllib.request.Request(
+            "https://api.openai.com/v1/responses",
+            data=json.dumps(payload).encode("utf-8"),
+            method="POST",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=API_TIMEOUT_SECONDS) as resp:
+                result = json.loads(resp.read().decode("utf-8"))
+        except Exception as exc:
+            raise ImageGenerationError(f"OpenAI image generation failed: {exc}") from exc
+
+        try:
+            return self._extract_openai_response_image(result)
+        except (KeyError, TypeError) as exc:
+            raise ImageGenerationError("OpenAI response did not include b64 image data") from exc
+
+    def _openai_reference_image_parts(
+        self,
+        reference_images: list[Path | str] | None,
+    ) -> list[dict[str, str]]:
+        parts: list[dict[str, str]] = []
+        for reference_image in reference_images or []:
+            data_url = self._image_data_url(reference_image)
+            if not data_url:
+                continue
+            parts.append({"type": "input_image", "image_url": data_url})
+        return parts
+
+    def _image_data_url(self, image_path: Path | str) -> str:
+        path = Path(image_path)
+        try:
+            data = path.read_bytes()
+        except OSError:
+            return ""
+        suffix = path.suffix.lower()
+        mime_type = {
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".webp": "image/webp",
+        }.get(suffix, "image/png")
+        encoded = base64.b64encode(data).decode("ascii")
+        return f"data:{mime_type};base64,{encoded}"
+
+    def _extract_openai_response_image(self, result: dict) -> bytes:
+        for item in result.get("output", []):
+            if not isinstance(item, dict):
+                continue
+            b64_image = item.get("result") or item.get("b64_json")
+            if isinstance(b64_image, str) and b64_image:
+                return self._b64_to_png(b64_image)
+            for content in item.get("content", []):
+                if not isinstance(content, dict):
+                    continue
+                b64_image = content.get("result") or content.get("b64_json")
+                if isinstance(b64_image, str) and b64_image:
+                    return self._b64_to_png(b64_image)
+        raise KeyError("missing image_generation_call result")
 
     def _call_mock(self, prompt: str, size: tuple[int, int]) -> bytes:
         try:
@@ -296,10 +412,13 @@ except Exception as e:
         negative_prompt: str,
         size: tuple[int, int],
         model: str,
+        reference_images: list[Path | str] | None = None,
     ) -> bytes:
         """Generate image via OpenRouter (Gemini Flash image generation)."""
         import json as _json
 
+        image_config_json = _json.dumps(self._openrouter_image_config(size))
+        reference_paths_json = _json.dumps([str(path) for path in reference_images or []])
         full_prompt = (
             f"Generate a game sprite image: {prompt}. "
             f"Avoid: {negative_prompt}. "
@@ -316,7 +435,13 @@ import base64
 import sys
 import os
 
-api_key = os.environ.get("OPENROUTER_API_KEY", "") or os.environ.get("OPENAI_API_KEY", "")
+reference_image_paths = {reference_paths_json}
+
+api_key = (
+    os.environ.get("SPRITEGEN_SESSION_API_KEY", "")
+    or os.environ.get("OPENROUTER_API_KEY", "")
+    or os.environ.get("OPENAI_API_KEY", "")
+)
 if not api_key:
     print("ERROR:AUTH:No OPENROUTER_API_KEY or OPENAI_API_KEY found in environment")
     sys.exit(1)
@@ -328,15 +453,28 @@ headers = {{
     "HTTP-Referer": "https://github.com/spritegen",
 }}
 
+content = [{{"type": "text", "text": {prompt_json}}}]
+for reference_path in reference_image_paths:
+    try:
+        with open(reference_path, "rb") as reference_file:
+            reference_b64 = base64.b64encode(reference_file.read()).decode()
+    except OSError:
+        continue
+    content.append({{
+        "type": "image_url",
+        "image_url": {{"url": "data:image/png;base64," + reference_b64}},
+    }})
+
 payload = json.dumps({{
     "model": {model_json},
     "messages": [
         {{
             "role": "user",
-            "content": {prompt_json}
+            "content": content if reference_image_paths else {prompt_json}
         }}
     ],
-    "response_modalities": ["image", "text"],
+    "modalities": ["image", "text"],
+    "image_config": {image_config_json},
 }}).encode()
 
 try:
@@ -376,10 +514,46 @@ except Exception as e:
     print(f"ERROR:UNEXPECTED:" + type(e).__name__ + ":" + str(e)[:200])
     sys.exit(1)
 """
-        result = self._run_python_script(script)
+        env = (
+            {"SPRITEGEN_SESSION_API_KEY": self.config.api_key}
+            if self.config.api_key
+            else None
+        )
+        result = self._run_python_script(script, env=env)
         if result.startswith("ERROR:"):
             raise ImageGenerationError(result)
         return self._b64_to_png(result)
+
+    def _openrouter_image_config(self, size: tuple[int, int]) -> dict[str, str]:
+        width, height = size
+        return {
+            "aspect_ratio": self._aspect_ratio(width, height),
+            "image_size": self._openrouter_image_size(width, height),
+        }
+
+    def _aspect_ratio(self, width: int, height: int) -> str:
+        supported = {
+            "1:1": 1 / 1,
+            "2:3": 2 / 3,
+            "3:2": 3 / 2,
+            "3:4": 3 / 4,
+            "4:3": 4 / 3,
+            "4:5": 4 / 5,
+            "5:4": 5 / 4,
+            "9:16": 9 / 16,
+            "16:9": 16 / 9,
+            "21:9": 21 / 9,
+        }
+        target = width / height
+        return min(supported, key=lambda ratio: abs(supported[ratio] - target))
+
+    def _openrouter_image_size(self, width: int, height: int) -> str:
+        longest_edge = max(width, height)
+        if longest_edge <= 1024:
+            return "1K"
+        if longest_edge <= 2048:
+            return "2K"
+        return "4K"
 
     def _call_anthropic(
         self,
@@ -387,20 +561,6 @@ except Exception as e:
         negative_prompt: str,
         size: tuple[int, int],
     ) -> bytes:
-        script = f"""
-import anthropic
-client = anthropic.Anthropic()
-response = client.messages.create(
-    model="claude-3-5-sonnet-20241022",
-    max_tokens=1024,
-    messages=[{{
-        "role": "user",
-        "content": f"Generate an image: {prompt}. Return as base64 PNG."
-    }}]
-)
-print(response.content[0].source.media_type)
-"""
-        result = self._run_python_script(script)
         raise ImageGenerationError("Anthropic image generation not yet implemented")
 
     def _call_replicate(
@@ -410,24 +570,20 @@ print(response.content[0].source.media_type)
         size: tuple[int, int],
         model: str,
     ) -> bytes:
-        script = f'''
-import replicate
-output = replicate.run(
-    "{model}",
-    input={{"prompt": "{prompt}"}}
-)
-print(output)
-'''
-        result = self._run_python_script(script)
         raise ImageGenerationError("Replicate image generation not yet implemented")
 
-    def _run_python_script(self, script: str) -> str:
+    def _run_python_script(self, script: str, env: dict[str, str] | None = None) -> str:
         try:
+            run_env = None
+            if env:
+                run_env = os.environ.copy()
+                run_env.update(env)
             result = subprocess.run(
                 [sys.executable, "-c", script],
                 capture_output=True,
                 text=True,
                 timeout=API_TIMEOUT_SECONDS,
+                env=run_env,
             )
             if result.returncode != 0:
                 error_msg = (
@@ -565,6 +721,22 @@ print(output)
                 "model": self.config.api_model,
                 "sheet_size": (w, h),
             },
+        )
+
+    def generate_raw_image(
+        self,
+        prompt: str,
+        negative_prompt: str,
+        width: int,
+        height: int,
+        reference_images: list[Path | str] | None = None,
+    ) -> bytes:
+        """Generate one image without adding style-manager prompt text."""
+        return self._call_image_api(
+            prompt,
+            negative_prompt,
+            (width, height),
+            reference_images=reference_images,
         )
 
     def generate_evolution_chain(

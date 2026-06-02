@@ -1,0 +1,92 @@
+"""Local desktop settings that stay outside project files."""
+
+from __future__ import annotations
+
+import json
+import os
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+
+SETTINGS_SCHEMA_VERSION = 1
+
+
+def default_settings_path() -> Path:
+    override = os.environ.get("SPRITEGEN_SETTINGS_PATH")
+    if override:
+        return Path(override)
+    if os.name == "nt":
+        appdata = os.environ.get("APPDATA")
+        if appdata:
+            return Path(appdata) / "spritegen" / "settings.json"
+    return Path.home() / ".spritegen" / "settings.json"
+
+
+@dataclass
+class UserSettings:
+    image_provider: str = "mock"
+    image_model: str = "mock"
+    prompt_provider: str = "mock"
+    prompt_model: str = "mock"
+    api_keys: dict[str, str] = field(default_factory=dict)
+
+    def api_key_for(self, provider: str) -> str:
+        return self.api_keys.get(provider, "")
+
+    def set_api_key(self, provider: str, api_key: str) -> None:
+        key = api_key.strip()
+        if key:
+            self.api_keys[provider] = key
+        else:
+            self.api_keys.pop(provider, None)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "version": SETTINGS_SCHEMA_VERSION,
+            "image_provider": self.image_provider,
+            "image_model": self.image_model,
+            "prompt_provider": self.prompt_provider,
+            "prompt_model": self.prompt_model,
+            "api_keys": dict(self.api_keys),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "UserSettings":
+        if data.get("version") != SETTINGS_SCHEMA_VERSION:
+            return cls()
+        api_keys = {
+            str(provider): str(api_key)
+            for provider, api_key in data.get("api_keys", {}).items()
+            if api_key
+        }
+        return cls(
+            image_provider=str(data.get("image_provider") or "mock"),
+            image_model=str(data.get("image_model") or "mock"),
+            prompt_provider=str(data.get("prompt_provider") or "mock"),
+            prompt_model=str(data.get("prompt_model") or "mock"),
+            api_keys=api_keys,
+        )
+
+
+class UserSettingsStore:
+    def __init__(self, path: Path | str | None = None) -> None:
+        self.path = Path(path) if path is not None else default_settings_path()
+
+    def load(self) -> UserSettings:
+        if not self.path.exists():
+            return UserSettings()
+        try:
+            return UserSettings.from_dict(json.loads(self.path.read_text(encoding="utf-8")))
+        except (OSError, json.JSONDecodeError):
+            return UserSettings()
+
+    def save(self, settings: UserSettings) -> Path:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.path.write_text(json.dumps(settings.to_dict(), indent=2), encoding="utf-8")
+        if os.name != "nt":
+            try:
+                self.path.chmod(0o600)
+            except OSError:
+                pass
+        return self.path

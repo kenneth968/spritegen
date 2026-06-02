@@ -22,6 +22,50 @@ from .generator import SpriteGenerator, create_mycomed_style
 from .slicer import Slicer
 from .style import StyleManager
 from .models import GeneratedSheet, SpriteMetadata
+from .layouts import AssetLayout, LayoutRegion
+from .projects import (
+    AssetSpec,
+    AssetTypeSpec,
+    ColorTreatment,
+    PostProcessSettings,
+    ProjectSpec,
+    ProjectStore,
+    PromptPlanner,
+    apply_asset_type_enhancement,
+    apply_project_enhancement,
+)
+from .enhancement import PromptEnhancer
+from .provider_models import (
+    IMAGE_ROLE,
+    MODEL_DISCOVERY_SOURCES,
+    MODEL_ROLES,
+    MODEL_VALIDATION_ERROR,
+    MODEL_VALIDATION_OK,
+    MODEL_VALIDATION_WARNING,
+    PROMPT_ROLE,
+    ModelDiscoveryError,
+    ModelSuggestion,
+    ModelValidationResult,
+    combined_model_suggestions,
+    default_model,
+    discover_model_suggestions,
+    model_source_urls,
+    model_suggestions,
+    validate_model_choice,
+)
+from .preflight import (
+    PREFLIGHT_ERROR,
+    PREFLIGHT_OK,
+    PREFLIGHT_WARNING,
+    GenerationPreflightReport,
+    PreflightIssue,
+    build_generation_preflight,
+)
+from .project_export import ProjectAssetExporter, ProjectExportResult, ProjectPackExportResult
+from .project_gallery import ProjectGalleryWriter
+from .project_generation import ProjectAssetGenerator, ProjectGenerationResult
+from .project_starters import ProjectStarter, get_project_starter, list_project_starters
+from .workflow_presets import WorkflowPreset, get_workflow_preset, list_workflow_presets
 from . import mycomed
 
 __all__ = [
@@ -33,6 +77,52 @@ __all__ = [
     "StyleManager",
     "GeneratedSheet",
     "SpriteMetadata",
+    "AssetLayout",
+    "LayoutRegion",
+    "AssetSpec",
+    "AssetTypeSpec",
+    "ColorTreatment",
+    "PostProcessSettings",
+    "ProjectSpec",
+    "ProjectStore",
+    "PromptPlanner",
+    "apply_asset_type_enhancement",
+    "apply_project_enhancement",
+    "PromptEnhancer",
+    "IMAGE_ROLE",
+    "MODEL_DISCOVERY_SOURCES",
+    "MODEL_ROLES",
+    "MODEL_VALIDATION_ERROR",
+    "MODEL_VALIDATION_OK",
+    "MODEL_VALIDATION_WARNING",
+    "PROMPT_ROLE",
+    "ModelDiscoveryError",
+    "ModelSuggestion",
+    "ModelValidationResult",
+    "combined_model_suggestions",
+    "default_model",
+    "discover_model_suggestions",
+    "model_source_urls",
+    "model_suggestions",
+    "validate_model_choice",
+    "PREFLIGHT_ERROR",
+    "PREFLIGHT_OK",
+    "PREFLIGHT_WARNING",
+    "GenerationPreflightReport",
+    "PreflightIssue",
+    "build_generation_preflight",
+    "ProjectAssetExporter",
+    "ProjectExportResult",
+    "ProjectPackExportResult",
+    "ProjectGalleryWriter",
+    "ProjectAssetGenerator",
+    "ProjectGenerationResult",
+    "ProjectStarter",
+    "get_project_starter",
+    "list_project_starters",
+    "WorkflowPreset",
+    "get_workflow_preset",
+    "list_workflow_presets",
     "create_mycomed_style",
     "mycomed",
 ]

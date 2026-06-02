@@ -7,9 +7,50 @@ Usage:
 """
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
+from .layouts import PRESET_LAYOUTS, AssetLayout, get_layout
+from .enhancement import PromptEnhancer
+from .provider_models import (
+    IMAGE_ROLE,
+    MODEL_DISCOVERY_SOURCES,
+    MODEL_ROLES,
+    MODEL_VALIDATION_ERROR,
+    PROMPT_ROLE,
+    ModelDiscoveryError,
+    combined_model_suggestions,
+    default_model,
+    discover_model_suggestions,
+    model_source_urls,
+    validate_model_choice,
+)
+from .preflight import (
+    PREFLIGHT_ERROR,
+    GenerationPreflightReport,
+    build_generation_preflight,
+)
+from .project_export import ProjectAssetExporter
+from .project_gallery import ProjectGalleryWriter
+from .project_generation import ProjectAssetGenerator
+from .project_starters import get_project_starter, list_project_starters
+from .projects import (
+    AssetSpec,
+    AssetTypeSpec,
+    COLOR_TREATMENT_MODES,
+    ColorTreatment,
+    EvolutionPlan,
+    ProjectSpec,
+    ProjectStore,
+    PostProcessSettings,
+    ProviderDefaults,
+    PromptPlanner,
+    apply_asset_type_enhancement,
+    apply_project_enhancement,
+    slugify,
+)
+from .workflow_presets import get_workflow_preset, list_workflow_presets
 from . import (
     SpriteConfig,
     SpriteDefinition,
@@ -18,7 +59,8 @@ from . import (
     Slicer,
     create_mycomed_style,
 )
-from .mycomed import EVOLUTION_STAGES, get_evolution_chain
+from .models import SpriteMetadata
+from .mycomed import EVOLUTION_STAGES
 
 
 def cmd_generate(args: argparse.Namespace) -> int:
@@ -81,13 +123,34 @@ def cmd_slice(args: argparse.Namespace) -> int:
 
     sheet_data = Path(args.sheet).read_bytes()
     from .models import GeneratedSheet
-    from .config import SheetLayout
 
     layout = config.get_layout(args.count or 4)
+    sprites = []
+    for i in range(args.count or layout.sprite_count):
+        sprites.append(
+            SpriteDefinition(
+                name=f"sprite_{i + 1}",
+                prompt="manual slice",
+                index=i,
+            )
+        )
+
     sheet = GeneratedSheet(
         image_data=sheet_data,
         layout=layout,
-        sprites=[],
+        sprites=[
+            SpriteMetadata(
+                name=sprite.name,
+                sprite_index=sprite.index,
+                position=(
+                    (sprite.index % layout.columns) * layout.cell_width + layout.margin,
+                    (sprite.index // layout.columns) * layout.cell_height + layout.margin,
+                ),
+                size=(layout.cell_width - layout.padding, layout.cell_height - layout.padding),
+                prompt=sprite.prompt,
+            )
+            for sprite in sprites
+        ],
         style_seed="unknown",
         generation_params={},
     )
@@ -97,6 +160,602 @@ def cmd_slice(args: argparse.Namespace) -> int:
         print(f"Saved: {path}")
 
     return 0
+
+
+def cmd_layout(args: argparse.Namespace) -> int:
+    if args.layout_command == "list":
+        print("Available layouts:")
+        for name, layout in sorted(PRESET_LAYOUTS.items()):
+            print(f"  - {name}: {layout.width}x{layout.height}, {len(layout.regions)} regions")
+        return 0
+
+    if args.layout_command == "info":
+        layout = get_layout(args.name)
+        print(f"Layout: {layout.name}")
+        print(f"Canvas: {layout.width}x{layout.height}")
+        print(layout.prompt_instructions)
+        for region in layout.regions:
+            print(
+                f"  - {region.name}: ({region.x},{region.y}) "
+                f"{region.width}x{region.height} - {region.prompt_role}"
+            )
+        return 0
+
+    if args.layout_command == "slice":
+        layout = get_layout(args.layout)
+        image_data = Path(args.image).read_bytes()
+        slicer = Slicer(output_dir=Path(args.output))
+        paths = slicer.slice_layout_image(image_data, layout, prefix=args.prefix)
+        for path in paths:
+            print(f"Saved: {path}")
+        return 0
+
+    return 1
+
+
+def cmd_models(args: argparse.Namespace) -> int:
+    role_label = "image" if args.role == IMAGE_ROLE else "prompt"
+    provider_label = args.provider.title() if args.provider != "openai" else "OpenAI"
+    if args.provider == "openrouter":
+        provider_label = "OpenRouter"
+    elif args.provider == "pollinations":
+        provider_label = "Pollinations"
+
+    online_suggestions = []
+    if args.online:
+        try:
+            online_suggestions = discover_model_suggestions(
+                args.provider,
+                args.role,
+                search=args.search,
+                limit=args.limit,
+                source=args.catalog_source,
+            )
+        except ModelDiscoveryError as exc:
+            print(f"Online model discovery failed: {exc}")
+
+    suggestions = combined_model_suggestions(
+        args.provider,
+        args.role,
+        online_suggestions,
+    )
+    if args.validate:
+        validation = validate_model_choice(
+            args.provider,
+            args.role,
+            args.validate,
+            extra=online_suggestions,
+        )
+        print(f"{provider_label} {role_label} model validation:")
+        print(f"  {validation.status}: {validation.message}")
+        if validation.source_urls:
+            print("Sources:")
+            for url in validation.source_urls:
+                print(f"  - {url}")
+        return 1 if validation.status == MODEL_VALIDATION_ERROR else 0
+
+    if args.search and not args.online:
+        search_text = args.search.lower()
+        suggestions = [
+            suggestion
+            for suggestion in suggestions
+            if search_text
+            in " ".join(
+                [
+                    suggestion.model,
+                    suggestion.label,
+                    suggestion.note,
+                ]
+            ).lower()
+        ]
+    print(f"{provider_label} {role_label} model suggestions:")
+    if not suggestions:
+        print("  - none")
+    for suggestion in suggestions:
+        default_marker = " (default)" if suggestion.model == default_model(args.provider, args.role) else ""
+        print(f"  - {suggestion.model}{default_marker}")
+        print(f"    {suggestion.label}")
+        if suggestion.note:
+            print(f"    {suggestion.note}")
+
+    sources = model_source_urls(args.provider, args.role)
+    for suggestion in [*online_suggestions, *suggestions]:
+        if suggestion.source_url and suggestion.source_url not in sources:
+            sources.append(suggestion.source_url)
+    if sources:
+        print("Sources:")
+        for url in sources:
+            print(f"  - {url}")
+    return 0
+
+
+def print_generation_preflight(report: GenerationPreflightReport) -> None:
+    print(f"Preflight: {report.status}")
+    print(f"Project: {report.project_name}")
+    print(f"Asset: {report.asset_name}")
+    print(f"Image model: {report.image_provider} / {report.image_model}")
+    if report.enhance_first:
+        print(f"Prompt model: {report.prompt_provider} / {report.prompt_model}")
+    else:
+        print("Prompt enhancement: disabled")
+    print(
+        f"Images: {report.image_count} atlas image(s), "
+        f"{report.slice_count} sliced sprite(s)"
+    )
+    if report.variants_per_packet > 1:
+        print(f"Variants per prompt packet: {report.variants_per_packet}")
+    if report.layout_summaries:
+        print("Layouts:")
+        for name, summary in report.layout_summaries.items():
+            print(f"  - {name}: {summary}")
+    if report.reference_asset_count:
+        print(f"Reference assets: {report.reference_asset_count}")
+        for reference in report.reference_asset_summaries:
+            print(
+                f"  - {reference.name} [{reference.asset_type}]: "
+                f"{reference.prompt}"
+            )
+            if reference.details:
+                print(f"    details: {reference.details}")
+            if reference.layout:
+                print(f"    layout: {reference.layout}")
+    if report.issues:
+        print("Issues:")
+        for issue in report.issues:
+            print(f"  - {issue.level.upper()}: {issue.message}")
+
+
+def print_layout(layout: AssetLayout) -> None:
+    print(f"Layout: {layout.name}")
+    print(f"Canvas: {layout.width}x{layout.height}")
+    print(layout.prompt_instructions)
+    for region in layout.regions:
+        print(
+            f"  - {region.name}: ({region.x},{region.y}) "
+            f"{region.width}x{region.height} - {region.prompt_role}"
+        )
+
+
+def cmd_project(args: argparse.Namespace) -> int:
+    store = ProjectStore(root=args.project_root)
+    planner = PromptPlanner()
+
+    if args.project_command == "presets":
+        print("Available workflow presets:")
+        for preset in list_workflow_presets():
+            print(f"  - {preset.key}: {preset.label}")
+            print(f"    {preset.description}")
+            print(
+                f"    asset_type={preset.asset_type}, "
+                f"evolutions={preset.evolution_count}, layout={preset.default_layout}"
+            )
+        return 0
+
+    if args.project_command == "starters":
+        print("Available project starters:")
+        for starter in list_project_starters():
+            asset_types = ", ".join(asset_type.name for asset_type in starter.asset_types)
+            print(f"  - {starter.key}: {starter.label}")
+            print(f"    {starter.description}")
+            print(f"    project={starter.project_name}, asset_types={asset_types}")
+        return 0
+
+    if args.project_command in {"starter", "start"}:
+        starter = get_project_starter(args.starter)
+        project = starter.build_project(
+            image_provider=args.provider,
+            image_model=args.image_model,
+            prompt_provider=args.prompt_provider,
+            prompt_model=args.prompt_model,
+        )
+        asset = starter.build_first_asset()
+        asset_type = project.get_asset_type(asset.asset_type)
+        project.get_layout(asset.layout or asset_type.default_layout)
+
+        project_path = store.save_project(project)
+        known_assets = store.load_assets(project)
+        asset_path = store.save_asset(project, asset)
+        packets = planner.build_prompt_packets(project, asset, known_assets=known_assets)
+        plan_path = store.save_prompt_plan(project, asset, packets)
+
+        print(f"Created starter project: {project.name}")
+        print(f"Project file: {project_path}")
+        print(f"Saved starter asset: {asset.name}")
+        print(f"Asset file: {asset_path}")
+        print(f"Saved prompt plan: {plan_path}")
+        if args.print_prompts:
+            for packet in packets:
+                label = packet.stage_label or "single"
+                print(f"\n--- {asset.name} / {label} ---")
+                print(packet.prompt)
+        else:
+            print(f"Prompt packets: {len(packets)}")
+        return 0
+
+    if args.project_command == "layout":
+        project = store.load_project(args.project)
+
+        if args.layout_action == "list":
+            print("Built-in layouts:")
+            for name, layout in sorted(PRESET_LAYOUTS.items()):
+                print(f"  - {name}: {layout.width}x{layout.height}, {len(layout.regions)} regions")
+            print("Project layouts:")
+            if not project.custom_layouts:
+                print("  - none")
+            for name, layout in sorted(project.custom_layouts.items()):
+                print(f"  - {name}: {layout.width}x{layout.height}, {len(layout.regions)} regions")
+            return 0
+
+        if args.layout_action == "info":
+            print_layout(project.get_layout(args.name))
+            return 0
+
+        if args.layout_action == "add-grid":
+            layout = AssetLayout.grid(
+                name=args.name,
+                width=args.width,
+                height=args.height,
+                rows=args.rows,
+                columns=args.columns,
+                region_prefix=args.region_prefix,
+            )
+            if args.prompt_instructions:
+                layout.prompt_instructions = args.prompt_instructions
+            project.add_layout(layout)
+            path = store.save_project(project)
+            print(f"Saved layout: {layout.name}")
+            print(f"Project file: {path}")
+            return 0
+
+        if args.layout_action == "add-hero-grid":
+            layout = AssetLayout.hero_plus_grid(
+                name=slugify(args.name).replace("-", "_"),
+                width=args.width,
+                height=args.height,
+                hero_width=args.hero_width,
+                grid_rows=args.grid_rows,
+                grid_columns=args.grid_columns,
+                hero_region_name=args.hero_region_name,
+                grid_region_prefix=args.grid_region_prefix,
+                hero_side=args.hero_side,
+            )
+            if args.prompt_instructions:
+                layout.prompt_instructions = args.prompt_instructions
+            project.add_layout(layout)
+            path = store.save_project(project)
+            print(f"Saved layout: {layout.name}")
+            print(f"Project file: {path}")
+            return 0
+
+        if args.layout_action == "import":
+            data = json.loads(Path(args.file).read_text(encoding="utf-8"))
+            layout = AssetLayout.from_dict(data)
+            project.add_layout(layout)
+            path = store.save_project(project)
+            print(f"Imported layout: {layout.name}")
+            print(f"Project file: {path}")
+            return 0
+
+        if args.layout_action == "export":
+            layout = project.get_layout(args.name)
+            data = json.dumps(layout.to_dict(), indent=2)
+            if args.output:
+                output = Path(args.output)
+                output.parent.mkdir(parents=True, exist_ok=True)
+                output.write_text(data, encoding="utf-8")
+                print(f"Exported layout: {output}")
+            else:
+                print(data)
+            return 0
+
+        if args.layout_action == "slice":
+            layout = project.get_layout(args.name)
+            image_data = Path(args.image).read_bytes()
+            slicer = Slicer(output_dir=Path(args.output))
+            paths = slicer.slice_layout_image(image_data, layout, prefix=args.prefix)
+            for path in paths:
+                print(f"Saved: {path}")
+            return 0
+
+        return 1
+
+    if args.project_command == "init":
+        preset = get_workflow_preset(args.preset) if args.preset else None
+        asset_type_name = args.asset_type or (preset.asset_type if preset else "tower")
+        asset_type_context = args.asset_type_context
+        if asset_type_context is None and preset:
+            asset_type_context = preset.shared_prompt
+        evolutions = args.evolutions
+        if evolutions is None:
+            evolutions = preset.evolution_count if preset else 4
+        evolution_context = args.evolution_context
+        if evolution_context is None and preset:
+            evolution_context = preset.evolution_prompt
+        evolution_labels = list(preset.evolution_labels) if preset else []
+        layout_name = args.layout or (preset.default_layout if preset else "single_sprite")
+
+        if evolutions < 1:
+            print("--evolutions must be at least 1")
+            return 1
+        get_layout(layout_name)
+        palette = [c.strip() for c in args.palette.split(",") if c.strip()]
+        project = ProjectSpec(
+            name=args.name,
+            summary=args.summary or "",
+            visual_style=args.style,
+            shared_context=args.context,
+            palette=palette,
+            negative_prompt=args.negative_prompt or "",
+            provider_defaults=ProviderDefaults(
+                image_provider=args.provider,
+                image_model=args.image_model,
+                prompt_provider=args.prompt_provider,
+                prompt_model=args.prompt_model,
+            ),
+            color_treatment=ColorTreatment(
+                mode=args.color_mode,
+                custom_prompt=args.color_prompt or "",
+            ),
+            postprocess=PostProcessSettings(remove_background=args.remove_background),
+        )
+        project.add_asset_type(
+            AssetTypeSpec(
+                name=asset_type_name,
+                shared_prompt=asset_type_context or "",
+                evolution=EvolutionPlan(
+                    count=evolutions,
+                    labels=evolution_labels,
+                    shared_prompt=evolution_context or "",
+                ),
+                default_layout=layout_name,
+            )
+        )
+        path = store.save_project(project)
+        print(f"Created project: {project.name}")
+        print(f"Project file: {path}")
+        return 0
+
+    if args.project_command == "asset":
+        project = store.load_project(args.project)
+        asset_type = project.get_asset_type(args.asset_type)
+        project.get_layout(args.layout or asset_type.default_layout)
+        asset = AssetSpec(
+            name=args.name,
+            asset_type=args.asset_type,
+            description=args.description,
+            details=args.details or "",
+            enhanced_prompt=args.enhanced_prompt or "",
+            layout=args.layout,
+        )
+        known_assets = store.load_assets(project)
+        asset_path = store.save_asset(project, asset)
+        packets = planner.build_prompt_packets(project, asset, known_assets=known_assets)
+        plan_path = store.save_prompt_plan(project, asset, packets)
+
+        print(f"Saved asset: {asset_path}")
+        print(f"Saved prompt plan: {plan_path}")
+        print(f"Enhancement brief model: {project.provider_defaults.prompt_model}")
+        print(planner.build_enhancement_brief(project, asset_type, asset, known_assets))
+        if args.print_prompts:
+            for packet in packets:
+                label = packet.stage_label or "single"
+                print(f"\n--- {asset.name} / {label} ---")
+                print(packet.prompt)
+        else:
+            print(f"Prompt packets: {len(packets)}")
+        return 0
+
+    if args.project_command == "enhance":
+        project = store.load_project(args.project)
+        asset = store.load_asset(project, args.asset)
+        asset_type = project.get_asset_type(asset.asset_type)
+        known_assets = store.load_assets(project)
+        brief = planner.build_enhancement_brief(project, asset_type, asset, known_assets)
+        provider = args.provider or project.provider_defaults.prompt_provider
+        model = args.model or project.provider_defaults.prompt_model
+
+        enhanced = PromptEnhancer().enhance(
+            brief,
+            provider=provider,
+            model=model,
+            api_key=args.api_key,
+            system_prompt=planner.build_enhancement_system_prompt(
+                project,
+                asset_type,
+                asset,
+            ),
+        )
+        asset.enhanced_prompt = enhanced
+        asset_path = store.save_asset(project, asset)
+        packets = planner.build_prompt_packets(project, asset, known_assets=known_assets)
+        plan_path = store.save_prompt_plan(project, asset, packets)
+
+        print(f"Enhanced asset prompt: {asset_path}")
+        print(f"Updated prompt plan: {plan_path}")
+        print(enhanced)
+        return 0
+
+    if args.project_command == "enhance-project":
+        project = store.load_project(args.project)
+        provider = args.provider or project.provider_defaults.prompt_provider
+        model = args.model or project.provider_defaults.prompt_model
+        data = PromptEnhancer().enhance_json(
+            planner.build_project_enhancement_brief(project),
+            provider=provider,
+            model=model,
+            api_key=args.api_key,
+            system_prompt=planner.build_project_enhancement_system_prompt(),
+            fallback=planner.project_enhancement_fallback(project),
+        )
+        apply_project_enhancement(project, data)
+        path = store.save_project(project)
+
+        print(f"Enhanced project: {path}")
+        print(f"Summary: {project.summary}")
+        print(f"Style: {project.visual_style}")
+        print(f"Universe: {project.shared_context}")
+        if project.palette:
+            print(f"Palette: {', '.join(project.palette)}")
+        return 0
+
+    if args.project_command == "enhance-type":
+        project = store.load_project(args.project)
+        asset_type = project.get_asset_type(args.asset_type)
+        provider = args.provider or project.provider_defaults.prompt_provider
+        model = args.model or project.provider_defaults.prompt_model
+        data = PromptEnhancer().enhance_json(
+            planner.build_asset_type_enhancement_brief(project, asset_type),
+            provider=provider,
+            model=model,
+            api_key=args.api_key,
+            system_prompt=planner.build_asset_type_enhancement_system_prompt(),
+            fallback=planner.asset_type_enhancement_fallback(asset_type),
+        )
+        apply_asset_type_enhancement(asset_type, data)
+        project.add_asset_type(asset_type)
+        path = store.save_project(project)
+
+        print(f"Enhanced asset type: {asset_type.name}")
+        print(f"Project file: {path}")
+        print(f"Rules: {asset_type.shared_prompt}")
+        if asset_type.evolution.shared_prompt:
+            print(f"Evolution: {asset_type.evolution.shared_prompt}")
+        if asset_type.evolution.labels:
+            print(f"Labels: {', '.join(asset_type.evolution.labels)}")
+        return 0
+
+    if args.project_command == "generate":
+        project = store.load_project(args.project)
+        asset = store.load_asset(project, args.asset)
+        known_assets = store.load_assets(project)
+        if args.enhance_first and not args.dry_run:
+            asset_type = project.get_asset_type(asset.asset_type)
+            prompt_provider = args.prompt_provider or project.provider_defaults.prompt_provider
+            prompt_model = args.prompt_model or project.provider_defaults.prompt_model
+            enhanced = PromptEnhancer().enhance(
+                planner.build_enhancement_brief(project, asset_type, asset, known_assets),
+                provider=prompt_provider,
+                model=prompt_model,
+                api_key=args.prompt_api_key,
+                system_prompt=planner.build_enhancement_system_prompt(
+                    project,
+                    asset_type,
+                    asset,
+                ),
+            )
+            asset.enhanced_prompt = enhanced
+            store.save_asset(project, asset)
+            known_assets = store.load_assets(project)
+            print(f"Enhanced asset prompt with {prompt_provider} / {prompt_model}")
+        packets = planner.build_prompt_packets(project, asset, known_assets=known_assets)
+        plan_path = store.save_prompt_plan(project, asset, packets)
+        if args.variants < 1:
+            print("--variants must be at least 1")
+            return 1
+
+        if args.dry_run:
+            image_count = len(packets) * args.variants
+            print(f"Dry run: would generate {image_count} image(s)")
+            if args.enhance_first:
+                print("Dry run: would enhance the asset prompt before generation")
+            print(f"Prompt plan: {plan_path}")
+            for packet in packets:
+                label = packet.stage_label or "single"
+                variant_note = f" x {args.variants} variant(s)" if args.variants > 1 else ""
+                print(f"  - {asset.name} / {label}: {packet.layout_name}{variant_note}")
+            return 0
+
+        result = ProjectAssetGenerator(store=store).generate_packets(
+            project=project,
+            asset=asset,
+            packets=packets,
+            provider=args.provider,
+            model=args.model,
+            api_key=args.api_key,
+            output_root=args.output_root,
+            remove_background=args.remove_background,
+            variants_per_packet=args.variants,
+        )
+        print(f"Generated asset: {result.output_dir}")
+        print(f"Manifest: {result.manifest_path}")
+        print(f"Gallery: {result.gallery_path}")
+        project_gallery = ProjectGalleryWriter(store=store).write(project)
+        print(f"Project gallery: {project_gallery}")
+        for output in result.outputs:
+            label = output.stage_label or "single"
+            if output.variant_index:
+                label = f"{label} / variant {output.variant_index}"
+            print(f"  - {label}: {output.raw_image} ({len(output.slices)} slices)")
+        return 0
+
+    if args.project_command == "preflight":
+        project = store.load_project(args.project)
+        asset = store.load_asset(project, args.asset)
+        known_assets = store.load_assets(project)
+        report = build_generation_preflight(
+            project=project,
+            asset=asset,
+            known_assets=known_assets,
+            provider=args.provider,
+            model=args.model,
+            api_key=args.api_key,
+            prompt_provider=args.prompt_provider,
+            prompt_model=args.prompt_model,
+            prompt_api_key=args.prompt_api_key,
+            enhance_first=args.enhance_first,
+            variants_per_packet=args.variants,
+        )
+        print_generation_preflight(report)
+        return 1 if report.status == PREFLIGHT_ERROR else 0
+
+    if args.project_command == "export":
+        project = store.load_project(args.project)
+        asset = store.load_asset(project, args.asset)
+        result = ProjectAssetExporter(store=store).export_saved_asset(
+            project=project,
+            asset=asset,
+            output_dir=args.output,
+            manifest_path=args.manifest,
+            include_raw=args.include_raw,
+            variant_index=args.variant,
+        )
+        print(f"Exported sprites: {result.output_dir}")
+        print(f"Export manifest: {result.manifest_path}")
+        if args.variant:
+            print(f"Variant: {args.variant}")
+        print(f"Sprites: {len(result.sprites)}")
+        if result.raw_images:
+            print(f"Raw images: {len(result.raw_images)}")
+        project_gallery = ProjectGalleryWriter(store=store).write(project)
+        print(f"Project gallery: {project_gallery}")
+        return 0
+
+    if args.project_command in {"export-project", "export-all"}:
+        project = store.load_project(args.project)
+        result = ProjectAssetExporter(store=store).export_project(
+            project=project,
+            output_dir=args.output,
+            include_raw=args.include_raw,
+            prefer_selected_variant=not args.all_variants,
+        )
+        print(f"Exported project: {result.output_dir}")
+        print(f"Project export manifest: {result.manifest_path}")
+        print(f"Assets: {len(result.assets)}")
+        if result.skipped:
+            print(f"Skipped: {len(result.skipped)}")
+            for skipped in result.skipped:
+                print(f"  - {skipped.asset.name}: {skipped.reason}")
+        project_gallery = ProjectGalleryWriter(store=store).write(project)
+        print(f"Project gallery: {project_gallery}")
+        return 0
+
+    if args.project_command == "gallery":
+        project = store.load_project(args.project)
+        gallery_path = ProjectGalleryWriter(store=store).write(project)
+        print(f"Project gallery: {gallery_path}")
+        return 0
+
+    return 1
 
 
 def cmd_evolution_chain(args: argparse.Namespace) -> int:
@@ -139,8 +798,6 @@ def cmd_evolution_chain(args: argparse.Namespace) -> int:
         return 1
 
     generator = SpriteGenerator(style=style, config=config, style_manager=style_mgr)
-    slicer = Slicer(output_dir=config.output_dir, config=config)
-
     stages = EVOLUTION_STAGES[args.tower]
     print(f"Generating {args.tower} evolution chain ({len(stages)} stages)...")
 
@@ -269,6 +926,63 @@ def main() -> int:
     )
     slice_parser.add_argument("--count", type=int, help="Number of sprites")
 
+    layout_parser = subparsers.add_parser("layout", help="Manage and slice atlas layouts")
+    layout_subparsers = layout_parser.add_subparsers(
+        dest="layout_command",
+        required=True,
+    )
+    layout_subparsers.add_parser("list", help="List built-in atlas layouts")
+    layout_info = layout_subparsers.add_parser("info", help="Show a layout")
+    layout_info.add_argument("--name", required=True)
+    layout_slice = layout_subparsers.add_parser("slice", help="Slice an image by layout")
+    layout_slice.add_argument("--image", required=True, help="Generated atlas image")
+    layout_slice.add_argument("--layout", required=True, help="Layout preset name")
+    layout_slice.add_argument("--output", default="output/sprites", help="Output directory")
+    layout_slice.add_argument("--prefix", help="Filename prefix")
+
+    models_parser = subparsers.add_parser(
+        "models",
+        help="List suggested provider model IDs",
+    )
+    models_parser.add_argument(
+        "--provider",
+        default="openrouter",
+        choices=["mock", "pollinations", "openai", "openrouter"],
+        help="Provider to list model suggestions for",
+    )
+    models_parser.add_argument(
+        "--role",
+        default=IMAGE_ROLE,
+        choices=MODEL_ROLES,
+        help="Model role: image generation or prompt improvement",
+    )
+    models_parser.add_argument(
+        "--online",
+        action="store_true",
+        help="Fetch provider model lists when supported, then merge with offline suggestions",
+    )
+    models_parser.add_argument(
+        "--search",
+        default="",
+        help="Filter model suggestions by text, such as minimax or image",
+    )
+    models_parser.add_argument(
+        "--limit",
+        type=int,
+        default=20,
+        help="Maximum online model suggestions to fetch",
+    )
+    models_parser.add_argument(
+        "--catalog-source",
+        default="auto",
+        choices=MODEL_DISCOVERY_SOURCES,
+        help="Online model catalog to use for OpenRouter discovery",
+    )
+    models_parser.add_argument(
+        "--validate",
+        help="Validate one pasted model ID for the selected provider and role",
+    )
+
     evo_parser = subparsers.add_parser(
         "evolution-chain", help="Generate a tower evolution chain"
     )
@@ -308,9 +1022,317 @@ def main() -> int:
     style_create.add_argument("--negative-prompt", default="")
     style_create.add_argument("--colors")
     style_create.add_argument("--tags")
-    style_list = style_subparsers.add_parser("list", help="List styles")
+    style_subparsers.add_parser("list", help="List styles")
     style_info = style_subparsers.add_parser("info", help="Show style info")
     style_info.add_argument("--name", required=True)
+
+    project_parser = subparsers.add_parser(
+        "project",
+        help="Create project-aware prompt plans",
+    )
+    project_parser.add_argument(
+        "--project-root",
+        default="projects",
+        help="Directory where project specs are stored",
+    )
+    project_subparsers = project_parser.add_subparsers(
+        dest="project_command",
+        required=True,
+    )
+
+    project_subparsers.add_parser(
+        "presets",
+        help="List built-in workflow presets for common game-asset shapes",
+    )
+
+    project_subparsers.add_parser(
+        "starters",
+        help="List starter projects that create a project, first asset, and prompt plan",
+    )
+
+    starter_choices = sorted(starter.key for starter in list_project_starters())
+    for starter_command, starter_help in (
+        ("starter", "Create a starter project with its first asset"),
+        ("start", "Alias for starter"),
+    ):
+        project_starter = project_subparsers.add_parser(starter_command, help=starter_help)
+        project_starter.add_argument(
+            "--starter",
+            required=True,
+            choices=starter_choices,
+            help="Starter template to create",
+        )
+        project_starter.add_argument("--provider", default="mock")
+        project_starter.add_argument("--image-model", default=default_model("mock", IMAGE_ROLE))
+        project_starter.add_argument("--prompt-provider", default="mock")
+        project_starter.add_argument("--prompt-model", default=default_model("mock", PROMPT_ROLE))
+        project_starter.add_argument(
+            "--print-prompts",
+            action="store_true",
+            help="Print full image prompts for the starter asset",
+        )
+
+    project_layout = project_subparsers.add_parser(
+        "layout",
+        help="Manage project-specific atlas layouts",
+    )
+    project_layout.add_argument("--project", required=True, help="Project slug or JSON path")
+    project_layout_subparsers = project_layout.add_subparsers(
+        dest="layout_action",
+        required=True,
+    )
+    project_layout_subparsers.add_parser("list", help="List built-in and project layouts")
+    project_layout_info = project_layout_subparsers.add_parser("info", help="Show a layout")
+    project_layout_info.add_argument("--name", required=True)
+    project_layout_add_grid = project_layout_subparsers.add_parser(
+        "add-grid",
+        help="Add a reusable grid atlas layout to the project",
+    )
+    project_layout_add_grid.add_argument("--name", required=True)
+    project_layout_add_grid.add_argument("--width", type=int, default=1024)
+    project_layout_add_grid.add_argument("--height", type=int, default=1024)
+    project_layout_add_grid.add_argument("--rows", type=int, required=True)
+    project_layout_add_grid.add_argument("--columns", type=int, required=True)
+    project_layout_add_grid.add_argument("--region-prefix", default="cell")
+    project_layout_add_grid.add_argument("--prompt-instructions", default="")
+    project_layout_add_hero_grid = project_layout_subparsers.add_parser(
+        "add-hero-grid",
+        help="Add a large hero region plus a grid of smaller related cells",
+    )
+    project_layout_add_hero_grid.add_argument("--name", required=True)
+    project_layout_add_hero_grid.add_argument("--width", type=int, default=1024)
+    project_layout_add_hero_grid.add_argument("--height", type=int, default=1024)
+    project_layout_add_hero_grid.add_argument("--hero-width", type=int, default=512)
+    project_layout_add_hero_grid.add_argument("--grid-rows", type=int, required=True)
+    project_layout_add_hero_grid.add_argument("--grid-columns", type=int, required=True)
+    project_layout_add_hero_grid.add_argument("--hero-region-name", default="full_body")
+    project_layout_add_hero_grid.add_argument("--grid-region-prefix", default="head")
+    project_layout_add_hero_grid.add_argument(
+        "--hero-side",
+        choices=["left", "right"],
+        default="left",
+    )
+    project_layout_add_hero_grid.add_argument("--prompt-instructions", default="")
+    project_layout_import = project_layout_subparsers.add_parser(
+        "import",
+        help="Import a layout JSON file into the project",
+    )
+    project_layout_import.add_argument("--file", required=True)
+    project_layout_export = project_layout_subparsers.add_parser(
+        "export",
+        help="Export a built-in or project layout as JSON",
+    )
+    project_layout_export.add_argument("--name", required=True)
+    project_layout_export.add_argument("--output")
+    project_layout_slice = project_layout_subparsers.add_parser(
+        "slice",
+        help="Slice an image with a built-in or project layout",
+    )
+    project_layout_slice.add_argument("--name", required=True, help="Layout name")
+    project_layout_slice.add_argument("--image", required=True, help="Generated atlas image")
+    project_layout_slice.add_argument("--output", default="output/sprites")
+    project_layout_slice.add_argument("--prefix")
+
+    project_init = project_subparsers.add_parser("init", help="Create a project spec")
+    project_init.add_argument("--name", required=True)
+    project_init.add_argument("--summary", default="")
+    project_init.add_argument("--style", required=True, help="Shared visual style")
+    project_init.add_argument("--context", required=True, help="Shared project universe")
+    project_init.add_argument("--palette", default="", help="Comma-separated colors")
+    project_init.add_argument("--negative-prompt", default="")
+    project_init.add_argument("--provider", default="openai")
+    project_init.add_argument("--image-model", default=default_model("openai", IMAGE_ROLE))
+    project_init.add_argument("--prompt-provider", default="openai")
+    project_init.add_argument("--prompt-model", default=default_model("openai", PROMPT_ROLE))
+    project_init.add_argument(
+        "--preset",
+        choices=sorted(preset.key for preset in list_workflow_presets()),
+        help="Apply a common asset workflow preset",
+    )
+    project_init.add_argument(
+        "--color-mode",
+        default="full_color",
+        choices=sorted(COLOR_TREATMENT_MODES),
+        help="Color treatment carried into prompt enhancement and image generation",
+    )
+    project_init.add_argument(
+        "--color-prompt",
+        default="",
+        help="Extra color-mode instructions, such as value bands or palette rules",
+    )
+    project_init.add_argument(
+        "--remove-background",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Whether generated layout slices should have simple backgrounds removed",
+    )
+    project_init.add_argument("--asset-type")
+    project_init.add_argument("--asset-type-context")
+    project_init.add_argument("--evolutions", type=int)
+    project_init.add_argument("--evolution-context")
+    project_init.add_argument("--layout")
+
+    project_asset = project_subparsers.add_parser(
+        "asset",
+        help="Create an asset spec and prompt plan",
+    )
+    project_asset.add_argument("--project", required=True, help="Project slug or JSON path")
+    project_asset.add_argument("--asset-type", default="tower")
+    project_asset.add_argument("--name", required=True)
+    project_asset.add_argument("--description", required=True)
+    project_asset.add_argument("--details", default="")
+    project_asset.add_argument("--enhanced-prompt", default="")
+    project_asset.add_argument("--layout")
+    project_asset.add_argument(
+        "--print-prompts",
+        action="store_true",
+        help="Print full image prompts for every packet",
+    )
+
+    project_enhance = project_subparsers.add_parser(
+        "enhance",
+        help="Improve a saved asset prompt using the project's prompt provider",
+    )
+    project_enhance.add_argument("--project", required=True, help="Project slug or JSON path")
+    project_enhance.add_argument("--asset", required=True, help="Asset slug or JSON path")
+    project_enhance.add_argument("--provider")
+    project_enhance.add_argument("--model")
+    project_enhance.add_argument("--api-key", help="Session-only API key override")
+
+    project_enhance_project = project_subparsers.add_parser(
+        "enhance-project",
+        help="Improve the saved project style, universe, palette, and negative prompt",
+    )
+    project_enhance_project.add_argument(
+        "--project",
+        required=True,
+        help="Project slug or JSON path",
+    )
+    project_enhance_project.add_argument("--provider")
+    project_enhance_project.add_argument("--model")
+    project_enhance_project.add_argument("--api-key", help="Session-only API key override")
+
+    project_enhance_type = project_subparsers.add_parser(
+        "enhance-type",
+        help="Improve reusable rules for one saved project asset type",
+    )
+    project_enhance_type.add_argument("--project", required=True, help="Project slug or JSON path")
+    project_enhance_type.add_argument("--asset-type", required=True)
+    project_enhance_type.add_argument("--provider")
+    project_enhance_type.add_argument("--model")
+    project_enhance_type.add_argument("--api-key", help="Session-only API key override")
+
+    project_generate = project_subparsers.add_parser(
+        "generate",
+        help="Generate a saved asset from its project prompt plan",
+    )
+    project_generate.add_argument("--project", required=True, help="Project slug or JSON path")
+    project_generate.add_argument("--asset", required=True, help="Asset slug or JSON path")
+    project_generate.add_argument("--provider")
+    project_generate.add_argument("--model")
+    project_generate.add_argument("--api-key", help="Session-only image API key override")
+    project_generate.add_argument("--output-root")
+    project_generate.add_argument(
+        "--variants",
+        type=int,
+        default=1,
+        help="Generate this many candidate images for each prompt packet",
+    )
+    project_generate.add_argument(
+        "--remove-background",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Override the saved project background-removal setting for this run",
+    )
+    project_generate.add_argument(
+        "--enhance-first",
+        action="store_true",
+        help="Improve the asset prompt with the prompt provider before image generation",
+    )
+    project_generate.add_argument("--prompt-provider", help="Prompt provider for --enhance-first")
+    project_generate.add_argument("--prompt-model", help="Prompt model for --enhance-first")
+    project_generate.add_argument(
+        "--prompt-api-key",
+        help="Session-only prompt API key override for --enhance-first",
+    )
+    project_generate.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Write/update the prompt plan without calling an image API",
+    )
+
+    project_preflight = project_subparsers.add_parser(
+        "preflight",
+        help="Check a saved asset generation run before spending API calls",
+    )
+    project_preflight.add_argument("--project", required=True, help="Project slug or JSON path")
+    project_preflight.add_argument("--asset", required=True, help="Asset slug or JSON path")
+    project_preflight.add_argument("--provider")
+    project_preflight.add_argument("--model")
+    project_preflight.add_argument("--api-key", help="Session-only image API key override")
+    project_preflight.add_argument(
+        "--variants",
+        type=int,
+        default=1,
+        help="Candidate images for each prompt packet",
+    )
+    project_preflight.add_argument(
+        "--enhance-first",
+        action="store_true",
+        help="Include prompt-improvement preflight checks",
+    )
+    project_preflight.add_argument("--prompt-provider", help="Prompt provider for --enhance-first")
+    project_preflight.add_argument("--prompt-model", help="Prompt model for --enhance-first")
+    project_preflight.add_argument(
+        "--prompt-api-key",
+        help="Session-only prompt API key override for --enhance-first",
+    )
+
+    project_export = project_subparsers.add_parser(
+        "export",
+        help="Copy generated slices into a game-ready export folder",
+    )
+    project_export.add_argument("--project", required=True, help="Project slug or JSON path")
+    project_export.add_argument("--asset", required=True, help="Asset slug or JSON path")
+    project_export.add_argument("--output", help="Export directory")
+    project_export.add_argument("--manifest", help="Generation manifest path override")
+    project_export.add_argument(
+        "--variant",
+        type=int,
+        help="Export only this generated variant number, such as 2",
+    )
+    project_export.add_argument(
+        "--include-raw",
+        action="store_true",
+        help="Also copy raw generated atlases into the export folder",
+    )
+
+    for export_project_command, export_project_help in (
+        ("export-project", "Copy every generated project asset into one engine-ready pack"),
+        ("export-all", "Alias for export-project"),
+    ):
+        project_export_all = project_subparsers.add_parser(
+            export_project_command,
+            help=export_project_help,
+        )
+        project_export_all.add_argument("--project", required=True, help="Project slug or JSON path")
+        project_export_all.add_argument("--output", help="Project pack output directory")
+        project_export_all.add_argument(
+            "--include-raw",
+            action="store_true",
+            help="Also copy raw generated atlases into each packed asset folder",
+        )
+        project_export_all.add_argument(
+            "--all-variants",
+            action="store_true",
+            help="Ignore chosen variant exports and pack every generated variant",
+        )
+
+    project_gallery = project_subparsers.add_parser(
+        "gallery",
+        help="Write a browser project gallery that links saved assets, runs, and exports",
+    )
+    project_gallery.add_argument("--project", required=True, help="Project slug or JSON path")
 
     args = parser.parse_args()
 
@@ -322,6 +1344,12 @@ def main() -> int:
         return cmd_evolution_chain(args)
     elif args.command == "style":
         return cmd_style(args)
+    elif args.command == "layout":
+        return cmd_layout(args)
+    elif args.command == "models":
+        return cmd_models(args)
+    elif args.command == "project":
+        return cmd_project(args)
     else:
         parser.print_help()
         return 1

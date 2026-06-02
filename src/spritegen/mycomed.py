@@ -12,7 +12,6 @@ Tower Types and Evolution Chains:
 """
 
 from dataclasses import dataclass
-from typing import Literal
 
 from .style import StyleManager
 from .generator import create_mycomed_style

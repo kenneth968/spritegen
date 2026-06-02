@@ -2,7 +2,6 @@
 
 import pytest
 from io import BytesIO
-from pathlib import Path
 from spritegen.config import SpriteConfig, SheetLayout
 from spritegen.models import GeneratedSheet, SpriteMetadata
 from spritegen.slicer import Slicer, SlicerError
@@ -160,3 +159,18 @@ class TestSlicerEndToEnd:
 
         with pytest.raises(SlicerError, match="PIL"):
             s.extract_sprite(self._create_fake_sheet(), 0)
+
+    def test_layout_slice_rejects_wrong_canvas_size(self, tmp_path):
+        """Test that atlas layouts fail instead of padding cropped regions."""
+        from PIL import Image
+        from spritegen.layouts import get_layout
+
+        layout = get_layout("character_full_plus_8_emotions")
+        img = Image.new("RGBA", (512, 512), (255, 255, 255, 255))
+        buf = BytesIO()
+        img.save(buf, format="PNG")
+
+        slicer = Slicer(output_dir=tmp_path)
+
+        with pytest.raises(SlicerError, match="size mismatch"):
+            slicer.slice_layout_image(buf.getvalue(), layout)
