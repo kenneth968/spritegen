@@ -34,6 +34,7 @@ from PySide6.QtWidgets import (
 from ..layouts import PRESET_LAYOUTS, AssetLayout
 from ..provider_models import (
     IMAGE_ROLE,
+    MODEL_DISCOVERY_SOURCES,
     MODEL_VALIDATION_ERROR,
     MODEL_VALIDATION_WARNING,
     PROMPT_ROLE,
@@ -94,6 +95,12 @@ COLOR_MODE_LABELS = {
     "black_white": "Black / White",
     "grayscale_value_map": "Grayscale Value Map",
     "single_hue_value_map": "Single-Hue Value Map",
+}
+
+MODEL_DISCOVERY_SOURCE_LABELS = {
+    "auto": "Auto",
+    "openrouter": "OpenRouter",
+    "models-dev": "models.dev",
 }
 
 
@@ -538,6 +545,19 @@ class MainWindow(QWidget):
         )
         model_help.setOpenExternalLinks(True)
         config_layout.addRow("Model Names:", model_help)
+
+        model_catalog_row = QHBoxLayout()
+        self.model_catalog_source_combo = QComboBox()
+        for source in MODEL_DISCOVERY_SOURCES:
+            self.model_catalog_source_combo.addItem(
+                MODEL_DISCOVERY_SOURCE_LABELS.get(source, source),
+                source,
+            )
+        self.model_search_edit = QLineEdit()
+        self.model_search_edit.setPlaceholderText("Search model IDs, e.g. minimax")
+        model_catalog_row.addWidget(self.model_catalog_source_combo)
+        model_catalog_row.addWidget(self.model_search_edit, 1)
+        config_layout.addRow("Model Catalog:", model_catalog_row)
 
         provider_actions = QHBoxLayout()
         self.check_provider_setup_btn = QPushButton("Check Setup")
@@ -1149,6 +1169,8 @@ class MainWindow(QWidget):
         self._thread = ModelDiscoveryThread(
             image_provider=self.image_provider_combo.currentData(),
             prompt_provider=self.prompt_provider_combo.currentData(),
+            search=self.model_search_edit.text(),
+            source=self.model_catalog_source_combo.currentData() or "auto",
         )
         self._thread.finished.connect(self._on_model_discovery_finished)
         self._thread.start()
@@ -1713,6 +1735,8 @@ class MainWindow(QWidget):
         self.save_provider_settings_btn.setEnabled(not busy)
         self.clear_saved_keys_btn.setEnabled(not busy)
         self.refresh_models_btn.setEnabled(not busy)
+        self.model_catalog_source_combo.setEnabled(not busy)
+        self.model_search_edit.setEnabled(not busy)
         self.progress_bar.setRange(0, 0 if busy else 1)
         self.progress_bar.setValue(0 if busy else 1)
         self.status_label.setText(status)

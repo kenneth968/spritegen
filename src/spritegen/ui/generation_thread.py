@@ -23,11 +23,15 @@ class ModelDiscoveryThread(QThread):
         self,
         image_provider: str,
         prompt_provider: str,
+        search: str = "",
+        source: str = "auto",
         parent=None,
     ) -> None:
         super().__init__(parent)
         self.image_provider = image_provider
         self.prompt_provider = prompt_provider
+        self.search = search.strip()
+        self.source = source
 
     def run(self) -> None:
         suggestions = {}
@@ -37,7 +41,13 @@ class ModelDiscoveryThread(QThread):
             (PROMPT_ROLE, self.prompt_provider),
         ):
             try:
-                discovered = discover_model_suggestions(provider, role, limit=30)
+                discovered = discover_model_suggestions(
+                    provider,
+                    role,
+                    search=self.search,
+                    limit=30,
+                    source=self.source,
+                )
             except Exception as exc:
                 errors.append(f"{provider} {role}: {exc}")
                 continue

@@ -452,3 +452,15 @@ Preflight now shows which saved project assets will steer coherence:
   count.
 - The current asset is excluded from those summaries, so users can see the
   actual already-saved assets that will shape the next generation.
+
+## Thirty-first implementation slice
+
+Desktop model discovery is now searchable and source-selectable:
+
+- The provider setup panel has a **Model Catalog** selector for `auto`,
+  OpenRouter, or models.dev plus a search box for terms like `minimax`.
+- Desktop **Refresh Models** passes the selected catalog and search text into the
+  shared discovery worker, so users can pull current models.dev IDs into the
+  image and prompt model pickers without using the CLI.
+- This keeps the easy desktop path aligned with the documented models.dev
+  workflow for finding current OpenRouter and OpenAI model names.

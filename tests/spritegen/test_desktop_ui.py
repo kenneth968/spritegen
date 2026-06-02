@@ -1016,6 +1016,124 @@ def test_main_window_refreshes_online_model_suggestions_without_overwriting_text
     app.processEvents()
 
 
+def test_model_discovery_thread_uses_selected_catalog_source_and_search(monkeypatch):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    pytest.importorskip("PySide6")
+
+    from PySide6.QtWidgets import QApplication
+    from spritegen.provider_models import IMAGE_ROLE, PROMPT_ROLE, ModelSuggestion
+    from spritegen.ui import generation_thread as generation_thread_mod
+    from spritegen.ui.generation_thread import ModelDiscoveryThread
+
+    captured = []
+
+    def fake_discover(provider, role, search="", limit=20, timeout=15, source="auto"):
+        captured.append(
+            {
+                "provider": provider,
+                "role": role,
+                "search": search,
+                "limit": limit,
+                "source": source,
+            }
+        )
+        return [
+            ModelSuggestion(
+                provider=provider,
+                role=role,
+                model=f"{role}/live",
+                label=f"Live {role}",
+                source_url="https://models.dev/?search=minimax",
+            )
+        ]
+
+    monkeypatch.setattr(generation_thread_mod, "discover_model_suggestions", fake_discover)
+
+    app = QApplication.instance() or QApplication([])
+    thread = ModelDiscoveryThread(
+        image_provider="openrouter",
+        prompt_provider="openrouter",
+        search="minimax",
+        source="models-dev",
+    )
+    emitted = {}
+    thread.finished.connect(lambda result: emitted.update(result))
+
+    thread.run()
+
+    assert captured == [
+        {
+            "provider": "openrouter",
+            "role": IMAGE_ROLE,
+            "search": "minimax",
+            "limit": 30,
+            "source": "models-dev",
+        },
+        {
+            "provider": "openrouter",
+            "role": PROMPT_ROLE,
+            "search": "minimax",
+            "limit": 30,
+            "source": "models-dev",
+        },
+    ]
+    assert emitted["suggestions"][(IMAGE_ROLE, "openrouter")][0].model == "image/live"
+    assert emitted["suggestions"][(PROMPT_ROLE, "openrouter")][0].model == "prompt/live"
+
+    app.processEvents()
+
+
+def test_main_window_refresh_models_uses_selected_catalog_source_and_search(
+    tmp_path,
+    monkeypatch,
+):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    pytest.importorskip("PySide6")
+
+    from PySide6.QtWidgets import QApplication
+    from spritegen.ui import main_window as main_window_mod
+    from spritegen.user_settings import UserSettingsStore
+    from spritegen.ui.main_window import MainWindow
+
+    captured = {}
+
+    class FakeSignal:
+        def connect(self, callback):
+            captured["callback"] = callback
+
+    class FakeModelDiscoveryThread:
+        def __init__(self, image_provider, prompt_provider, search="", source="auto"):
+            captured["image_provider"] = image_provider
+            captured["prompt_provider"] = prompt_provider
+            captured["search"] = search
+            captured["source"] = source
+            self.finished = FakeSignal()
+
+        def start(self):
+            captured["started"] = True
+
+    monkeypatch.setattr(main_window_mod, "ModelDiscoveryThread", FakeModelDiscoveryThread)
+
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow(settings_store=UserSettingsStore(tmp_path / "settings.json"))
+    window._set_combo_value(window.image_provider_combo, "openrouter")
+    window._set_combo_value(window.prompt_provider_combo, "openrouter")
+    window._set_combo_value(window.model_catalog_source_combo, "models-dev")
+    window.model_search_edit.setText("minimax")
+
+    window._on_refresh_models()
+
+    assert captured["image_provider"] == "openrouter"
+    assert captured["prompt_provider"] == "openrouter"
+    assert captured["search"] == "minimax"
+    assert captured["source"] == "models-dev"
+    assert captured["started"] is True
+    assert window.status_label.text() == "Refreshing provider model lists..."
+
+    window.close()
+    app.processEvents()
+
+
 def test_main_window_checks_provider_setup_without_network(tmp_path, monkeypatch):
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     pytest.importorskip("PySide6")

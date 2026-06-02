@@ -45,9 +45,9 @@ The desktop app exposes separate provider/model fields for image generation and 
 improvement. Each provider has suggested model IDs in a picker beside the editable
 model field, so a user can choose a known-good default or paste a newer/custom model.
 Use [models.dev](https://models.dev/?search=minim) for current provider model IDs,
-including OpenRouter model names, then paste the exact model name into the matching
-model field. Use **Refresh Models** to pull current OpenRouter and OpenAI catalog
-results into those pickers; the built-in suggestions remain available when offline.
+including OpenRouter model names, or set **Model Catalog** to `models.dev`, enter a
+search term, and use **Refresh Models** to pull matching IDs into the pickers. The
+built-in suggestions remain available when offline.
 Paste provider keys into **Image API Key** and **Prompt API Key**. Use **Check Setup**
 to confirm the selected providers have keys and that known model IDs are in the
 right image/prompt role. Newer custom IDs from OpenRouter or models.dev stay usable
