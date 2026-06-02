@@ -428,3 +428,15 @@ Generation now has a reusable preflight step:
 - Desktop **Generate** now runs the same preflight and stops before starting the
   background generation worker when a known wrong-role model or required key is
   missing.
+
+## Twenty-ninth implementation slice
+
+Desktop preflight is now visible before generation:
+
+- The Prompt Plan toolbar has **Check Run**, which writes the shared preflight
+  report into the same read-only panel used for prompt previews.
+- The report lists readiness status, provider/model choices, whether prompt
+  improvement will run, atlas image count, expected slice count, variants,
+  layouts, reference assets, and any blocking or warning issues.
+- This lets a desktop user inspect the actual run shape before pressing
+  **Generate**, while **Generate** still repeats the preflight guard.

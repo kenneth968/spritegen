@@ -43,7 +43,11 @@ from ..provider_models import (
     default_model,
     validate_model_choice,
 )
-from ..preflight import PREFLIGHT_ERROR, build_generation_preflight
+from ..preflight import (
+    PREFLIGHT_ERROR,
+    GenerationPreflightReport,
+    build_generation_preflight,
+)
 from ..project_export import ProjectAssetExporter
 from ..project_gallery import ProjectGalleryWriter
 from ..project_starters import get_project_starter, list_project_starters
@@ -587,6 +591,8 @@ class MainWindow(QWidget):
         prompt_header = QHBoxLayout()
         prompt_label = QLabel("Prompt Plan")
         prompt_label.setStyleSheet("font-size: 18px; font-weight: bold;")
+        self.check_run_btn = QPushButton("Check Run")
+        self.check_run_btn.clicked.connect(self._on_check_run)
         self.preview_prompts_btn = QPushButton("Preview Prompts")
         self.preview_prompts_btn.clicked.connect(self._on_preview_prompts)
         self.open_project_gallery_btn = QPushButton("Project Gallery")
@@ -595,6 +601,7 @@ class MainWindow(QWidget):
         self.export_project_btn.clicked.connect(self._on_export_project)
         prompt_header.addWidget(prompt_label)
         prompt_header.addStretch()
+        prompt_header.addWidget(self.check_run_btn)
         prompt_header.addWidget(self.preview_prompts_btn)
         prompt_header.addWidget(self.open_project_gallery_btn)
         prompt_header.addWidget(self.export_project_btn)
@@ -898,6 +905,64 @@ class MainWindow(QWidget):
                 )
             )
         return "\n\n".join(sections)
+
+    def _on_check_run(self) -> None:
+        try:
+            project, asset = self._save_current_specs()
+            preflight = self._build_generation_preflight(
+                project,
+                asset,
+                image_api_key=self._api_key_for(self.image_provider_combo.currentData(), "image"),
+                prompt_api_key=self._api_key_for(self.prompt_provider_combo.currentData(), "prompt"),
+            )
+            self.prompt_preview_edit.setPlainText(self._format_generation_preflight(preflight))
+            self._refresh_project_list(project.slug)
+            self._refresh_asset_list(asset.slug)
+            status = "Run check ready" if preflight.ready else "Run check needs attention"
+            self.status_label.setText(
+                f"{status}: {preflight.image_count} image(s), "
+                f"{preflight.slice_count} slice(s)"
+            )
+        except Exception as exc:
+            QMessageBox.warning(self, "Run Check Failed", str(exc))
+
+    def _format_generation_preflight(self, preflight: GenerationPreflightReport) -> str:
+        lines = [
+            f"Preflight: {preflight.status}",
+            f"Project: {preflight.project_name}",
+            f"Asset: {preflight.asset_name}",
+            f"Image model: {preflight.image_provider} / {preflight.image_model}",
+        ]
+        if preflight.enhance_first:
+            lines.append(
+                f"Prompt model: {preflight.prompt_provider} / {preflight.prompt_model}"
+            )
+        else:
+            lines.append("Prompt enhancement: disabled")
+        lines.extend(
+            [
+                (
+                    f"Images: {preflight.image_count} atlas image(s), "
+                    f"{preflight.slice_count} sliced sprite(s)"
+                ),
+                f"Variants per prompt packet: {preflight.variants_per_packet}",
+            ]
+        )
+        if preflight.layout_summaries:
+            lines.append("Layouts:")
+            lines.extend(
+                f"- {name}: {summary}"
+                for name, summary in preflight.layout_summaries.items()
+            )
+        if preflight.reference_asset_count:
+            lines.append(f"Reference assets: {preflight.reference_asset_count}")
+        if preflight.issues:
+            lines.append("Issues:")
+            lines.extend(
+                f"- {issue.level.upper()}: {issue.message}"
+                for issue in preflight.issues
+            )
+        return "\n".join(lines)
 
     def _on_add_grid_layout(self) -> None:
         try:
@@ -1626,6 +1691,7 @@ class MainWindow(QWidget):
         self.generate_btn.setEnabled(not busy)
         self.create_project_starter_btn.setEnabled(not busy)
         self.apply_workflow_preset_btn.setEnabled(not busy)
+        self.check_run_btn.setEnabled(not busy)
         self.preview_prompts_btn.setEnabled(not busy)
         self.open_project_gallery_btn.setEnabled(not busy)
         self.export_project_btn.setEnabled(not busy)

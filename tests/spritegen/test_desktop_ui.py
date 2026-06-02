@@ -780,6 +780,36 @@ def test_main_window_previews_prompt_plan_with_prior_assets(tmp_path):
     app.processEvents()
 
 
+def test_main_window_check_run_writes_preflight_summary(tmp_path):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    pytest.importorskip("PySide6")
+
+    from PySide6.QtWidgets import QApplication
+    from spritegen.user_settings import UserSettingsStore
+    from spritegen.ui.main_window import MainWindow
+
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow(settings_store=UserSettingsStore(tmp_path / "settings.json"))
+    window.project_root_edit.setText(str(tmp_path / "projects"))
+    window.generation_variants_spin.setValue(2)
+    window._set_combo_value(window.layout_combo, "single_sprite")
+
+    assert window.check_run_btn.text() == "Check Run"
+
+    window._on_check_run()
+
+    preview = window.prompt_preview_edit.toPlainText()
+    assert "Preflight: ready" in preview
+    assert "Image model: mock / mock" in preview
+    assert "Prompt enhancement: disabled" in preview
+    assert "Images: 8 atlas image(s), 8 sliced sprite(s)" in preview
+    assert "single_sprite: 1024x1024, 1 region(s), 4 packet(s)" in preview
+    assert "Run check ready" in window.status_label.text()
+
+    window.close()
+    app.processEvents()
+
+
 def test_main_window_saves_local_provider_setup(tmp_path, monkeypatch):
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     pytest.importorskip("PySide6")

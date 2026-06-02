@@ -67,9 +67,9 @@ Use **Preview Prompts** to inspect the exact image prompts, including prior save
 assets that will be used as style and universe anchors, before spending image tokens.
 Set **Image Variants** above 1 when you want several candidate atlases for the same
 asset or evolution stage in one generation run.
-Generate runs start with a preflight check for provider keys, known model roles,
-variant count, prompt packets, atlas dimensions, and expected slice count before
-any image API call is made.
+Use **Check Run** to show the preflight report in the prompt panel: provider keys,
+known model roles, variant count, prompt packets, atlas dimensions, and expected
+slice count. **Generate** runs the same check before any image API call starts.
 When using OpenRouter or OpenAI for image generation, saved raw atlases from prior
 project assets are also sent as visual reference images when available; other
 providers currently keep using the text anchors.
