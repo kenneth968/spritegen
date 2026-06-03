@@ -40,6 +40,36 @@ def test_main_window_saves_project_plan(tmp_path):
     app.processEvents()
 
 
+def test_main_window_uses_readable_tabbed_editor_layout(tmp_path):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    pytest.importorskip("PySide6")
+
+    from PySide6.QtWidgets import QApplication
+    from spritegen.user_settings import UserSettingsStore
+    from spritegen.ui.main_window import MainWindow
+
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow(settings_store=UserSettingsStore(tmp_path / "settings.json"))
+
+    assert window.minimumWidth() >= 1400
+    assert window.editor_tabs.count() == 3
+    assert [window.editor_tabs.tabText(index) for index in range(3)] == [
+        "Project",
+        "Asset",
+        "Providers",
+    ]
+    assert window.editor_tabs.documentMode() is True
+    assert window.action_footer.layout().count() >= 3
+    assert window.prompt_preview_edit.minimumHeight() >= 260
+    assert window.style_edit.minimumHeight() >= 96
+    assert window.context_edit.minimumHeight() >= 112
+    assert window.asset_description_edit.minimumHeight() >= 104
+    assert "QTabBar::tab" in window.styleSheet()
+
+    window.close()
+    app.processEvents()
+
+
 def test_main_window_writes_and_opens_project_gallery(tmp_path, monkeypatch):
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     pytest.importorskip("PySide6")

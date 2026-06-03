@@ -25,7 +25,9 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QScrollArea,
+    QSplitter,
     QSpinBox,
+    QTabWidget,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -257,18 +259,103 @@ class MainWindow(QWidget):
 
     def _setup_ui(self) -> None:
         self.setWindowTitle("spritegen")
-        self.setMinimumSize(1180, 820)
+        self.setMinimumSize(1400, 900)
+        self.resize(1500, 940)
+        self.setStyleSheet(self._app_stylesheet())
 
         main_layout = QHBoxLayout(self)
-        main_layout.setSpacing(16)
+        main_layout.setSpacing(0)
         main_layout.setContentsMargins(16, 16, 16, 16)
 
+        splitter = QSplitter(Qt.Horizontal)
+        splitter.setChildrenCollapsible(False)
+
         left_panel = self._create_left_panel()
-        left_panel.setMaximumWidth(540)
-        main_layout.addWidget(left_panel)
+        left_panel.setMinimumWidth(620)
 
         right_panel = self._create_right_panel()
-        main_layout.addWidget(right_panel, 1)
+        right_panel.setMinimumWidth(720)
+
+        splitter.addWidget(left_panel)
+        splitter.addWidget(right_panel)
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
+        splitter.setSizes([660, 840])
+        main_layout.addWidget(splitter)
+
+    def _app_stylesheet(self) -> str:
+        return """
+        QWidget {
+            font-family: "Segoe UI", Arial, sans-serif;
+            font-size: 13px;
+            color: #1f2933;
+        }
+        QGroupBox {
+            border: 1px solid #c8d2dc;
+            border-radius: 6px;
+            font-weight: 600;
+            margin-top: 12px;
+            padding: 10px 8px 8px 8px;
+            background: #fbfcfe;
+        }
+        QGroupBox::title {
+            subcontrol-origin: margin;
+            left: 10px;
+            padding: 0 4px;
+        }
+        QLineEdit,
+        QComboBox,
+        QSpinBox {
+            min-height: 26px;
+            padding: 2px 6px;
+        }
+        QTextEdit {
+            padding: 6px;
+        }
+        QPushButton {
+            min-height: 28px;
+            padding: 4px 10px;
+        }
+        QTabWidget::pane {
+            border: 1px solid #c8d2dc;
+            border-radius: 6px;
+            background: #ffffff;
+        }
+        QTabBar::tab {
+            padding: 8px 16px;
+            margin-right: 2px;
+            min-width: 88px;
+            background: #eef2f6;
+            border: 1px solid #c8d2dc;
+            border-bottom: 0;
+            border-top-left-radius: 6px;
+            border-top-right-radius: 6px;
+        }
+        QTabBar::tab:selected {
+            background: #ffffff;
+            color: #0f3d56;
+            border-bottom: 2px solid #2f6f8f;
+        }
+        QProgressBar {
+            min-height: 24px;
+            text-align: center;
+        }
+        """
+
+    def _form_layout(self, group: QGroupBox) -> QFormLayout:
+        form = QFormLayout(group)
+        form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+        form.setHorizontalSpacing(12)
+        form.setVerticalSpacing(8)
+        return form
+
+    def _scrollable_tab(self, content: QWidget) -> QScrollArea:
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setWidget(content)
+        return scroll
 
     def _create_left_panel(self) -> QWidget:
         panel = QWidget()
@@ -279,8 +366,27 @@ class MainWindow(QWidget):
         title.setStyleSheet("font-size: 24px; font-weight: bold;")
         layout.addWidget(title)
 
+        subtitle = QLabel("Project style, asset details, and provider setup")
+        subtitle.setStyleSheet("color: #52616f;")
+        layout.addWidget(subtitle)
+
+        self.editor_tabs = QTabWidget()
+        self.editor_tabs.setDocumentMode(True)
+
+        project_page = QWidget()
+        project_page_layout = QVBoxLayout(project_page)
+        project_page_layout.setContentsMargins(8, 8, 8, 8)
+
+        asset_page = QWidget()
+        asset_page_layout = QVBoxLayout(asset_page)
+        asset_page_layout.setContentsMargins(8, 8, 8, 8)
+
+        providers_page = QWidget()
+        providers_page_layout = QVBoxLayout(providers_page)
+        providers_page_layout.setContentsMargins(8, 8, 8, 8)
+
         project_group = QGroupBox("Project")
-        project_layout = QFormLayout(project_group)
+        project_layout = self._form_layout(project_group)
 
         self.project_name_edit = QLineEdit("MyceliumTD")
         project_layout.addRow("Name:", self.project_name_edit)
@@ -289,12 +395,14 @@ class MainWindow(QWidget):
         project_layout.addRow("Summary:", self.project_summary_edit)
 
         self.style_edit = QTextEdit()
-        self.style_edit.setMaximumHeight(80)
+        self.style_edit.setMinimumHeight(96)
+        self.style_edit.setMaximumHeight(150)
         self.style_edit.setPlainText("clean cartoon tower defense sprites, bold outlines")
         project_layout.addRow("Style:", self.style_edit)
 
         self.context_edit = QTextEdit()
-        self.context_edit.setMaximumHeight(90)
+        self.context_edit.setMinimumHeight(112)
+        self.context_edit.setMaximumHeight(180)
         self.context_edit.setPlainText("Friendly fungal towers defending a forest floor.")
         project_layout.addRow("Universe:", self.context_edit)
 
@@ -310,7 +418,8 @@ class MainWindow(QWidget):
         project_layout.addRow("Color Mode:", self.color_mode_combo)
 
         self.color_prompt_edit = QTextEdit()
-        self.color_prompt_edit.setMaximumHeight(58)
+        self.color_prompt_edit.setMinimumHeight(72)
+        self.color_prompt_edit.setMaximumHeight(120)
         self.color_prompt_edit.setPlaceholderText(
             "Optional color rules, value bands, recolor map notes, etc."
         )
@@ -354,10 +463,11 @@ class MainWindow(QWidget):
         self.improve_project_btn.clicked.connect(self._on_improve_project)
         project_layout.addRow("AI:", self.improve_project_btn)
 
-        layout.addWidget(project_group)
+        project_page_layout.addWidget(project_group)
+        project_page_layout.addStretch()
 
         asset_group = QGroupBox("Asset")
-        asset_layout = QFormLayout(asset_group)
+        asset_layout = self._form_layout(asset_group)
 
         preset_row = QHBoxLayout()
         self.workflow_preset_combo = QComboBox()
@@ -399,7 +509,7 @@ class MainWindow(QWidget):
         asset_layout.addRow("Layout:", self.layout_combo)
 
         custom_layout_group = QGroupBox("Custom Layout")
-        custom_layout_form = QFormLayout(custom_layout_group)
+        custom_layout_form = self._form_layout(custom_layout_group)
 
         self.layout_name_edit = QLineEdit("tower_contact_sheet")
         custom_layout_form.addRow("Name:", self.layout_name_edit)
@@ -447,7 +557,8 @@ class MainWindow(QWidget):
         custom_layout_form.addRow("Region Prefix:", self.layout_region_prefix_edit)
 
         self.layout_prompt_edit = QTextEdit()
-        self.layout_prompt_edit.setMaximumHeight(54)
+        self.layout_prompt_edit.setMinimumHeight(72)
+        self.layout_prompt_edit.setMaximumHeight(120)
         self.layout_prompt_edit.setPlaceholderText("Optional seam and composition instructions")
         custom_layout_form.addRow("Prompt Notes:", self.layout_prompt_edit)
 
@@ -480,23 +591,27 @@ class MainWindow(QWidget):
         asset_layout.addRow("Name:", self.asset_name_edit)
 
         self.asset_description_edit = QTextEdit()
-        self.asset_description_edit.setMaximumHeight(90)
+        self.asset_description_edit.setMinimumHeight(104)
+        self.asset_description_edit.setMaximumHeight(180)
         self.asset_description_edit.setPlainText("A mushroom tower that attacks with spore clouds.")
         asset_layout.addRow("Concept:", self.asset_description_edit)
 
         self.asset_details_edit = QTextEdit()
-        self.asset_details_edit.setMaximumHeight(70)
+        self.asset_details_edit.setMinimumHeight(88)
+        self.asset_details_edit.setMaximumHeight(150)
         self.asset_details_edit.setPlainText("Soft white cap, playful shape language, area damage identity.")
         asset_layout.addRow("Details:", self.asset_details_edit)
 
         self.enhanced_prompt_edit = QTextEdit()
-        self.enhanced_prompt_edit.setMaximumHeight(110)
+        self.enhanced_prompt_edit.setMinimumHeight(120)
+        self.enhanced_prompt_edit.setMaximumHeight(220)
         asset_layout.addRow("Enhanced:", self.enhanced_prompt_edit)
 
-        layout.addWidget(asset_group)
+        asset_page_layout.addWidget(asset_group)
+        asset_page_layout.addStretch()
 
         config_group = QGroupBox("Providers")
-        config_layout = QFormLayout(config_group)
+        config_layout = self._form_layout(config_group)
 
         self.image_provider_combo = self._provider_combo(IMAGE_PROVIDERS)
         self.image_provider_combo.currentIndexChanged.connect(self._on_image_provider_changed)
@@ -559,7 +674,9 @@ class MainWindow(QWidget):
         model_catalog_row.addWidget(self.model_search_edit, 1)
         config_layout.addRow("Model Catalog:", model_catalog_row)
 
-        provider_actions = QHBoxLayout()
+        provider_actions = QGridLayout()
+        provider_actions.setHorizontalSpacing(8)
+        provider_actions.setVerticalSpacing(8)
         self.check_provider_setup_btn = QPushButton("Check Setup")
         self.check_provider_setup_btn.clicked.connect(self._on_check_provider_setup)
         self.save_provider_settings_btn = QPushButton("Save Local Setup")
@@ -568,17 +685,28 @@ class MainWindow(QWidget):
         self.clear_saved_keys_btn.clicked.connect(self._on_clear_saved_keys)
         self.refresh_models_btn = QPushButton("Refresh Models")
         self.refresh_models_btn.clicked.connect(self._on_refresh_models)
-        provider_actions.addWidget(self.check_provider_setup_btn)
-        provider_actions.addWidget(self.save_provider_settings_btn)
-        provider_actions.addWidget(self.clear_saved_keys_btn)
-        provider_actions.addWidget(self.refresh_models_btn)
+        provider_actions.addWidget(self.check_provider_setup_btn, 0, 0)
+        provider_actions.addWidget(self.save_provider_settings_btn, 0, 1)
+        provider_actions.addWidget(self.clear_saved_keys_btn, 1, 0)
+        provider_actions.addWidget(self.refresh_models_btn, 1, 1)
         config_layout.addRow("Local Setup:", provider_actions)
 
         self.enhance_before_generate_check = QCheckBox("Improve prompt before Generate")
         self.enhance_before_generate_check.setChecked(False)
         config_layout.addRow("Generate:", self.enhance_before_generate_check)
 
-        layout.addWidget(config_group)
+        providers_page_layout.addWidget(config_group)
+        providers_page_layout.addStretch()
+
+        self.editor_tabs.addTab(self._scrollable_tab(project_page), "Project")
+        self.editor_tabs.addTab(self._scrollable_tab(asset_page), "Asset")
+        self.editor_tabs.addTab(self._scrollable_tab(providers_page), "Providers")
+        layout.addWidget(self.editor_tabs, 1)
+
+        self.action_footer = QWidget()
+        footer_layout = QVBoxLayout(self.action_footer)
+        footer_layout.setContentsMargins(0, 0, 0, 0)
+        footer_layout.setSpacing(8)
 
         actions = QHBoxLayout()
         self.save_btn = QPushButton("Save Plan")
@@ -590,18 +718,18 @@ class MainWindow(QWidget):
         actions.addWidget(self.save_btn)
         actions.addWidget(self.enhance_btn)
         actions.addWidget(self.generate_btn)
-        layout.addLayout(actions)
+        footer_layout.addLayout(actions)
 
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 1)
         self.progress_bar.setValue(0)
-        layout.addWidget(self.progress_bar)
+        footer_layout.addWidget(self.progress_bar)
 
         self.status_label = QLabel("Ready")
         self.status_label.setWordWrap(True)
-        layout.addWidget(self.status_label)
+        footer_layout.addWidget(self.status_label)
 
-        layout.addStretch()
+        layout.addWidget(self.action_footer)
         return panel
 
     def _create_right_panel(self) -> QWidget:
@@ -629,7 +757,8 @@ class MainWindow(QWidget):
 
         self.prompt_preview_edit = QTextEdit()
         self.prompt_preview_edit.setReadOnly(True)
-        self.prompt_preview_edit.setMaximumHeight(220)
+        self.prompt_preview_edit.setMinimumHeight(260)
+        self.prompt_preview_edit.setMaximumHeight(420)
         layout.addWidget(self.prompt_preview_edit)
 
         header = QHBoxLayout()
