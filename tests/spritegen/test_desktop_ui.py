@@ -70,6 +70,32 @@ def test_main_window_uses_readable_tabbed_editor_layout(tmp_path):
     app.processEvents()
 
 
+def test_main_window_applies_desktop_design_system(tmp_path):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    pytest.importorskip("PySide6")
+
+    from PySide6.QtWidgets import QApplication
+    from spritegen.ui.main_window import MainWindow
+    from spritegen.ui.theme import DESIGN_TOKENS
+    from spritegen.user_settings import UserSettingsStore
+
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow(settings_store=UserSettingsStore(tmp_path / "settings.json"))
+
+    assert window.objectName() == "appRoot"
+    assert window.action_footer.objectName() == "actionFooter"
+    assert window.prompt_preview_edit.objectName() == "promptPreview"
+    assert window.generate_btn.property("buttonRole") == "primary"
+    assert window.enhance_btn.property("buttonRole") == "accent"
+    assert window.clear_saved_keys_btn.property("buttonRole") == "danger"
+    assert DESIGN_TOKENS["color"]["primary"] in window.styleSheet()
+    assert "QWidget#sidebarPanel" in window.styleSheet()
+    assert 'QPushButton[buttonRole="primary"]' in window.styleSheet()
+
+    window.close()
+    app.processEvents()
+
+
 def test_main_window_writes_and_opens_project_gallery(tmp_path, monkeypatch):
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     pytest.importorskip("PySide6")

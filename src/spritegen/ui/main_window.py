@@ -78,6 +78,7 @@ from .generation_thread import (
     ProjectEnhancementThread,
     ProjectGenerationThread,
 )
+from .theme import desktop_stylesheet, set_button_role
 
 
 IMAGE_PROVIDERS = ["mock", "pollinations", "openai", "openrouter"]
@@ -109,6 +110,7 @@ MODEL_DISCOVERY_SOURCE_LABELS = {
 class PreviewPanel(QWidget):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
+        self.setObjectName("previewPanel")
         self._image_paths: list[Path] = []
         self._setup_ui()
 
@@ -135,8 +137,8 @@ class PreviewPanel(QWidget):
 
     def _add_placeholder(self) -> None:
         self.placeholder = QLabel("No generated assets yet.")
+        self.placeholder.setObjectName("emptyStateLabel")
         self.placeholder.setAlignment(Qt.AlignCenter)
-        self.placeholder.setStyleSheet("color: #666; font-size: 14px; padding: 40px;")
         self.container_layout.addWidget(self.placeholder)
 
     def clear(self) -> None:
@@ -160,19 +162,19 @@ class PreviewPanel(QWidget):
             return
         self.placeholder.hide()
         header = QLabel(title or self._group_title(raw_path, slice_paths))
-        header.setStyleSheet("font-weight: bold; font-size: 14px; margin-top: 8px;")
+        header.setObjectName("outputHeaderLabel")
         self.container_layout.addWidget(header)
 
         if raw_path is not None and raw_path.exists():
             raw_label = QLabel(f"Raw atlas: {raw_path.name}")
-            raw_label.setStyleSheet("color: #555;")
+            raw_label.setObjectName("mutedLabel")
             self.container_layout.addWidget(raw_label)
             self._add_scaled_image(raw_path, max_width=480, max_height=480)
 
         existing_slices = [path for path in slice_paths if path.exists()]
         if existing_slices:
             slices_label = QLabel(f"Sliced sprites ({len(existing_slices)})")
-            slices_label.setStyleSheet("color: #555; margin-top: 6px;")
+            slices_label.setObjectName("mutedLabel")
             self.container_layout.addWidget(slices_label)
             self._add_slice_grid(existing_slices)
 
@@ -230,9 +232,9 @@ class PreviewPanel(QWidget):
             cell_layout.addWidget(image_label)
 
             name_label = QLabel(path.name)
+            name_label.setObjectName("captionLabel")
             name_label.setAlignment(Qt.AlignCenter)
             name_label.setWordWrap(True)
-            name_label.setStyleSheet("font-size: 11px; color: #555;")
             cell_layout.addWidget(name_label)
 
             row, column = divmod(index, 4)
@@ -258,6 +260,7 @@ class MainWindow(QWidget):
         self._refresh_project_list()
 
     def _setup_ui(self) -> None:
+        self.setObjectName("appRoot")
         self.setWindowTitle("spritegen")
         self.setMinimumSize(1400, 900)
         self.resize(1500, 940)
@@ -284,63 +287,7 @@ class MainWindow(QWidget):
         main_layout.addWidget(splitter)
 
     def _app_stylesheet(self) -> str:
-        return """
-        QWidget {
-            font-family: "Segoe UI", Arial, sans-serif;
-            font-size: 13px;
-            color: #1f2933;
-        }
-        QGroupBox {
-            border: 1px solid #c8d2dc;
-            border-radius: 6px;
-            font-weight: 600;
-            margin-top: 12px;
-            padding: 10px 8px 8px 8px;
-            background: #fbfcfe;
-        }
-        QGroupBox::title {
-            subcontrol-origin: margin;
-            left: 10px;
-            padding: 0 4px;
-        }
-        QLineEdit,
-        QComboBox,
-        QSpinBox {
-            min-height: 26px;
-            padding: 2px 6px;
-        }
-        QTextEdit {
-            padding: 6px;
-        }
-        QPushButton {
-            min-height: 28px;
-            padding: 4px 10px;
-        }
-        QTabWidget::pane {
-            border: 1px solid #c8d2dc;
-            border-radius: 6px;
-            background: #ffffff;
-        }
-        QTabBar::tab {
-            padding: 8px 16px;
-            margin-right: 2px;
-            min-width: 88px;
-            background: #eef2f6;
-            border: 1px solid #c8d2dc;
-            border-bottom: 0;
-            border-top-left-radius: 6px;
-            border-top-right-radius: 6px;
-        }
-        QTabBar::tab:selected {
-            background: #ffffff;
-            color: #0f3d56;
-            border-bottom: 2px solid #2f6f8f;
-        }
-        QProgressBar {
-            min-height: 24px;
-            text-align: center;
-        }
-        """
+        return desktop_stylesheet()
 
     def _form_layout(self, group: QGroupBox) -> QFormLayout:
         form = QFormLayout(group)
@@ -359,16 +306,14 @@ class MainWindow(QWidget):
 
     def _create_left_panel(self) -> QWidget:
         panel = QWidget()
+        panel.setObjectName("sidebarPanel")
         layout = QVBoxLayout(panel)
         layout.setSpacing(12)
+        layout.setContentsMargins(16, 16, 16, 16)
 
         title = QLabel("spritegen")
-        title.setStyleSheet("font-size: 24px; font-weight: bold;")
+        title.setObjectName("appTitle")
         layout.addWidget(title)
-
-        subtitle = QLabel("Project style, asset details, and provider setup")
-        subtitle.setStyleSheet("color: #52616f;")
-        layout.addWidget(subtitle)
 
         self.editor_tabs = QTabWidget()
         self.editor_tabs.setDocumentMode(True)
@@ -433,6 +378,7 @@ class MainWindow(QWidget):
         self.project_root_edit = QLineEdit(self._project_root)
         self.project_root_edit.editingFinished.connect(self._refresh_project_list)
         root_btn = QPushButton("Browse")
+        set_button_role(root_btn, "secondary")
         root_btn.clicked.connect(self._browse_project_root)
         root_row.addWidget(self.project_root_edit)
         root_row.addWidget(root_btn)
@@ -443,6 +389,7 @@ class MainWindow(QWidget):
         for starter in list_project_starters():
             self.project_starter_combo.addItem(starter.label, starter.key)
         self.create_project_starter_btn = QPushButton("Create Starter")
+        set_button_role(self.create_project_starter_btn, "secondary")
         self.create_project_starter_btn.clicked.connect(self._on_apply_project_starter)
         starter_row.addWidget(self.project_starter_combo, 1)
         starter_row.addWidget(self.create_project_starter_btn)
@@ -451,8 +398,10 @@ class MainWindow(QWidget):
         project_open_row = QHBoxLayout()
         self.project_combo = QComboBox()
         self.refresh_projects_btn = QPushButton("Refresh")
+        set_button_role(self.refresh_projects_btn, "secondary")
         self.refresh_projects_btn.clicked.connect(self._refresh_project_list)
         self.load_project_btn = QPushButton("Load")
+        set_button_role(self.load_project_btn, "secondary")
         self.load_project_btn.clicked.connect(self._on_load_project)
         project_open_row.addWidget(self.project_combo, 1)
         project_open_row.addWidget(self.refresh_projects_btn)
@@ -460,6 +409,7 @@ class MainWindow(QWidget):
         project_layout.addRow("Open Project:", project_open_row)
 
         self.improve_project_btn = QPushButton("Improve Project")
+        set_button_role(self.improve_project_btn, "accent")
         self.improve_project_btn.clicked.connect(self._on_improve_project)
         project_layout.addRow("AI:", self.improve_project_btn)
 
@@ -474,6 +424,7 @@ class MainWindow(QWidget):
         for preset in list_workflow_presets():
             self.workflow_preset_combo.addItem(preset.label, preset.key)
         self.apply_workflow_preset_btn = QPushButton("Apply Preset")
+        set_button_role(self.apply_workflow_preset_btn, "secondary")
         self.apply_workflow_preset_btn.clicked.connect(self._on_apply_workflow_preset)
         preset_row.addWidget(self.workflow_preset_combo, 1)
         preset_row.addWidget(self.apply_workflow_preset_btn)
@@ -501,6 +452,7 @@ class MainWindow(QWidget):
         asset_layout.addRow("Stage Labels:", self.evolution_labels_edit)
 
         self.improve_type_btn = QPushButton("Improve Type Rules")
+        set_button_role(self.improve_type_btn, "accent")
         self.improve_type_btn.clicked.connect(self._on_improve_asset_type)
         asset_layout.addRow("AI Type:", self.improve_type_btn)
 
@@ -563,8 +515,10 @@ class MainWindow(QWidget):
         custom_layout_form.addRow("Prompt Notes:", self.layout_prompt_edit)
 
         self.add_grid_layout_btn = QPushButton("Add Grid Layout")
+        set_button_role(self.add_grid_layout_btn, "secondary")
         self.add_grid_layout_btn.clicked.connect(self._on_add_grid_layout)
         self.add_hero_grid_layout_btn = QPushButton("Add Hero + Grid")
+        set_button_role(self.add_hero_grid_layout_btn, "secondary")
         self.add_hero_grid_layout_btn.clicked.connect(self._on_add_hero_grid_layout)
         layout_actions = QHBoxLayout()
         layout_actions.addWidget(self.add_grid_layout_btn)
@@ -576,10 +530,13 @@ class MainWindow(QWidget):
         asset_open_row = QHBoxLayout()
         self.asset_combo = QComboBox()
         self.refresh_assets_btn = QPushButton("Refresh")
+        set_button_role(self.refresh_assets_btn, "secondary")
         self.refresh_assets_btn.clicked.connect(self._refresh_asset_list)
         self.load_asset_btn = QPushButton("Load")
+        set_button_role(self.load_asset_btn, "secondary")
         self.load_asset_btn.clicked.connect(self._on_load_asset)
         self.new_asset_btn = QPushButton("New")
+        set_button_role(self.new_asset_btn, "secondary")
         self.new_asset_btn.clicked.connect(self._on_new_asset)
         asset_open_row.addWidget(self.asset_combo, 1)
         asset_open_row.addWidget(self.refresh_assets_btn)
@@ -678,12 +635,16 @@ class MainWindow(QWidget):
         provider_actions.setHorizontalSpacing(8)
         provider_actions.setVerticalSpacing(8)
         self.check_provider_setup_btn = QPushButton("Check Setup")
+        set_button_role(self.check_provider_setup_btn, "secondary")
         self.check_provider_setup_btn.clicked.connect(self._on_check_provider_setup)
         self.save_provider_settings_btn = QPushButton("Save Local Setup")
+        set_button_role(self.save_provider_settings_btn, "secondary")
         self.save_provider_settings_btn.clicked.connect(self._on_save_provider_settings)
         self.clear_saved_keys_btn = QPushButton("Clear Saved Keys")
+        set_button_role(self.clear_saved_keys_btn, "danger")
         self.clear_saved_keys_btn.clicked.connect(self._on_clear_saved_keys)
         self.refresh_models_btn = QPushButton("Refresh Models")
+        set_button_role(self.refresh_models_btn, "secondary")
         self.refresh_models_btn.clicked.connect(self._on_refresh_models)
         provider_actions.addWidget(self.check_provider_setup_btn, 0, 0)
         provider_actions.addWidget(self.save_provider_settings_btn, 0, 1)
@@ -704,16 +665,20 @@ class MainWindow(QWidget):
         layout.addWidget(self.editor_tabs, 1)
 
         self.action_footer = QWidget()
+        self.action_footer.setObjectName("actionFooter")
         footer_layout = QVBoxLayout(self.action_footer)
-        footer_layout.setContentsMargins(0, 0, 0, 0)
+        footer_layout.setContentsMargins(14, 14, 14, 14)
         footer_layout.setSpacing(8)
 
         actions = QHBoxLayout()
         self.save_btn = QPushButton("Save Plan")
+        set_button_role(self.save_btn, "secondary")
         self.save_btn.clicked.connect(self._on_save_plan)
         self.enhance_btn = QPushButton("Enhance Asset")
+        set_button_role(self.enhance_btn, "accent")
         self.enhance_btn.clicked.connect(self._on_enhance)
         self.generate_btn = QPushButton("Generate")
+        set_button_role(self.generate_btn, "primary")
         self.generate_btn.clicked.connect(self._on_generate)
         actions.addWidget(self.save_btn)
         actions.addWidget(self.enhance_btn)
@@ -734,18 +699,25 @@ class MainWindow(QWidget):
 
     def _create_right_panel(self) -> QWidget:
         panel = QWidget()
+        panel.setObjectName("workspacePanel")
         layout = QVBoxLayout(panel)
+        layout.setContentsMargins(22, 22, 22, 22)
+        layout.setSpacing(16)
 
         prompt_header = QHBoxLayout()
         prompt_label = QLabel("Prompt Plan")
-        prompt_label.setStyleSheet("font-size: 18px; font-weight: bold;")
+        prompt_label.setObjectName("sectionTitle")
         self.check_run_btn = QPushButton("Check Run")
+        set_button_role(self.check_run_btn, "secondary")
         self.check_run_btn.clicked.connect(self._on_check_run)
         self.preview_prompts_btn = QPushButton("Preview Prompts")
+        set_button_role(self.preview_prompts_btn, "secondary")
         self.preview_prompts_btn.clicked.connect(self._on_preview_prompts)
         self.open_project_gallery_btn = QPushButton("Project Gallery")
+        set_button_role(self.open_project_gallery_btn, "secondary")
         self.open_project_gallery_btn.clicked.connect(self._on_open_project_gallery)
         self.export_project_btn = QPushButton("Export Project")
+        set_button_role(self.export_project_btn, "secondary")
         self.export_project_btn.clicked.connect(self._on_export_project)
         prompt_header.addWidget(prompt_label)
         prompt_header.addStretch()
@@ -756,6 +728,7 @@ class MainWindow(QWidget):
         layout.addLayout(prompt_header)
 
         self.prompt_preview_edit = QTextEdit()
+        self.prompt_preview_edit.setObjectName("promptPreview")
         self.prompt_preview_edit.setReadOnly(True)
         self.prompt_preview_edit.setMinimumHeight(260)
         self.prompt_preview_edit.setMaximumHeight(420)
@@ -763,12 +736,15 @@ class MainWindow(QWidget):
 
         header = QHBoxLayout()
         header_label = QLabel("Generated Output")
-        header_label.setStyleSheet("font-size: 18px; font-weight: bold;")
+        header_label.setObjectName("sectionTitle")
         self.open_folder_btn = QPushButton("Open Folder")
+        set_button_role(self.open_folder_btn, "secondary")
         self.open_folder_btn.clicked.connect(self._open_output_folder)
         self.open_gallery_btn = QPushButton("Open Gallery")
+        set_button_role(self.open_gallery_btn, "secondary")
         self.open_gallery_btn.clicked.connect(self._open_gallery)
         self.export_sprites_btn = QPushButton("Export Sprites")
+        set_button_role(self.export_sprites_btn, "secondary")
         self.export_sprites_btn.clicked.connect(self._on_export_asset)
         self.export_variant_spin = QSpinBox()
         self.export_variant_spin.setRange(0, 8)
