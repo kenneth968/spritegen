@@ -96,6 +96,16 @@ def desktop_stylesheet(tokens: Mapping[str, Mapping[str, str]] | None = None) ->
         font-weight: 700;
         margin-top: {spacing["sm"]};
     }}
+    QLabel#paletteSwatch {{
+        border: 1px solid {color["border_strong"]};
+        border-radius: {radius["sm"]};
+        min-width: 66px;
+        max-width: 86px;
+        min-height: 28px;
+        padding: 2px 6px;
+        font-size: 10px;
+        font-weight: 700;
+    }}
     QGroupBox {{
         background: {color["surface"]};
         border: 1px solid {color["border"]};

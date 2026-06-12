@@ -107,6 +107,80 @@ MODEL_DISCOVERY_SOURCE_LABELS = {
 }
 
 
+class ModelPicker(QComboBox):
+    """Editable combo that stores provider model IDs as item data."""
+
+    def __init__(self, default_model_id: str = "", parent=None) -> None:
+        super().__init__(parent)
+        self.setEditable(True)
+        self.setInsertPolicy(QComboBox.NoInsert)
+        self.lineEdit().setPlaceholderText("Choose or paste a model ID")
+        if default_model_id:
+            self.setText(default_model_id)
+
+    def text(self) -> str:
+        current_text = self.currentText().strip()
+        current_index = self.currentIndex()
+        if current_index >= 0 and current_text == self.itemText(current_index):
+            data = self.currentData()
+            if data:
+                return str(data).strip()
+        return current_text
+
+    def setText(self, value: str) -> None:
+        model_id = value.strip()
+        if not model_id:
+            self.setCurrentIndex(-1)
+            self.setEditText("")
+            return
+        index = self.findData(model_id)
+        if index >= 0:
+            self.setCurrentIndex(index)
+        else:
+            self.setCurrentIndex(-1)
+            self.setEditText(model_id)
+
+
+class PaletteSwatchBar(QWidget):
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setObjectName("paletteSwatches")
+        self._layout = QHBoxLayout(self)
+        self._layout.setContentsMargins(0, 6, 0, 0)
+        self._layout.setSpacing(6)
+
+    def set_palette(self, values: list[str]) -> None:
+        while self._layout.count():
+            item = self._layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        for value in values[:10]:
+            swatch = QLabel(value)
+            swatch.setObjectName("paletteSwatch")
+            swatch.setAlignment(Qt.AlignCenter)
+            swatch.setToolTip(value)
+            swatch.setStyleSheet(
+                f"background: {value}; color: {self._text_color_for(value)};"
+            )
+            self._layout.addWidget(swatch)
+        self._layout.addStretch()
+
+    def _text_color_for(self, value: str) -> str:
+        color = value.strip().lstrip("#")
+        if len(color) == 3:
+            color = "".join(character * 2 for character in color)
+        if len(color) != 6:
+            return "#18232d"
+        try:
+            red = int(color[0:2], 16)
+            green = int(color[2:4], 16)
+            blue = int(color[4:6], 16)
+        except ValueError:
+            return "#18232d"
+        luminance = (0.299 * red) + (0.587 * green) + (0.114 * blue)
+        return "#ffffff" if luminance < 145 else "#18232d"
+
+
 class PreviewPanel(QWidget):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -318,6 +392,11 @@ class MainWindow(QWidget):
         self.editor_tabs = QTabWidget()
         self.editor_tabs.setDocumentMode(True)
 
+        workflow_page = QWidget()
+        workflow_page_layout = QVBoxLayout(workflow_page)
+        workflow_page_layout.setContentsMargins(8, 8, 8, 8)
+        workflow_page_layout.setSpacing(10)
+
         project_page = QWidget()
         project_page_layout = QVBoxLayout(project_page)
         project_page_layout.setContentsMargins(8, 8, 8, 8)
@@ -326,53 +405,140 @@ class MainWindow(QWidget):
         asset_page_layout = QVBoxLayout(asset_page)
         asset_page_layout.setContentsMargins(8, 8, 8, 8)
 
+        layout_page = QWidget()
+        layout_page_layout = QVBoxLayout(layout_page)
+        layout_page_layout.setContentsMargins(8, 8, 8, 8)
+
         providers_page = QWidget()
         providers_page_layout = QVBoxLayout(providers_page)
         providers_page_layout.setContentsMargins(8, 8, 8, 8)
 
-        project_group = QGroupBox("Project")
+        project_group = QGroupBox("Project Brief")
         project_layout = self._form_layout(project_group)
 
         self.project_name_edit = QLineEdit("MyceliumTD")
-        project_layout.addRow("Name:", self.project_name_edit)
+        project_layout.addRow("Project:", self.project_name_edit)
 
         self.project_summary_edit = QLineEdit("Fungal tower defense game")
-        project_layout.addRow("Summary:", self.project_summary_edit)
+        project_layout.addRow("Pitch:", self.project_summary_edit)
 
         self.style_edit = QTextEdit()
-        self.style_edit.setMinimumHeight(96)
-        self.style_edit.setMaximumHeight(150)
+        self.style_edit.setMinimumHeight(64)
+        self.style_edit.setMaximumHeight(90)
         self.style_edit.setPlainText("clean cartoon tower defense sprites, bold outlines")
-        project_layout.addRow("Style:", self.style_edit)
+        project_layout.addRow("Art Style:", self.style_edit)
+
+        palette_widget = QWidget()
+        palette_layout = QVBoxLayout(palette_widget)
+        palette_layout.setContentsMargins(0, 0, 0, 0)
+        palette_layout.setSpacing(0)
+        self.palette_edit = QLineEdit("#8B4513,#228B22,#9932CC,#00FA9A")
+        self.palette_swatches = PaletteSwatchBar()
+        self.palette_edit.textChanged.connect(self._refresh_palette_swatches)
+        palette_layout.addWidget(self.palette_edit)
+        palette_layout.addWidget(self.palette_swatches)
+        project_layout.addRow("Palette:", palette_widget)
+        self._refresh_palette_swatches()
+
+        workflow_page_layout.addWidget(project_group)
+
+        asset_group = QGroupBox("Asset To Generate")
+        asset_layout = self._form_layout(asset_group)
+
+        self.asset_type_edit = QLineEdit("tower")
+        asset_layout.addRow("Asset Type:", self.asset_type_edit)
+
+        self.asset_name_edit = QLineEdit("Puffball")
+        asset_layout.addRow("Asset:", self.asset_name_edit)
+
+        self.asset_description_edit = QTextEdit()
+        self.asset_description_edit.setMinimumHeight(72)
+        self.asset_description_edit.setMaximumHeight(110)
+        self.asset_description_edit.setPlainText("A mushroom tower that attacks with spore clouds.")
+        asset_layout.addRow("Concept:", self.asset_description_edit)
+
+        layout_stage_row = QHBoxLayout()
+        self.layout_combo = QComboBox()
+        self._refresh_layout_combo()
+        self.evolutions_spin = QSpinBox()
+        self.evolutions_spin.setRange(1, 8)
+        self.evolutions_spin.setValue(4)
+        layout_stage_row.addWidget(self.layout_combo, 1)
+        layout_stage_row.addWidget(QLabel("Stages"))
+        layout_stage_row.addWidget(self.evolutions_spin)
+        asset_layout.addRow("Output:", layout_stage_row)
+
+        workflow_page_layout.addWidget(asset_group)
+
+        model_group = QGroupBox("Generation Model")
+        model_layout = self._form_layout(model_group)
+
+        self.image_provider_combo = self._provider_combo(IMAGE_PROVIDERS)
+        self.image_provider_combo.currentIndexChanged.connect(self._on_image_provider_changed)
+        model_layout.addRow("Provider:", self.image_provider_combo)
+
+        self.image_model_edit = ModelPicker(default_model("mock", IMAGE_ROLE))
+        self.image_model_suggestions = self.image_model_edit
+        self.image_model_suggestions.activated.connect(
+            lambda _index: self._apply_model_suggestion(IMAGE_ROLE)
+        )
+        model_layout.addRow("Model:", self.image_model_edit)
+
+        self.generation_variants_spin = QSpinBox()
+        self.generation_variants_spin.setRange(1, 8)
+        self.generation_variants_spin.setValue(1)
+        model_layout.addRow("Variants:", self.generation_variants_spin)
+
+        model_catalog_row = QHBoxLayout()
+        self.model_catalog_source_combo = QComboBox()
+        for source in MODEL_DISCOVERY_SOURCES:
+            self.model_catalog_source_combo.addItem(
+                MODEL_DISCOVERY_SOURCE_LABELS.get(source, source),
+                source,
+            )
+        self.model_search_edit = QLineEdit()
+        self.model_search_edit.setPlaceholderText("Search model IDs")
+        self.refresh_models_btn = QPushButton("Load Models")
+        set_button_role(self.refresh_models_btn, "secondary")
+        self.refresh_models_btn.clicked.connect(self._on_refresh_models)
+        model_catalog_row.addWidget(self.model_catalog_source_combo)
+        model_catalog_row.addWidget(self.model_search_edit, 1)
+        model_catalog_row.addWidget(self.refresh_models_btn)
+        model_layout.addRow("Catalog:", model_catalog_row)
+
+        self.enhance_before_generate_check = QCheckBox("Improve prompt before Generate")
+        self.enhance_before_generate_check.setChecked(False)
+        model_layout.addRow("Prompt:", self.enhance_before_generate_check)
+
+        workflow_page_layout.addWidget(model_group)
+        workflow_page_layout.addStretch()
+
+        project_details_group = QGroupBox("Project Details")
+        project_details_layout = self._form_layout(project_details_group)
 
         self.context_edit = QTextEdit()
         self.context_edit.setMinimumHeight(112)
         self.context_edit.setMaximumHeight(180)
         self.context_edit.setPlainText("Friendly fungal towers defending a forest floor.")
-        project_layout.addRow("Universe:", self.context_edit)
-
-        self.palette_edit = QLineEdit("#8B4513,#228B22,#9932CC,#00FA9A")
-        project_layout.addRow("Palette:", self.palette_edit)
+        project_details_layout.addRow("Universe:", self.context_edit)
 
         self.negative_prompt_edit = QLineEdit("photorealistic, watermark, text labels")
-        project_layout.addRow("Avoid:", self.negative_prompt_edit)
+        project_details_layout.addRow("Avoid:", self.negative_prompt_edit)
 
         self.color_mode_combo = QComboBox()
         for mode in COLOR_TREATMENT_MODES:
             self.color_mode_combo.addItem(COLOR_MODE_LABELS[mode], mode)
-        project_layout.addRow("Color Mode:", self.color_mode_combo)
+        project_details_layout.addRow("Color Mode:", self.color_mode_combo)
 
         self.color_prompt_edit = QTextEdit()
         self.color_prompt_edit.setMinimumHeight(72)
         self.color_prompt_edit.setMaximumHeight(120)
-        self.color_prompt_edit.setPlaceholderText(
-            "Optional color rules, value bands, recolor map notes, etc."
-        )
-        project_layout.addRow("Color Notes:", self.color_prompt_edit)
+        self.color_prompt_edit.setPlaceholderText("Optional color rules or recolor notes")
+        project_details_layout.addRow("Color Notes:", self.color_prompt_edit)
 
         self.remove_background_check = QCheckBox("Remove simple backgrounds after slicing")
         self.remove_background_check.setChecked(True)
-        project_layout.addRow("Post:", self.remove_background_check)
+        project_details_layout.addRow("Slicing:", self.remove_background_check)
 
         root_row = QHBoxLayout()
         self.project_root_edit = QLineEdit(self._project_root)
@@ -382,7 +548,7 @@ class MainWindow(QWidget):
         root_btn.clicked.connect(self._browse_project_root)
         root_row.addWidget(self.project_root_edit)
         root_row.addWidget(root_btn)
-        project_layout.addRow("Project Dir:", root_row)
+        project_details_layout.addRow("Project Dir:", root_row)
 
         starter_row = QHBoxLayout()
         self.project_starter_combo = QComboBox()
@@ -393,72 +559,93 @@ class MainWindow(QWidget):
         self.create_project_starter_btn.clicked.connect(self._on_apply_project_starter)
         starter_row.addWidget(self.project_starter_combo, 1)
         starter_row.addWidget(self.create_project_starter_btn)
-        project_layout.addRow("Starter:", starter_row)
+        project_details_layout.addRow("Starter:", starter_row)
 
         project_open_row = QHBoxLayout()
         self.project_combo = QComboBox()
-        self.refresh_projects_btn = QPushButton("Refresh")
+        self.refresh_projects_btn = QPushButton("Refresh Projects")
         set_button_role(self.refresh_projects_btn, "secondary")
         self.refresh_projects_btn.clicked.connect(self._refresh_project_list)
-        self.load_project_btn = QPushButton("Load")
+        self.load_project_btn = QPushButton("Load Project")
         set_button_role(self.load_project_btn, "secondary")
         self.load_project_btn.clicked.connect(self._on_load_project)
         project_open_row.addWidget(self.project_combo, 1)
         project_open_row.addWidget(self.refresh_projects_btn)
         project_open_row.addWidget(self.load_project_btn)
-        project_layout.addRow("Open Project:", project_open_row)
+        project_details_layout.addRow("Saved Project:", project_open_row)
 
-        self.improve_project_btn = QPushButton("Improve Project")
+        self.improve_project_btn = QPushButton("Improve Project Brief")
         set_button_role(self.improve_project_btn, "accent")
         self.improve_project_btn.clicked.connect(self._on_improve_project)
-        project_layout.addRow("AI:", self.improve_project_btn)
+        project_details_layout.addRow("AI:", self.improve_project_btn)
 
-        project_page_layout.addWidget(project_group)
+        project_page_layout.addWidget(project_details_group)
         project_page_layout.addStretch()
 
-        asset_group = QGroupBox("Asset")
-        asset_layout = self._form_layout(asset_group)
+        asset_details_group = QGroupBox("Asset Details")
+        asset_details_layout = self._form_layout(asset_details_group)
 
         preset_row = QHBoxLayout()
         self.workflow_preset_combo = QComboBox()
         for preset in list_workflow_presets():
             self.workflow_preset_combo.addItem(preset.label, preset.key)
-        self.apply_workflow_preset_btn = QPushButton("Apply Preset")
+        self.apply_workflow_preset_btn = QPushButton("Apply Workflow")
         set_button_role(self.apply_workflow_preset_btn, "secondary")
         self.apply_workflow_preset_btn.clicked.connect(self._on_apply_workflow_preset)
         preset_row.addWidget(self.workflow_preset_combo, 1)
         preset_row.addWidget(self.apply_workflow_preset_btn)
-        asset_layout.addRow("Workflow:", preset_row)
-
-        self.asset_type_edit = QLineEdit("tower")
-        asset_layout.addRow("Type:", self.asset_type_edit)
+        asset_details_layout.addRow("Workflow:", preset_row)
 
         self.asset_type_context_edit = QLineEdit("Readable tower upgrades at small game size")
-        asset_layout.addRow("Type Rules:", self.asset_type_context_edit)
-
-        self.evolutions_spin = QSpinBox()
-        self.evolutions_spin.setRange(1, 8)
-        self.evolutions_spin.setValue(4)
-        asset_layout.addRow("Evolutions:", self.evolutions_spin)
+        asset_details_layout.addRow("Type Rules:", self.asset_type_context_edit)
 
         self.evolution_context_edit = QLineEdit()
         self.evolution_context_edit.setPlaceholderText(
             "Optional: how stages should evolve while keeping identity"
         )
-        asset_layout.addRow("Evolution Rules:", self.evolution_context_edit)
+        asset_details_layout.addRow("Stage Rules:", self.evolution_context_edit)
 
         self.evolution_labels_edit = QLineEdit()
         self.evolution_labels_edit.setPlaceholderText("Optional labels, comma-separated")
-        asset_layout.addRow("Stage Labels:", self.evolution_labels_edit)
+        asset_details_layout.addRow("Stage Labels:", self.evolution_labels_edit)
 
-        self.improve_type_btn = QPushButton("Improve Type Rules")
+        self.improve_type_btn = QPushButton("Improve Asset-Type Rules")
         set_button_role(self.improve_type_btn, "accent")
         self.improve_type_btn.clicked.connect(self._on_improve_asset_type)
-        asset_layout.addRow("AI Type:", self.improve_type_btn)
+        asset_details_layout.addRow("AI Type:", self.improve_type_btn)
 
-        self.layout_combo = QComboBox()
-        self._refresh_layout_combo()
-        asset_layout.addRow("Layout:", self.layout_combo)
+        asset_open_row = QHBoxLayout()
+        self.asset_combo = QComboBox()
+        self.refresh_assets_btn = QPushButton("Refresh Assets")
+        set_button_role(self.refresh_assets_btn, "secondary")
+        self.refresh_assets_btn.clicked.connect(self._refresh_asset_list)
+        self.load_asset_btn = QPushButton("Load Asset")
+        set_button_role(self.load_asset_btn, "secondary")
+        self.load_asset_btn.clicked.connect(self._on_load_asset)
+        self.new_asset_btn = QPushButton("New Asset")
+        set_button_role(self.new_asset_btn, "secondary")
+        self.new_asset_btn.clicked.connect(self._on_new_asset)
+        asset_open_row.addWidget(self.asset_combo, 1)
+        asset_open_row.addWidget(self.refresh_assets_btn)
+        asset_open_row.addWidget(self.load_asset_btn)
+        asset_open_row.addWidget(self.new_asset_btn)
+        asset_details_layout.addRow("Saved Asset:", asset_open_row)
+
+        self.asset_details_edit = QTextEdit()
+        self.asset_details_edit.setMinimumHeight(88)
+        self.asset_details_edit.setMaximumHeight(150)
+        self.asset_details_edit.setPlainText(
+            "Soft white cap, playful shape language, area damage identity."
+        )
+        asset_details_layout.addRow("Extra Details:", self.asset_details_edit)
+
+        self.enhanced_prompt_edit = QTextEdit()
+        self.enhanced_prompt_edit.setMinimumHeight(120)
+        self.enhanced_prompt_edit.setMaximumHeight(220)
+        asset_details_layout.addRow("Enhanced Prompt:", self.enhanced_prompt_edit)
+
+        asset_page_layout.addWidget(asset_details_group)
+        asset_page_layout.addStretch()
 
         custom_layout_group = QGroupBox("Custom Layout")
         custom_layout_form = self._form_layout(custom_layout_group)
@@ -514,10 +701,10 @@ class MainWindow(QWidget):
         self.layout_prompt_edit.setPlaceholderText("Optional seam and composition instructions")
         custom_layout_form.addRow("Prompt Notes:", self.layout_prompt_edit)
 
-        self.add_grid_layout_btn = QPushButton("Add Grid Layout")
+        self.add_grid_layout_btn = QPushButton("Save Grid Layout")
         set_button_role(self.add_grid_layout_btn, "secondary")
         self.add_grid_layout_btn.clicked.connect(self._on_add_grid_layout)
-        self.add_hero_grid_layout_btn = QPushButton("Add Hero + Grid")
+        self.add_hero_grid_layout_btn = QPushButton("Save Hero + Grid Layout")
         set_button_role(self.add_hero_grid_layout_btn, "secondary")
         self.add_hero_grid_layout_btn.clicked.connect(self._on_add_hero_grid_layout)
         layout_actions = QHBoxLayout()
@@ -525,143 +712,64 @@ class MainWindow(QWidget):
         layout_actions.addWidget(self.add_hero_grid_layout_btn)
         custom_layout_form.addRow("Save:", layout_actions)
 
-        asset_layout.addRow(custom_layout_group)
+        layout_page_layout.addWidget(custom_layout_group)
+        layout_page_layout.addStretch()
 
-        asset_open_row = QHBoxLayout()
-        self.asset_combo = QComboBox()
-        self.refresh_assets_btn = QPushButton("Refresh")
-        set_button_role(self.refresh_assets_btn, "secondary")
-        self.refresh_assets_btn.clicked.connect(self._refresh_asset_list)
-        self.load_asset_btn = QPushButton("Load")
-        set_button_role(self.load_asset_btn, "secondary")
-        self.load_asset_btn.clicked.connect(self._on_load_asset)
-        self.new_asset_btn = QPushButton("New")
-        set_button_role(self.new_asset_btn, "secondary")
-        self.new_asset_btn.clicked.connect(self._on_new_asset)
-        asset_open_row.addWidget(self.asset_combo, 1)
-        asset_open_row.addWidget(self.refresh_assets_btn)
-        asset_open_row.addWidget(self.load_asset_btn)
-        asset_open_row.addWidget(self.new_asset_btn)
-        asset_layout.addRow("Saved Asset:", asset_open_row)
-
-        self.asset_name_edit = QLineEdit("Puffball")
-        asset_layout.addRow("Name:", self.asset_name_edit)
-
-        self.asset_description_edit = QTextEdit()
-        self.asset_description_edit.setMinimumHeight(104)
-        self.asset_description_edit.setMaximumHeight(180)
-        self.asset_description_edit.setPlainText("A mushroom tower that attacks with spore clouds.")
-        asset_layout.addRow("Concept:", self.asset_description_edit)
-
-        self.asset_details_edit = QTextEdit()
-        self.asset_details_edit.setMinimumHeight(88)
-        self.asset_details_edit.setMaximumHeight(150)
-        self.asset_details_edit.setPlainText("Soft white cap, playful shape language, area damage identity.")
-        asset_layout.addRow("Details:", self.asset_details_edit)
-
-        self.enhanced_prompt_edit = QTextEdit()
-        self.enhanced_prompt_edit.setMinimumHeight(120)
-        self.enhanced_prompt_edit.setMaximumHeight(220)
-        asset_layout.addRow("Enhanced:", self.enhanced_prompt_edit)
-
-        asset_page_layout.addWidget(asset_group)
-        asset_page_layout.addStretch()
-
-        config_group = QGroupBox("Providers")
+        config_group = QGroupBox("Prompt Model + Keys")
         config_layout = self._form_layout(config_group)
 
-        self.image_provider_combo = self._provider_combo(IMAGE_PROVIDERS)
-        self.image_provider_combo.currentIndexChanged.connect(self._on_image_provider_changed)
-        config_layout.addRow("Image Provider:", self.image_provider_combo)
-
-        self.image_model_edit = QLineEdit(default_model("mock", IMAGE_ROLE))
-        config_layout.addRow("Image Model:", self.image_model_edit)
-
-        self.image_model_suggestions = QComboBox()
-        self.image_model_suggestions.activated.connect(
-            lambda _index: self._apply_model_suggestion(IMAGE_ROLE)
-        )
-        config_layout.addRow("Image Suggestions:", self.image_model_suggestions)
-
-        self.generation_variants_spin = QSpinBox()
-        self.generation_variants_spin.setRange(1, 8)
-        self.generation_variants_spin.setValue(1)
-        config_layout.addRow("Image Variants:", self.generation_variants_spin)
+        self.image_api_key_edit = QLineEdit()
+        self.image_api_key_edit.setEchoMode(QLineEdit.Password)
+        self.image_api_key_edit.setPlaceholderText("Paste generation provider key")
+        self.api_key_override = self.image_api_key_edit
+        config_layout.addRow("Generation API Key:", self.image_api_key_edit)
 
         self.prompt_provider_combo = self._provider_combo(PROMPT_PROVIDERS)
         self.prompt_provider_combo.currentIndexChanged.connect(self._on_prompt_provider_changed)
         config_layout.addRow("Prompt Provider:", self.prompt_provider_combo)
 
-        self.prompt_model_edit = QLineEdit(default_model("mock", PROMPT_ROLE))
-        config_layout.addRow("Prompt Model:", self.prompt_model_edit)
-
-        self.prompt_model_suggestions = QComboBox()
+        self.prompt_model_edit = ModelPicker(default_model("mock", PROMPT_ROLE))
+        self.prompt_model_suggestions = self.prompt_model_edit
         self.prompt_model_suggestions.activated.connect(
             lambda _index: self._apply_model_suggestion(PROMPT_ROLE)
         )
-        config_layout.addRow("Prompt Suggestions:", self.prompt_model_suggestions)
-
-        self.image_api_key_edit = QLineEdit()
-        self.image_api_key_edit.setEchoMode(QLineEdit.Password)
-        self.image_api_key_edit.setPlaceholderText("Paste image provider key")
-        self.api_key_override = self.image_api_key_edit
-        config_layout.addRow("Image API Key:", self.image_api_key_edit)
+        config_layout.addRow("Prompt Model:", self.prompt_model_edit)
 
         self.prompt_api_key_edit = QLineEdit()
         self.prompt_api_key_edit.setEchoMode(QLineEdit.Password)
         self.prompt_api_key_edit.setPlaceholderText("Paste prompt provider key")
         config_layout.addRow("Prompt API Key:", self.prompt_api_key_edit)
 
-        model_help = QLabel(
-            '<a href="https://models.dev/?search=minim">Find provider model IDs</a>'
-        )
+        model_help = QLabel('<a href="https://models.dev/">models.dev catalog</a>')
         model_help.setOpenExternalLinks(True)
-        config_layout.addRow("Model Names:", model_help)
-
-        model_catalog_row = QHBoxLayout()
-        self.model_catalog_source_combo = QComboBox()
-        for source in MODEL_DISCOVERY_SOURCES:
-            self.model_catalog_source_combo.addItem(
-                MODEL_DISCOVERY_SOURCE_LABELS.get(source, source),
-                source,
-            )
-        self.model_search_edit = QLineEdit()
-        self.model_search_edit.setPlaceholderText("Search model IDs, e.g. minimax")
-        model_catalog_row.addWidget(self.model_catalog_source_combo)
-        model_catalog_row.addWidget(self.model_search_edit, 1)
-        config_layout.addRow("Model Catalog:", model_catalog_row)
+        config_layout.addRow("Model IDs:", model_help)
 
         provider_actions = QGridLayout()
         provider_actions.setHorizontalSpacing(8)
         provider_actions.setVerticalSpacing(8)
-        self.check_provider_setup_btn = QPushButton("Check Setup")
+        self.check_provider_setup_btn = QPushButton("Check Model Setup")
         set_button_role(self.check_provider_setup_btn, "secondary")
         self.check_provider_setup_btn.clicked.connect(self._on_check_provider_setup)
-        self.save_provider_settings_btn = QPushButton("Save Local Setup")
+        self.save_provider_settings_btn = QPushButton("Save Models + Keys")
         set_button_role(self.save_provider_settings_btn, "secondary")
         self.save_provider_settings_btn.clicked.connect(self._on_save_provider_settings)
         self.clear_saved_keys_btn = QPushButton("Clear Saved Keys")
         set_button_role(self.clear_saved_keys_btn, "danger")
         self.clear_saved_keys_btn.clicked.connect(self._on_clear_saved_keys)
-        self.refresh_models_btn = QPushButton("Refresh Models")
-        set_button_role(self.refresh_models_btn, "secondary")
-        self.refresh_models_btn.clicked.connect(self._on_refresh_models)
         provider_actions.addWidget(self.check_provider_setup_btn, 0, 0)
         provider_actions.addWidget(self.save_provider_settings_btn, 0, 1)
-        provider_actions.addWidget(self.clear_saved_keys_btn, 1, 0)
-        provider_actions.addWidget(self.refresh_models_btn, 1, 1)
-        config_layout.addRow("Local Setup:", provider_actions)
-
-        self.enhance_before_generate_check = QCheckBox("Improve prompt before Generate")
-        self.enhance_before_generate_check.setChecked(False)
-        config_layout.addRow("Generate:", self.enhance_before_generate_check)
+        provider_actions.addWidget(self.clear_saved_keys_btn, 1, 0, 1, 2)
+        config_layout.addRow("Setup:", provider_actions)
 
         providers_page_layout.addWidget(config_group)
         providers_page_layout.addStretch()
 
+        self.editor_tabs.addTab(self._scrollable_tab(workflow_page), "Generate")
         self.editor_tabs.addTab(self._scrollable_tab(project_page), "Project")
         self.editor_tabs.addTab(self._scrollable_tab(asset_page), "Asset")
-        self.editor_tabs.addTab(self._scrollable_tab(providers_page), "Providers")
+        self.editor_tabs.addTab(self._scrollable_tab(layout_page), "Layout")
+        self.editor_tabs.addTab(self._scrollable_tab(providers_page), "Models")
+        self.editor_tabs.currentChanged.connect(self._on_editor_tab_changed)
         layout.addWidget(self.editor_tabs, 1)
 
         self.action_footer = QWidget()
@@ -671,13 +779,13 @@ class MainWindow(QWidget):
         footer_layout.setSpacing(8)
 
         actions = QHBoxLayout()
-        self.save_btn = QPushButton("Save Plan")
+        self.save_btn = QPushButton("Save Current Asset")
         set_button_role(self.save_btn, "secondary")
-        self.save_btn.clicked.connect(self._on_save_plan)
-        self.enhance_btn = QPushButton("Enhance Asset")
+        self.save_btn.clicked.connect(self._on_footer_save)
+        self.enhance_btn = QPushButton("Improve Asset Prompt")
         set_button_role(self.enhance_btn, "accent")
         self.enhance_btn.clicked.connect(self._on_enhance)
-        self.generate_btn = QPushButton("Generate")
+        self.generate_btn = QPushButton("Generate Sprite Sheet")
         set_button_role(self.generate_btn, "primary")
         self.generate_btn.clicked.connect(self._on_generate)
         actions.addWidget(self.save_btn)
@@ -707,16 +815,16 @@ class MainWindow(QWidget):
         prompt_header = QHBoxLayout()
         prompt_label = QLabel("Prompt Plan")
         prompt_label.setObjectName("sectionTitle")
-        self.check_run_btn = QPushButton("Check Run")
+        self.check_run_btn = QPushButton("Check Current Run")
         set_button_role(self.check_run_btn, "secondary")
         self.check_run_btn.clicked.connect(self._on_check_run)
-        self.preview_prompts_btn = QPushButton("Preview Prompts")
+        self.preview_prompts_btn = QPushButton("View Prompt Plan")
         set_button_role(self.preview_prompts_btn, "secondary")
         self.preview_prompts_btn.clicked.connect(self._on_preview_prompts)
-        self.open_project_gallery_btn = QPushButton("Project Gallery")
+        self.open_project_gallery_btn = QPushButton("Open Project Gallery")
         set_button_role(self.open_project_gallery_btn, "secondary")
         self.open_project_gallery_btn.clicked.connect(self._on_open_project_gallery)
-        self.export_project_btn = QPushButton("Export Project")
+        self.export_project_btn = QPushButton("Export Project Pack")
         set_button_role(self.export_project_btn, "secondary")
         self.export_project_btn.clicked.connect(self._on_export_project)
         prompt_header.addWidget(prompt_label)
@@ -737,13 +845,13 @@ class MainWindow(QWidget):
         header = QHBoxLayout()
         header_label = QLabel("Generated Output")
         header_label.setObjectName("sectionTitle")
-        self.open_folder_btn = QPushButton("Open Folder")
+        self.open_folder_btn = QPushButton("Open Output Folder")
         set_button_role(self.open_folder_btn, "secondary")
         self.open_folder_btn.clicked.connect(self._open_output_folder)
-        self.open_gallery_btn = QPushButton("Open Gallery")
+        self.open_gallery_btn = QPushButton("Open Asset Gallery")
         set_button_role(self.open_gallery_btn, "secondary")
         self.open_gallery_btn.clicked.connect(self._open_gallery)
-        self.export_sprites_btn = QPushButton("Export Sprites")
+        self.export_sprites_btn = QPushButton("Export Current Asset")
         set_button_role(self.export_sprites_btn, "secondary")
         self.export_sprites_btn.clicked.connect(self._on_export_asset)
         self.export_variant_spin = QSpinBox()
@@ -768,6 +876,24 @@ class MainWindow(QWidget):
         for provider in providers:
             combo.addItem(PROVIDER_LABELS[provider], provider)
         return combo
+
+    def _refresh_palette_swatches(self) -> None:
+        self.palette_swatches.set_palette(self._palette_values())
+
+    def _on_editor_tab_changed(self, index: int) -> None:
+        tab_name = self.editor_tabs.tabText(index)
+        if tab_name == "Project":
+            self.save_btn.setText("Save Project + Asset")
+        elif tab_name == "Models":
+            self.save_btn.setText("Save Models + Keys")
+        else:
+            self.save_btn.setText("Save Current Asset")
+
+    def _on_footer_save(self) -> None:
+        if self.editor_tabs.tabText(self.editor_tabs.currentIndex()) == "Models":
+            self._on_save_provider_settings()
+            return
+        self._on_save_plan()
 
     def _on_image_provider_changed(self, *_args) -> None:
         provider = self.image_provider_combo.currentData()
@@ -802,12 +928,15 @@ class MainWindow(QWidget):
             if role == IMAGE_ROLE
             else self.prompt_model_suggestions
         )
+        current_model = combo.text() if isinstance(combo, ModelPicker) else combo.currentData()
         combo.blockSignals(True)
         combo.clear()
         online = self._online_model_suggestions.get((role, provider), [])
         for suggestion in combined_model_suggestions(provider, role, online):
             combo.addItem(f"{suggestion.label} ({suggestion.model})", suggestion.model)
         combo.blockSignals(False)
+        if isinstance(combo, ModelPicker) and current_model:
+            combo.setText(str(current_model))
 
     def _apply_model_suggestion(self, role: str) -> None:
         combo = (
