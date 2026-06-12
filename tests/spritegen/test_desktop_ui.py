@@ -52,18 +52,27 @@ def test_main_window_uses_readable_tabbed_editor_layout(tmp_path):
     window = MainWindow(settings_store=UserSettingsStore(tmp_path / "settings.json"))
 
     assert window.minimumWidth() >= 1400
-    assert window.editor_tabs.count() == 3
-    assert [window.editor_tabs.tabText(index) for index in range(3)] == [
+    assert window.editor_tabs.count() == 5
+    assert [window.editor_tabs.tabText(index) for index in range(5)] == [
+        "Generate",
         "Project",
         "Asset",
-        "Providers",
+        "Layout",
+        "Models",
     ]
     assert window.editor_tabs.documentMode() is True
     assert window.action_footer.layout().count() >= 3
     assert window.prompt_preview_edit.minimumHeight() >= 260
-    assert window.style_edit.minimumHeight() >= 96
+    assert window.style_edit.minimumHeight() >= 64
     assert window.context_edit.minimumHeight() >= 112
-    assert window.asset_description_edit.minimumHeight() >= 104
+    assert window.asset_description_edit.minimumHeight() >= 72
+    assert window.image_model_edit.isEditable()
+    assert window.image_model_suggestions is window.image_model_edit
+    assert window.palette_swatches.layout().count() >= 5
+    assert window.save_btn.text() == "Save Current Asset"
+    assert window.generate_btn.text() == "Generate Sprite Sheet"
+    window.editor_tabs.setCurrentIndex(4)
+    assert window.save_btn.text() == "Save Models + Keys"
     assert "QTabBar::tab" in window.styleSheet()
 
     window.close()
@@ -90,6 +99,7 @@ def test_main_window_applies_desktop_design_system(tmp_path):
     assert window.clear_saved_keys_btn.property("buttonRole") == "danger"
     assert DESIGN_TOKENS["color"]["primary"] in window.styleSheet()
     assert "QWidget#sidebarPanel" in window.styleSheet()
+    assert "QLabel#paletteSwatch" in window.styleSheet()
     assert 'QPushButton[buttonRole="primary"]' in window.styleSheet()
 
     window.close()
@@ -850,7 +860,7 @@ def test_main_window_check_run_writes_preflight_summary(tmp_path):
     window.generation_variants_spin.setValue(2)
     window._set_combo_value(window.layout_combo, "single_sprite")
 
-    assert window.check_run_btn.text() == "Check Run"
+    assert window.check_run_btn.text() == "Check Current Run"
 
     window._on_check_run()
 
