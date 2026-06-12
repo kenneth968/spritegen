@@ -51,7 +51,10 @@ def test_main_window_uses_readable_tabbed_editor_layout(tmp_path):
     app = QApplication.instance() or QApplication([])
     window = MainWindow(settings_store=UserSettingsStore(tmp_path / "settings.json"))
 
-    assert window.minimumWidth() >= 1400
+    assert window.minimumWidth() <= 1280
+    assert window.minimumHeight() <= 720
+    assert window.minimumSizeHint().width() <= 1280
+    assert window.minimumSizeHint().height() <= 720
     assert window.editor_tabs.count() == 5
     assert [window.editor_tabs.tabText(index) for index in range(5)] == [
         "Generate",
