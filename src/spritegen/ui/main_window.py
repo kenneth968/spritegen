@@ -190,15 +190,19 @@ class PreviewPanel(QWidget):
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(10, 10, 10, 10)
 
         scroll = QScrollArea()
+        scroll.setObjectName("previewScroll")
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
 
         self.container = QWidget()
+        self.container.setObjectName("previewContent")
         self.container_layout = QVBoxLayout(self.container)
         self.container_layout.setAlignment(Qt.AlignTop)
+        self.container_layout.setContentsMargins(0, 0, 0, 0)
+        self.container_layout.setSpacing(10)
 
         self._add_placeholder()
 
@@ -264,6 +268,7 @@ class PreviewPanel(QWidget):
         if pixmap.isNull():
             return
         image_label = QLabel()
+        image_label.setObjectName("assetImage")
         image_label.setAlignment(Qt.AlignCenter)
         image_label.setPixmap(
             pixmap.scaled(
@@ -285,12 +290,14 @@ class PreviewPanel(QWidget):
 
         for index, path in enumerate(slice_paths):
             cell = QWidget()
+            cell.setObjectName("spriteCell")
             cell_layout = QVBoxLayout(cell)
-            cell_layout.setContentsMargins(0, 0, 0, 0)
-            cell_layout.setSpacing(4)
+            cell_layout.setContentsMargins(8, 8, 8, 8)
+            cell_layout.setSpacing(6)
 
             pixmap = QPixmap.fromImage(QImage(str(path)))
             image_label = QLabel()
+            image_label.setObjectName("assetImage")
             image_label.setAlignment(Qt.AlignCenter)
             image_label.setMinimumSize(96, 96)
             if not pixmap.isNull():
@@ -794,11 +801,13 @@ class MainWindow(QWidget):
         footer_layout.addLayout(actions)
 
         self.progress_bar = QProgressBar()
+        self.progress_bar.setObjectName("generationProgress")
         self.progress_bar.setRange(0, 1)
         self.progress_bar.setValue(0)
         footer_layout.addWidget(self.progress_bar)
 
         self.status_label = QLabel("Ready")
+        self.status_label.setObjectName("statusLabel")
         self.status_label.setWordWrap(True)
         footer_layout.addWidget(self.status_label)
 

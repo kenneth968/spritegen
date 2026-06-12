@@ -9,12 +9,13 @@ from PySide6.QtWidgets import QWidget
 
 DESIGN_TOKENS: dict[str, dict[str, str]] = {
     "color": {
-        "app_background": "#eef2f4",
-        "panel": "#f8fafb",
+        "app_background": "#e8eef2",
+        "panel": "#f7f9fb",
         "surface": "#ffffff",
-        "surface_soft": "#f5f8fa",
-        "border": "#cfdbe4",
-        "border_strong": "#9eb2c0",
+        "surface_soft": "#eef4f7",
+        "surface_sunken": "#e2eaf0",
+        "border": "#c7d5df",
+        "border_strong": "#8fa7b6",
         "text": "#18232d",
         "muted": "#566979",
         "primary": "#1f7a8c",
@@ -55,7 +56,12 @@ def desktop_stylesheet(tokens: Mapping[str, Mapping[str, str]] | None = None) ->
     type_ = theme["type"]
     return f"""
     QWidget#appRoot {{
-        background: {color["app_background"]};
+        background: qlineargradient(
+            x1: 0, y1: 0, x2: 1, y2: 1,
+            stop: 0 {color["surface"]},
+            stop: 0.48 {color["app_background"]},
+            stop: 1 {color["surface_sunken"]}
+        );
     }}
     QWidget {{
         font-family: {type_["family"]};
@@ -73,6 +79,19 @@ def desktop_stylesheet(tokens: Mapping[str, Mapping[str, str]] | None = None) ->
         border: 1px solid {color["border"]};
         border-radius: {radius["lg"]};
     }}
+    QWidget#previewPanel {{
+        background: {color["surface_sunken"]};
+        border: 1px solid {color["border"]};
+        border-radius: {radius["lg"]};
+    }}
+    QWidget#previewContent {{
+        background: transparent;
+    }}
+    QWidget#spriteCell {{
+        background: {color["surface"]};
+        border: 1px solid {color["border"]};
+        border-radius: {radius["md"]};
+    }}
     QLabel#appTitle {{
         color: {color["text"]};
         font-size: {type_["title"]};
@@ -83,13 +102,33 @@ def desktop_stylesheet(tokens: Mapping[str, Mapping[str, str]] | None = None) ->
         font-size: {type_["section"]};
         font-weight: 700;
     }}
+    QLabel#statusLabel {{
+        background: {color["surface_soft"]};
+        border: 1px solid {color["border"]};
+        border-radius: {radius["md"]};
+        color: {color["muted"]};
+        padding: 7px 9px;
+    }}
     QLabel#mutedLabel,
     QLabel#captionLabel,
     QLabel#emptyStateLabel {{
         color: {color["muted"]};
     }}
+    QLabel#emptyStateLabel {{
+        background: {color["surface"]};
+        border: 1px dashed {color["border_strong"]};
+        border-radius: {radius["lg"]};
+        min-height: 180px;
+        padding: {spacing["lg"]};
+    }}
     QLabel#captionLabel {{
         font-size: 11px;
+    }}
+    QLabel#assetImage {{
+        background: {color["surface"]};
+        border: 1px solid {color["border"]};
+        border-radius: {radius["md"]};
+        padding: {spacing["sm"]};
     }}
     QLabel#outputHeaderLabel {{
         color: {color["text"]};
@@ -146,6 +185,7 @@ def desktop_stylesheet(tokens: Mapping[str, Mapping[str, str]] | None = None) ->
     }}
     QTextEdit#promptPreview {{
         background: {color["surface_soft"]};
+        border-color: {color["border_strong"]};
         font-family: {type_["mono"]};
     }}
     QPushButton {{
@@ -154,10 +194,16 @@ def desktop_stylesheet(tokens: Mapping[str, Mapping[str, str]] | None = None) ->
         border-radius: {radius["md"]};
         min-height: 32px;
         padding: 5px 12px;
+        font-weight: 600;
     }}
     QPushButton:hover {{
         background: {color["surface_soft"]};
         border-color: {color["focus"]};
+    }}
+    QPushButton:pressed {{
+        background: {color["surface_sunken"]};
+        padding-top: 6px;
+        padding-bottom: 4px;
     }}
     QPushButton:disabled {{
         color: {color["muted"]};
@@ -179,6 +225,11 @@ def desktop_stylesheet(tokens: Mapping[str, Mapping[str, str]] | None = None) ->
         background: {color["primary_hover"]};
         border-color: {color["primary_hover"]};
     }}
+    QPushButton[buttonRole="primary"]:pressed {{
+        background: {color["primary_hover"]};
+        border-color: {color["primary_hover"]};
+        color: white;
+    }}
     QPushButton[buttonRole="accent"] {{
         background: {color["accent"]};
         border-color: {color["accent_hover"]};
@@ -187,6 +238,10 @@ def desktop_stylesheet(tokens: Mapping[str, Mapping[str, str]] | None = None) ->
     }}
     QPushButton[buttonRole="accent"]:hover {{
         background: {color["accent_hover"]};
+    }}
+    QPushButton[buttonRole="accent"]:pressed {{
+        background: {color["accent_hover"]};
+        color: {color["text"]};
     }}
     QPushButton[buttonRole="danger"] {{
         color: {color["danger"]};
@@ -197,37 +252,49 @@ def desktop_stylesheet(tokens: Mapping[str, Mapping[str, str]] | None = None) ->
         border-color: {color["danger_hover"]};
         color: white;
     }}
+    QPushButton[buttonRole="danger"]:pressed {{
+        background: {color["danger_hover"]};
+        border-color: {color["danger_hover"]};
+        color: white;
+    }}
     QTabWidget::pane {{
         border: 0;
         background: transparent;
     }}
     QTabBar::tab {{
-        padding: 9px 18px;
+        padding: 8px 10px;
         margin-right: 2px;
-        min-width: 92px;
-        background: #e6edf2;
-        border: 1px solid {color["border"]};
-        border-bottom: 0;
-        border-top-left-radius: {radius["md"]};
-        border-top-right-radius: {radius["md"]};
+        margin-bottom: 6px;
+        min-width: 72px;
+        background: transparent;
+        color: {color["muted"]};
+        border: 1px solid transparent;
+        border-radius: {radius["md"]};
+        font-weight: 700;
+    }}
+    QTabBar::tab:hover {{
+        background: {color["surface_soft"]};
+        border-color: {color["border"]};
+        color: {color["text"]};
     }}
     QTabBar::tab:selected {{
         background: {color["surface"]};
-        color: {color["primary"]};
-        border-top: 3px solid {color["primary"]};
+        color: {color["text"]};
+        border: 1px solid {color["border_strong"]};
+        border-bottom: 3px solid {color["primary"]};
     }}
     QScrollArea {{
         border: 0;
         background: transparent;
     }}
-    QProgressBar {{
-        min-height: 24px;
+    QProgressBar#generationProgress {{
+        min-height: 18px;
         text-align: center;
         border: 1px solid {color["border"]};
         border-radius: {radius["md"]};
         background: {color["surface_soft"]};
     }}
-    QProgressBar::chunk {{
+    QProgressBar#generationProgress::chunk {{
         background: {color["success"]};
         border-radius: {radius["sm"]};
     }}

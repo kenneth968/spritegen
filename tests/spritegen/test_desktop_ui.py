@@ -97,11 +97,18 @@ def test_main_window_applies_desktop_design_system(tmp_path):
     assert window.objectName() == "appRoot"
     assert window.action_footer.objectName() == "actionFooter"
     assert window.prompt_preview_edit.objectName() == "promptPreview"
+    assert window.preview_panel.objectName() == "previewPanel"
+    assert window.progress_bar.objectName() == "generationProgress"
+    assert window.status_label.objectName() == "statusLabel"
     assert window.generate_btn.property("buttonRole") == "primary"
     assert window.enhance_btn.property("buttonRole") == "accent"
     assert window.clear_saved_keys_btn.property("buttonRole") == "danger"
     assert DESIGN_TOKENS["color"]["primary"] in window.styleSheet()
+    assert DESIGN_TOKENS["color"]["surface_sunken"] in window.styleSheet()
     assert "QWidget#sidebarPanel" in window.styleSheet()
+    assert "QWidget#previewPanel" in window.styleSheet()
+    assert "QLabel#assetImage" in window.styleSheet()
+    assert "QPushButton:pressed" in window.styleSheet()
     assert "QLabel#paletteSwatch" in window.styleSheet()
     assert 'QPushButton[buttonRole="primary"]' in window.styleSheet()
 
@@ -520,7 +527,7 @@ def test_preview_panel_displays_raw_and_sliced_outputs(tmp_path):
     pytest.importorskip("PySide6")
 
     from PIL import Image
-    from PySide6.QtWidgets import QApplication, QLabel
+    from PySide6.QtWidgets import QApplication, QLabel, QWidget
     from spritegen.ui.main_window import PreviewPanel
 
     raw_path = tmp_path / "atlas.png"
@@ -539,6 +546,8 @@ def test_preview_panel_displays_raw_and_sliced_outputs(tmp_path):
     assert "Raw atlas: atlas.png" in labels
     assert "Sliced sprites (2)" in labels
     assert panel.image_paths == [raw_path, idle_path, attack_path]
+    assert len(panel.findChildren(QLabel, "assetImage")) == 3
+    assert len(panel.findChildren(QWidget, "spriteCell")) == 2
 
     panel.clear()
 
