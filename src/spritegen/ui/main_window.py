@@ -336,7 +336,7 @@ class MainWindow(QWidget):
     def _setup_ui(self) -> None:
         self.setObjectName("appRoot")
         self.setWindowTitle("spritegen")
-        self.setMinimumSize(1400, 900)
+        self.setMinimumSize(1180, 700)
         self.resize(1500, 940)
         self.setStyleSheet(self._app_stylesheet())
 
@@ -348,16 +348,16 @@ class MainWindow(QWidget):
         splitter.setChildrenCollapsible(False)
 
         left_panel = self._create_left_panel()
-        left_panel.setMinimumWidth(620)
+        left_panel.setMinimumWidth(520)
 
         right_panel = self._create_right_panel()
-        right_panel.setMinimumWidth(720)
+        right_panel.setMinimumWidth(560)
 
         splitter.addWidget(left_panel)
         splitter.addWidget(right_panel)
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
-        splitter.setSizes([660, 840])
+        splitter.setSizes([600, 900])
         main_layout.addWidget(splitter)
 
     def _app_stylesheet(self) -> str:
