@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
     QCheckBox,
+    QDialog,
     QFileDialog,
     QFormLayout,
     QFrame,
@@ -27,7 +28,6 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QSplitter,
     QSpinBox,
-    QTabWidget,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -336,6 +336,7 @@ class MainWindow(QWidget):
         self._last_output_dir = str(Path("projects").absolute())
         self._last_gallery_path = ""
         self._last_project_gallery_path = ""
+        self._tool_dialogs: dict[str, QDialog] = {}
         self._setup_ui()
         self._apply_user_settings()
         self._refresh_project_list()
@@ -385,6 +386,25 @@ class MainWindow(QWidget):
         scroll.setWidget(content)
         return scroll
 
+    def _create_tool_dialog(self, title: str, content: QWidget) -> QDialog:
+        dialog = QDialog(self)
+        dialog.setObjectName("toolDialog")
+        dialog.setWindowTitle(f"spritegen - {title}")
+        dialog.resize(720, 760)
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(16, 16, 16, 16)
+        title_label = QLabel(title)
+        title_label.setObjectName("dialogTitle")
+        layout.addWidget(title_label)
+        layout.addWidget(self._scrollable_tab(content))
+        return dialog
+
+    def _open_tool_dialog(self, name: str) -> None:
+        dialog = self._tool_dialogs[name]
+        dialog.show()
+        dialog.raise_()
+        dialog.activateWindow()
+
     def _create_left_panel(self) -> QWidget:
         panel = QWidget()
         panel.setObjectName("sidebarPanel")
@@ -396,8 +416,9 @@ class MainWindow(QWidget):
         title.setObjectName("appTitle")
         layout.addWidget(title)
 
-        self.editor_tabs = QTabWidget()
-        self.editor_tabs.setDocumentMode(True)
+        self.workflow_strip = QLabel("Idea > Style > Asset > Check > Generate > Choose")
+        self.workflow_strip.setObjectName("workflowStrip")
+        layout.addWidget(self.workflow_strip)
 
         workflow_page = QWidget()
         workflow_page_layout = QVBoxLayout(workflow_page)
@@ -420,7 +441,7 @@ class MainWindow(QWidget):
         providers_page_layout = QVBoxLayout(providers_page)
         providers_page_layout.setContentsMargins(8, 8, 8, 8)
 
-        project_group = QGroupBox("Project Brief")
+        project_group = QGroupBox("Idea + Style")
         project_layout = self._form_layout(project_group)
 
         self.project_name_edit = QLineEdit("MyceliumTD")
@@ -449,7 +470,7 @@ class MainWindow(QWidget):
 
         workflow_page_layout.addWidget(project_group)
 
-        asset_group = QGroupBox("Asset To Generate")
+        asset_group = QGroupBox("Asset")
         asset_layout = self._form_layout(asset_group)
 
         self.asset_type_edit = QLineEdit("tower")
@@ -477,7 +498,7 @@ class MainWindow(QWidget):
 
         workflow_page_layout.addWidget(asset_group)
 
-        model_group = QGroupBox("Generation Model")
+        model_group = QGroupBox("Generate")
         model_layout = self._form_layout(model_group)
 
         self.image_provider_combo = self._provider_combo(IMAGE_PROVIDERS)
@@ -517,7 +538,29 @@ class MainWindow(QWidget):
         self.enhance_before_generate_check.setChecked(False)
         model_layout.addRow("Prompt:", self.enhance_before_generate_check)
 
-        workflow_page_layout.addWidget(model_group)
+        providers_page_layout.addWidget(model_group)
+
+        setup_group = QGroupBox("Setup Windows")
+        setup_layout = QGridLayout(setup_group)
+        setup_layout.setHorizontalSpacing(8)
+        setup_layout.setVerticalSpacing(8)
+        self.project_style_btn = QPushButton("Project Style")
+        set_button_role(self.project_style_btn, "secondary")
+        self.project_style_btn.clicked.connect(lambda: self._open_tool_dialog("project"))
+        self.asset_details_btn = QPushButton("Asset Details")
+        set_button_role(self.asset_details_btn, "secondary")
+        self.asset_details_btn.clicked.connect(lambda: self._open_tool_dialog("asset"))
+        self.layout_builder_btn = QPushButton("Layout Builder")
+        set_button_role(self.layout_builder_btn, "secondary")
+        self.layout_builder_btn.clicked.connect(lambda: self._open_tool_dialog("layout"))
+        self.models_keys_btn = QPushButton("Models + Keys")
+        set_button_role(self.models_keys_btn, "secondary")
+        self.models_keys_btn.clicked.connect(lambda: self._open_tool_dialog("models"))
+        setup_layout.addWidget(self.project_style_btn, 0, 0)
+        setup_layout.addWidget(self.asset_details_btn, 0, 1)
+        setup_layout.addWidget(self.layout_builder_btn, 1, 0)
+        setup_layout.addWidget(self.models_keys_btn, 1, 1)
+        layout.addWidget(setup_group)
         workflow_page_layout.addStretch()
 
         project_details_group = QGroupBox("Project Details")
@@ -771,13 +814,16 @@ class MainWindow(QWidget):
         providers_page_layout.addWidget(config_group)
         providers_page_layout.addStretch()
 
-        self.editor_tabs.addTab(self._scrollable_tab(workflow_page), "Generate")
-        self.editor_tabs.addTab(self._scrollable_tab(project_page), "Project")
-        self.editor_tabs.addTab(self._scrollable_tab(asset_page), "Asset")
-        self.editor_tabs.addTab(self._scrollable_tab(layout_page), "Layout")
-        self.editor_tabs.addTab(self._scrollable_tab(providers_page), "Models")
-        self.editor_tabs.currentChanged.connect(self._on_editor_tab_changed)
-        layout.addWidget(self.editor_tabs, 1)
+        layout.addWidget(self._scrollable_tab(workflow_page), 1)
+
+        self._tool_dialogs.update(
+            {
+                "project": self._create_tool_dialog("Project Style", project_page),
+                "asset": self._create_tool_dialog("Asset Details", asset_page),
+                "layout": self._create_tool_dialog("Layout Builder", layout_page),
+                "models": self._create_tool_dialog("Models + Keys", providers_page),
+            }
+        )
 
         self.action_footer = QWidget()
         self.action_footer.setObjectName("actionFooter")
@@ -821,9 +867,23 @@ class MainWindow(QWidget):
         layout.setContentsMargins(22, 22, 22, 22)
         layout.setSpacing(16)
 
-        prompt_header = QHBoxLayout()
-        prompt_label = QLabel("Prompt Plan")
-        prompt_label.setObjectName("sectionTitle")
+        prompt_dialog_content = QWidget()
+        prompt_dialog_layout = QVBoxLayout(prompt_dialog_content)
+        prompt_dialog_layout.setContentsMargins(0, 0, 0, 0)
+        prompt_dialog_layout.setSpacing(10)
+        self.prompt_preview_edit = QTextEdit()
+        self.prompt_preview_edit.setObjectName("promptPreview")
+        self.prompt_preview_edit.setReadOnly(True)
+        self.prompt_preview_edit.setMinimumHeight(520)
+        prompt_dialog_layout.addWidget(self.prompt_preview_edit)
+        self._tool_dialogs["prompt"] = self._create_tool_dialog(
+            "Prompt Plan + Run Check",
+            prompt_dialog_content,
+        )
+
+        readiness_header = QHBoxLayout()
+        readiness_label = QLabel("Run Readiness")
+        readiness_label.setObjectName("sectionTitle")
         self.check_run_btn = QPushButton("Check Current Run")
         set_button_role(self.check_run_btn, "secondary")
         self.check_run_btn.clicked.connect(self._on_check_run)
@@ -836,20 +896,18 @@ class MainWindow(QWidget):
         self.export_project_btn = QPushButton("Export Project Pack")
         set_button_role(self.export_project_btn, "secondary")
         self.export_project_btn.clicked.connect(self._on_export_project)
-        prompt_header.addWidget(prompt_label)
-        prompt_header.addStretch()
-        prompt_header.addWidget(self.check_run_btn)
-        prompt_header.addWidget(self.preview_prompts_btn)
-        prompt_header.addWidget(self.open_project_gallery_btn)
-        prompt_header.addWidget(self.export_project_btn)
-        layout.addLayout(prompt_header)
+        readiness_header.addWidget(readiness_label)
+        readiness_header.addStretch()
+        readiness_header.addWidget(self.check_run_btn)
+        readiness_header.addWidget(self.preview_prompts_btn)
+        readiness_header.addWidget(self.open_project_gallery_btn)
+        readiness_header.addWidget(self.export_project_btn)
+        layout.addLayout(readiness_header)
 
-        self.prompt_preview_edit = QTextEdit()
-        self.prompt_preview_edit.setObjectName("promptPreview")
-        self.prompt_preview_edit.setReadOnly(True)
-        self.prompt_preview_edit.setMinimumHeight(260)
-        self.prompt_preview_edit.setMaximumHeight(420)
-        layout.addWidget(self.prompt_preview_edit)
+        self.run_summary_label = QLabel("Check current run before generating.")
+        self.run_summary_label.setObjectName("runSummaryLabel")
+        self.run_summary_label.setWordWrap(True)
+        layout.addWidget(self.run_summary_label)
 
         header = QHBoxLayout()
         header_label = QLabel("Generated Output")
@@ -889,19 +947,7 @@ class MainWindow(QWidget):
     def _refresh_palette_swatches(self) -> None:
         self.palette_swatches.set_palette(self._palette_values())
 
-    def _on_editor_tab_changed(self, index: int) -> None:
-        tab_name = self.editor_tabs.tabText(index)
-        if tab_name == "Project":
-            self.save_btn.setText("Save Project + Asset")
-        elif tab_name == "Models":
-            self.save_btn.setText("Save Models + Keys")
-        else:
-            self.save_btn.setText("Save Current Asset")
-
     def _on_footer_save(self) -> None:
-        if self.editor_tabs.tabText(self.editor_tabs.currentIndex()) == "Models":
-            self._on_save_provider_settings()
-            return
         self._on_save_plan()
 
     def _on_image_provider_changed(self, *_args) -> None:
@@ -1150,6 +1196,8 @@ class MainWindow(QWidget):
             self._refresh_project_list(project.slug)
             self._refresh_asset_list(asset.slug)
             self.status_label.setText(f"Previewed {len(packets)} prompt(s): {plan_path}")
+            self.run_summary_label.setText(f"Prompt plan ready: {len(packets)} prompt(s)")
+            self._open_tool_dialog("prompt")
         except Exception as exc:
             QMessageBox.warning(self, "Prompt Preview Failed", str(exc))
 
@@ -1182,10 +1230,13 @@ class MainWindow(QWidget):
             self._refresh_project_list(project.slug)
             self._refresh_asset_list(asset.slug)
             status = "Run check ready" if preflight.ready else "Run check needs attention"
-            self.status_label.setText(
+            summary = (
                 f"{status}: {preflight.image_count} image(s), "
                 f"{preflight.slice_count} slice(s)"
             )
+            self.status_label.setText(summary)
+            self.run_summary_label.setText(summary)
+            self._open_tool_dialog("prompt")
         except Exception as exc:
             QMessageBox.warning(self, "Run Check Failed", str(exc))
 
@@ -1963,6 +2014,10 @@ class MainWindow(QWidget):
         self.improve_type_btn.setEnabled(not busy)
         self.enhance_btn.setEnabled(not busy)
         self.generate_btn.setEnabled(not busy)
+        self.project_style_btn.setEnabled(not busy)
+        self.asset_details_btn.setEnabled(not busy)
+        self.layout_builder_btn.setEnabled(not busy)
+        self.models_keys_btn.setEnabled(not busy)
         self.create_project_starter_btn.setEnabled(not busy)
         self.apply_workflow_preset_btn.setEnabled(not busy)
         self.check_run_btn.setEnabled(not busy)
@@ -1983,6 +2038,8 @@ class MainWindow(QWidget):
         self.progress_bar.setRange(0, 0 if busy else 1)
         self.progress_bar.setValue(0 if busy else 1)
         self.status_label.setText(status)
+        if hasattr(self, "run_summary_label") and busy:
+            self.run_summary_label.setText(status)
 
     def _open_output_folder(self) -> None:
         self._open_local_path(self._last_output_dir)

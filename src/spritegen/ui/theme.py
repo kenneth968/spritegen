@@ -79,6 +79,9 @@ def desktop_stylesheet(tokens: Mapping[str, Mapping[str, str]] | None = None) ->
         border: 1px solid {color["border"]};
         border-radius: {radius["lg"]};
     }}
+    QDialog#toolDialog {{
+        background: {color["panel"]};
+    }}
     QWidget#previewPanel {{
         background: {color["surface_sunken"]};
         border: 1px solid {color["border"]};
@@ -97,10 +100,25 @@ def desktop_stylesheet(tokens: Mapping[str, Mapping[str, str]] | None = None) ->
         font-size: {type_["title"]};
         font-weight: 700;
     }}
+    QLabel#dialogTitle {{
+        color: {color["text"]};
+        font-size: {type_["section"]};
+        font-weight: 700;
+        padding: 0 0 {spacing["sm"]} 0;
+    }}
     QLabel#sectionTitle {{
         color: {color["text"]};
         font-size: {type_["section"]};
         font-weight: 700;
+    }}
+    QLabel#workflowStrip,
+    QLabel#runSummaryLabel {{
+        background: {color["surface_soft"]};
+        border: 1px solid {color["border"]};
+        border-radius: {radius["md"]};
+        color: {color["muted"]};
+        font-weight: 700;
+        padding: 8px 10px;
     }}
     QLabel#statusLabel {{
         background: {color["surface_soft"]};
