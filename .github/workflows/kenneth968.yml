@@ -20,8 +20,17 @@ on:
     # Daily at 03:17 UTC. Stagger to avoid the GitHub actions storm at top of hour.
     - cron: "17 3 * * *"
 
+permissions:
+  actions: read
+  checks: read
+  contents: write
+  issues: write
+  pull-requests: write
+  statuses: read
+
 jobs:
   lint:
+    if: github.event_name == 'pull_request'
     uses: kenneth968/.github/.github/workflows/lint.yml@main
     with:
       enforce_conventional_title: "warn"
@@ -29,11 +38,13 @@ jobs:
       gh_token: ${{ secrets.GITHUB_TOKEN }}
 
   label:
+    if: github.event_name == 'pull_request'
     uses: kenneth968/.github/.github/workflows/label.yml@main
     secrets:
       gh_token: ${{ secrets.GITHUB_TOKEN }}
 
   secrets:
+    if: github.event_name == 'pull_request'
     uses: kenneth968/.github/.github/workflows/secrets.yml@main
     with:
       block_on_finding: "true"
@@ -41,12 +52,13 @@ jobs:
       gh_token: ${{ secrets.GITHUB_TOKEN }}
 
   agent-footer:
+    if: github.event_name == 'pull_request'
     uses: kenneth968/.github/.github/workflows/agent-footer.yml@main
     secrets:
       gh_token: ${{ secrets.GITHUB_TOKEN }}
 
   closer:
-    needs: [lint, label, secrets, agent-footer]
+    if: github.event_name == 'pull_request_review'
     uses: kenneth968/.github/.github/workflows/closer.yml@main
     with:
       reviewer_bot: "opencode-action[bot]"
@@ -57,6 +69,7 @@ jobs:
       gh_token: ${{ secrets.GITHUB_TOKEN }}
 
   stale:
+    if: github.event_name == 'schedule'
     uses: kenneth968/.github/.github/workflows/stale.yml@main
     with:
       days_until_stale: "14"
