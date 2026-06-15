@@ -1,0 +1,81 @@
+name: kenneth968 Shared Workflows
+
+# Caller workflow for the 6 reusable workflows in kenneth968/.github.
+# Add this file to a consumer repo's .github/workflows/ to wire up:
+#   - closer: auto-merge approved + green PRs
+#   - lint: enforce PR body / title conventions
+#   - label: auto-apply size/area/whole-issue labels
+#   - secrets: block merge on gitleaks findings
+#   - stale: close stale PRs/issues after 14d
+#   - agent-footer: require Generated-by: footer on bot-authored PRs
+#
+# One file per consumer repo. Customize the inputs to fit the repo.
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review, edited]
+  pull_request_review:
+    types: [submitted]
+  schedule:
+    # Daily at 03:17 UTC. Stagger to avoid the GitHub actions storm at top of hour.
+    - cron: "17 3 * * *"
+
+permissions:
+  actions: read
+  checks: read
+  contents: write
+  issues: write
+  pull-requests: write
+  statuses: read
+
+jobs:
+  lint:
+    if: github.event_name == 'pull_request'
+    uses: kenneth968/.github/.github/workflows/lint.yml@main
+    with:
+      enforce_conventional_title: "warn"
+    secrets:
+      gh_token: ${{ secrets.GITHUB_TOKEN }}
+
+  label:
+    if: github.event_name == 'pull_request'
+    uses: kenneth968/.github/.github/workflows/label.yml@main
+    secrets:
+      gh_token: ${{ secrets.GITHUB_TOKEN }}
+
+  secrets:
+    if: github.event_name == 'pull_request'
+    uses: kenneth968/.github/.github/workflows/secrets.yml@main
+    with:
+      block_on_finding: "true"
+    secrets:
+      gh_token: ${{ secrets.GITHUB_TOKEN }}
+
+  agent-footer:
+    if: github.event_name == 'pull_request'
+    uses: kenneth968/.github/.github/workflows/agent-footer.yml@main
+    secrets:
+      gh_token: ${{ secrets.GITHUB_TOKEN }}
+
+  closer:
+    if: github.event_name == 'pull_request_review'
+    uses: kenneth968/.github/.github/workflows/closer.yml@main
+    with:
+      reviewer_bot: "opencode-action[bot]"
+      whole_issue_label: "whole-issue"
+      partial_label: "partial"
+      merge_method: "squash"
+    secrets:
+      gh_token: ${{ secrets.GITHUB_TOKEN }}
+
+  stale:
+    if: github.event_name == 'schedule'
+    uses: kenneth968/.github/.github/workflows/stale.yml@main
+    with:
+      days_until_stale: "14"
+      days_until_close: "21"
+      stale_label: "stale"
+      exempt_labels: "keep,do-not-close,pinned"
+      only: "all"
+    secrets:
+      gh_token: ${{ secrets.GITHUB_TOKEN }}
