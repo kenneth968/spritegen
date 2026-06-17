@@ -9,22 +9,27 @@ from PySide6.QtWidgets import QWidget
 
 DESIGN_TOKENS: dict[str, dict[str, str]] = {
     "color": {
-        "app_background": "#eef2f4",
-        "panel": "#f8fafb",
+        "app_background": "#e8eef2",
+        "panel": "#f7f9fb",
         "surface": "#ffffff",
-        "surface_soft": "#f5f8fa",
-        "border": "#cfdbe4",
-        "border_strong": "#9eb2c0",
+        "surface_soft": "#eef4f7",
+        "surface_sunken": "#e2eaf0",
+        "border": "#c7d5df",
+        "border_strong": "#8fa7b6",
         "text": "#18232d",
         "muted": "#566979",
         "primary": "#1f7a8c",
         "primary_hover": "#176a79",
+        "primary_soft": "#d8ecf0",
         "accent": "#f3b64b",
         "accent_hover": "#dea139",
         "danger": "#b94747",
         "danger_hover": "#9f3939",
         "success": "#287d52",
+        "success_soft": "#d6efe1",
+        "warning": "#b27516",
         "focus": "#2f8ea4",
+        "scrim": "#18232d",
     },
     "radius": {
         "sm": "4px",
@@ -55,7 +60,12 @@ def desktop_stylesheet(tokens: Mapping[str, Mapping[str, str]] | None = None) ->
     type_ = theme["type"]
     return f"""
     QWidget#appRoot {{
-        background: {color["app_background"]};
+        background: qlineargradient(
+            x1: 0, y1: 0, x2: 1, y2: 1,
+            stop: 0 {color["surface"]},
+            stop: 0.48 {color["app_background"]},
+            stop: 1 {color["surface_sunken"]}
+        );
     }}
     QWidget {{
         font-family: {type_["family"]};
@@ -73,23 +83,74 @@ def desktop_stylesheet(tokens: Mapping[str, Mapping[str, str]] | None = None) ->
         border: 1px solid {color["border"]};
         border-radius: {radius["lg"]};
     }}
+    QDialog#toolDialog {{
+        background: {color["panel"]};
+    }}
+    QWidget#previewPanel {{
+        background: {color["surface_sunken"]};
+        border: 1px solid {color["border"]};
+        border-radius: {radius["lg"]};
+    }}
+    QWidget#previewContent {{
+        background: transparent;
+    }}
+    QWidget#spriteCell {{
+        background: {color["surface"]};
+        border: 1px solid {color["border"]};
+        border-radius: {radius["md"]};
+    }}
     QLabel#appTitle {{
         color: {color["text"]};
         font-size: {type_["title"]};
         font-weight: 700;
+    }}
+    QLabel#dialogTitle {{
+        color: {color["text"]};
+        font-size: {type_["section"]};
+        font-weight: 700;
+        padding: 0 0 {spacing["sm"]} 0;
     }}
     QLabel#sectionTitle {{
         color: {color["text"]};
         font-size: {type_["section"]};
         font-weight: 700;
     }}
+    QLabel#workflowStrip,
+    QLabel#runSummaryLabel {{
+        background: {color["surface_soft"]};
+        border: 1px solid {color["border"]};
+        border-radius: {radius["md"]};
+        color: {color["muted"]};
+        font-weight: 700;
+        padding: 8px 10px;
+    }}
+    QLabel#statusLabel {{
+        background: {color["surface_soft"]};
+        border: 1px solid {color["border"]};
+        border-radius: {radius["md"]};
+        color: {color["muted"]};
+        padding: 7px 9px;
+    }}
     QLabel#mutedLabel,
     QLabel#captionLabel,
     QLabel#emptyStateLabel {{
         color: {color["muted"]};
     }}
+    QLabel#emptyStateLabel {{
+        background: {color["surface"]};
+        border: 1px dashed {color["border_strong"]};
+        border-radius: {radius["lg"]};
+        min-height: 180px;
+        padding: {spacing["lg"]};
+    }}
     QLabel#captionLabel {{
         font-size: 11px;
+    }}
+    QLabel#assetImage {{
+        background: {color["surface"]};
+        border: 1px solid {color["border"]};
+        border-radius: {radius["md"]};
+        padding: {spacing["sm"]};
     }}
     QLabel#outputHeaderLabel {{
         color: {color["text"]};
@@ -146,6 +207,7 @@ def desktop_stylesheet(tokens: Mapping[str, Mapping[str, str]] | None = None) ->
     }}
     QTextEdit#promptPreview {{
         background: {color["surface_soft"]};
+        border-color: {color["border_strong"]};
         font-family: {type_["mono"]};
     }}
     QPushButton {{
@@ -154,10 +216,16 @@ def desktop_stylesheet(tokens: Mapping[str, Mapping[str, str]] | None = None) ->
         border-radius: {radius["md"]};
         min-height: 32px;
         padding: 5px 12px;
+        font-weight: 600;
     }}
     QPushButton:hover {{
         background: {color["surface_soft"]};
         border-color: {color["focus"]};
+    }}
+    QPushButton:pressed {{
+        background: {color["surface_sunken"]};
+        padding-top: 6px;
+        padding-bottom: 4px;
     }}
     QPushButton:disabled {{
         color: {color["muted"]};
@@ -179,6 +247,11 @@ def desktop_stylesheet(tokens: Mapping[str, Mapping[str, str]] | None = None) ->
         background: {color["primary_hover"]};
         border-color: {color["primary_hover"]};
     }}
+    QPushButton[buttonRole="primary"]:pressed {{
+        background: {color["primary_hover"]};
+        border-color: {color["primary_hover"]};
+        color: white;
+    }}
     QPushButton[buttonRole="accent"] {{
         background: {color["accent"]};
         border-color: {color["accent_hover"]};
@@ -187,6 +260,10 @@ def desktop_stylesheet(tokens: Mapping[str, Mapping[str, str]] | None = None) ->
     }}
     QPushButton[buttonRole="accent"]:hover {{
         background: {color["accent_hover"]};
+    }}
+    QPushButton[buttonRole="accent"]:pressed {{
+        background: {color["accent_hover"]};
+        color: {color["text"]};
     }}
     QPushButton[buttonRole="danger"] {{
         color: {color["danger"]};
@@ -197,43 +274,217 @@ def desktop_stylesheet(tokens: Mapping[str, Mapping[str, str]] | None = None) ->
         border-color: {color["danger_hover"]};
         color: white;
     }}
+    QPushButton[buttonRole="danger"]:pressed {{
+        background: {color["danger_hover"]};
+        border-color: {color["danger_hover"]};
+        color: white;
+    }}
     QTabWidget::pane {{
         border: 0;
         background: transparent;
     }}
     QTabBar::tab {{
-        padding: 9px 18px;
+        padding: 8px 10px;
         margin-right: 2px;
-        min-width: 92px;
-        background: #e6edf2;
-        border: 1px solid {color["border"]};
-        border-bottom: 0;
-        border-top-left-radius: {radius["md"]};
-        border-top-right-radius: {radius["md"]};
+        margin-bottom: 6px;
+        min-width: 72px;
+        background: transparent;
+        color: {color["muted"]};
+        border: 1px solid transparent;
+        border-radius: {radius["md"]};
+        font-weight: 700;
+    }}
+    QTabBar::tab:hover {{
+        background: {color["surface_soft"]};
+        border-color: {color["border"]};
+        color: {color["text"]};
     }}
     QTabBar::tab:selected {{
         background: {color["surface"]};
-        color: {color["primary"]};
-        border-top: 3px solid {color["primary"]};
+        color: {color["text"]};
+        border: 1px solid {color["border_strong"]};
+        border-bottom: 3px solid {color["primary"]};
     }}
     QScrollArea {{
         border: 0;
         background: transparent;
     }}
-    QProgressBar {{
-        min-height: 24px;
+    QProgressBar#generationProgress {{
+        min-height: 18px;
         text-align: center;
         border: 1px solid {color["border"]};
         border-radius: {radius["md"]};
         background: {color["surface_soft"]};
     }}
-    QProgressBar::chunk {{
+    QProgressBar#generationProgress::chunk {{
         background: {color["success"]};
         border-radius: {radius["sm"]};
     }}
     QSplitter::handle {{
         background: transparent;
         width: 12px;
+    }}
+    QWidget#topBar {{
+        background: {color["surface"]};
+        border: 0;
+        border-bottom: 1px solid {color["border"]};
+        min-height: 56px;
+    }}
+    QLabel#topBarTitle {{
+        font-size: 18px;
+        font-weight: 700;
+        color: {color["text"]};
+    }}
+    QLabel#topBarTagline {{
+        color: {color["muted"]};
+        font-size: 11px;
+        font-weight: 600;
+    }}
+    QPushButton#pillButton {{
+        background: {color["surface"]};
+        border: 1px solid {color["border"]};
+        border-radius: 14px;
+        padding: 5px 12px;
+        min-height: 28px;
+        font-weight: 600;
+        text-align: left;
+    }}
+    QPushButton#pillButton:hover {{
+        border-color: {color["focus"]};
+        background: {color["surface_soft"]};
+    }}
+    QPushButton#pillButton::menu-indicator {{ image: none; }}
+    QPushButton#providerChip {{
+        border: 1px solid {color["border"]};
+        border-radius: 14px;
+        padding: 5px 12px 5px 10px;
+        min-height: 28px;
+        font-weight: 700;
+        text-align: left;
+    }}
+    QPushButton#providerChip[providerStatus="ok"] {{
+        background: {color["success_soft"]};
+        border-color: {color["success"]};
+        color: {color["text"]};
+    }}
+    QPushButton#providerChip[providerStatus="missing"] {{
+        background: {color["surface"]};
+        border-color: {color["danger"]};
+        color: {color["danger"]};
+    }}
+    QPushButton#providerChip[providerStatus="mock"] {{
+        background: {color["surface_soft"]};
+        border-color: {color["border"]};
+        color: {color["muted"]};
+    }}
+    QPushButton#providerChip[providerStatus="free"] {{
+        background: {color["primary_soft"]};
+        border-color: {color["primary"]};
+        color: {color["primary_hover"]};
+    }}
+    QPushButton#iconButton {{
+        background: transparent;
+        border: 1px solid transparent;
+        border-radius: {radius["md"]};
+        min-width: 36px;
+        min-height: 36px;
+        font-size: 18px;
+    }}
+    QPushButton#iconButton:hover {{
+        background: {color["surface_soft"]};
+        border-color: {color["border"]};
+    }}
+    QWidget#settingsDrawer {{
+        background: {color["surface"]};
+        border: 0;
+        border-left: 1px solid {color["border"]};
+    }}
+    QWidget#drawerHeader {{
+        background: {color["panel"]};
+        border: 0;
+        border-bottom: 1px solid {color["border"]};
+    }}
+    QFrame#welcomeBackdrop {{
+        background: rgba(24, 35, 45, 180);
+    }}
+    QFrame#welcomeCard {{
+        background: {color["surface"]};
+        border: 1px solid {color["border"]};
+        border-radius: 12px;
+    }}
+    QFrame#welcomeCard[cardStyle="primary"] {{
+        border: 2px solid {color["primary"]};
+    }}
+    QLabel#welcomeTitle {{
+        font-size: 26px;
+        font-weight: 700;
+        color: {color["text"]};
+    }}
+    QLabel#welcomeSubtitle {{
+        color: {color["muted"]};
+        font-size: 14px;
+    }}
+    QLabel#welcomeCardTitle {{
+        font-size: 16px;
+        font-weight: 700;
+        color: {color["text"]};
+    }}
+    QLabel#welcomeCardBody {{
+        color: {color["muted"]};
+    }}
+    QPushButton#welcomeCardButton {{
+        background: {color["primary"]};
+        color: white;
+        border: 1px solid {color["primary"]};
+        border-radius: {radius["md"]};
+        min-height: 38px;
+        font-weight: 700;
+        padding: 6px 14px;
+    }}
+    QPushButton#welcomeCardButton:hover {{
+        background: {color["primary_hover"]};
+        border-color: {color["primary_hover"]};
+    }}
+    QPushButton#welcomeCardButton[cardStyle="outline"] {{
+        background: {color["surface"]};
+        color: {color["text"]};
+        border: 1px solid {color["border_strong"]};
+    }}
+    QPushButton#welcomeCardButton[cardStyle="outline"]:hover {{
+        border-color: {color["primary"]};
+        color: {color["primary_hover"]};
+    }}
+    QPushButton#welcomeSkip {{
+        background: transparent;
+        color: {color["muted"]};
+        border: 0;
+        font-weight: 600;
+        padding: 6px 10px;
+    }}
+    QPushButton#welcomeSkip:hover {{
+        color: {color["text"]};
+    }}
+    QFrame#statusFlash {{
+        background: {color["success_soft"]};
+        border: 1px solid {color["success"]};
+        border-radius: {radius["md"]};
+        color: {color["success"]};
+        padding: 4px 10px;
+        font-weight: 700;
+    }}
+    QFrame#statusFlash[flashState="info"] {{
+        background: {color["primary_soft"]};
+        border-color: {color["primary"]};
+        color: {color["primary_hover"]};
+    }}
+    QFrame#statusFlash[flashState="warning"] {{
+        background: #fff3d6;
+        border-color: {color["warning"]};
+        color: {color["warning"]};
+    }}
+    QLabel#emptyStateTitle {{
+        color: {color["text"]};
+        font-weight: 700;
     }}
     """
 

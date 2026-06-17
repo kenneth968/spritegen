@@ -40,9 +40,11 @@ def test_main_window_saves_project_plan(tmp_path):
     app.processEvents()
 
 
-def test_main_window_uses_readable_tabbed_editor_layout(tmp_path):
+def test_main_window_uses_guided_workflow_layout(tmp_path, monkeypatch):
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     pytest.importorskip("PySide6")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
 
     from PySide6.QtWidgets import QApplication
     from spritegen.user_settings import UserSettingsStore
@@ -54,37 +56,42 @@ def test_main_window_uses_readable_tabbed_editor_layout(tmp_path):
     assert window.minimumWidth() <= 1280
     assert window.minimumHeight() <= 720
     assert window.minimumSizeHint().width() <= 1280
-    assert window.minimumSizeHint().height() <= 720
-    assert window.editor_tabs.count() == 5
-    assert [window.editor_tabs.tabText(index) for index in range(5)] == [
-        "Generate",
-        "Project",
-        "Asset",
-        "Layout",
-        "Models",
-    ]
-    assert window.editor_tabs.documentMode() is True
-    assert window.action_footer.layout().count() >= 3
-    assert window.prompt_preview_edit.minimumHeight() >= 260
+    assert window.workflow_strip.text() == "Idea > Style > Asset > Check > Generate > Choose"
+    assert set(window._tool_dialogs) == {
+        "project",
+        "asset",
+        "layout",
+        "models",
+        "prompt",
+    }
+    assert window.action_footer.layout().count() >= 2
     assert window.style_edit.minimumHeight() >= 64
     assert window.context_edit.minimumHeight() >= 112
     assert window.asset_description_edit.minimumHeight() >= 72
     assert window.image_model_edit.isEditable()
     assert window.image_model_suggestions is window.image_model_edit
     assert window.palette_swatches.layout().count() >= 5
-    assert window.save_btn.text() == "Save Current Asset"
-    assert window.generate_btn.text() == "Generate Sprite Sheet"
-    window.editor_tabs.setCurrentIndex(4)
-    assert window.save_btn.text() == "Save Models + Keys"
-    assert "QTabBar::tab" in window.styleSheet()
+    assert window.save_btn.text() == "Save"
+    assert window.generate_btn.text() == "Generate"
+    assert window.check_run_btn.text() == "Check Run"
+    assert window.export_sprites_btn.text() == "Export Asset"
+    assert window.open_project_gallery_btn.text() == "Project Gallery"
+    assert window.run_summary_label.text() == "Check current run before generating."
+    assert "QLabel#workflowStrip" in window.styleSheet()
+    # New top-bar components
+    assert window.provider_bar.objectName() == "topBar"
+    assert "QPushButton#providerChip" in window.styleSheet()
+    assert "QWidget#settingsDrawer" in window.styleSheet()
 
     window.close()
     app.processEvents()
 
 
-def test_main_window_applies_desktop_design_system(tmp_path):
+def test_main_window_applies_desktop_design_system(tmp_path, monkeypatch):
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     pytest.importorskip("PySide6")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
 
     from PySide6.QtWidgets import QApplication
     from spritegen.ui.main_window import MainWindow
@@ -97,13 +104,23 @@ def test_main_window_applies_desktop_design_system(tmp_path):
     assert window.objectName() == "appRoot"
     assert window.action_footer.objectName() == "actionFooter"
     assert window.prompt_preview_edit.objectName() == "promptPreview"
+    assert window.workflow_strip.objectName() == "workflowStrip"
+    assert window.run_summary_label.objectName() == "runSummaryLabel"
+    assert window.preview_panel.objectName() == "previewPanel"
+    assert window.progress_bar.objectName() == "generationProgress"
+    assert window.status_label.objectName() == "statusLabel"
     assert window.generate_btn.property("buttonRole") == "primary"
     assert window.enhance_btn.property("buttonRole") == "accent"
     assert window.clear_saved_keys_btn.property("buttonRole") == "danger"
     assert DESIGN_TOKENS["color"]["primary"] in window.styleSheet()
-    assert "QWidget#sidebarPanel" in window.styleSheet()
+    assert DESIGN_TOKENS["color"]["surface_sunken"] in window.styleSheet()
+    assert "QWidget#previewPanel" in window.styleSheet()
+    assert "QLabel#assetImage" in window.styleSheet()
+    assert "QPushButton:pressed" in window.styleSheet()
     assert "QLabel#paletteSwatch" in window.styleSheet()
     assert 'QPushButton[buttonRole="primary"]' in window.styleSheet()
+    assert "QWidget#topBar" in window.styleSheet()
+    assert "QFrame#welcomeCard" in window.styleSheet()
 
     window.close()
     app.processEvents()
@@ -520,7 +537,7 @@ def test_preview_panel_displays_raw_and_sliced_outputs(tmp_path):
     pytest.importorskip("PySide6")
 
     from PIL import Image
-    from PySide6.QtWidgets import QApplication, QLabel
+    from PySide6.QtWidgets import QApplication, QLabel, QWidget
     from spritegen.ui.main_window import PreviewPanel
 
     raw_path = tmp_path / "atlas.png"
@@ -539,6 +556,8 @@ def test_preview_panel_displays_raw_and_sliced_outputs(tmp_path):
     assert "Raw atlas: atlas.png" in labels
     assert "Sliced sprites (2)" in labels
     assert panel.image_paths == [raw_path, idle_path, attack_path]
+    assert len(panel.findChildren(QLabel, "assetImage")) == 3
+    assert len(panel.findChildren(QWidget, "spriteCell")) == 2
 
     panel.clear()
 
@@ -787,9 +806,11 @@ def test_main_window_labels_generation_variants(tmp_path):
     app.processEvents()
 
 
-def test_main_window_previews_prompt_plan_with_prior_assets(tmp_path):
+def test_main_window_previews_prompt_plan_with_prior_assets(tmp_path, monkeypatch):
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     pytest.importorskip("PySide6")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
 
     from PySide6.QtWidgets import QApplication
     from spritegen.projects import AssetSpec, AssetTypeSpec, ProjectSpec, ProjectStore
@@ -837,6 +858,8 @@ def test_main_window_previews_prompt_plan_with_prior_assets(tmp_path):
     assert "details: White cap, teal spores, soft circular base." in preview
     assert "Poison mushroom tower." in preview
     assert "Previewed" in window.status_label.text()
+    assert window.run_summary_label.text() == "Prompt plan ready: 1 prompt(s)"
+    assert window.prompt_preview_edit.isVisibleTo(window.workspace_panel) is True
     assert (
         tmp_path
         / "projects"
@@ -849,9 +872,11 @@ def test_main_window_previews_prompt_plan_with_prior_assets(tmp_path):
     app.processEvents()
 
 
-def test_main_window_check_run_writes_preflight_summary(tmp_path):
+def test_main_window_check_run_writes_preflight_summary(tmp_path, monkeypatch):
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     pytest.importorskip("PySide6")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
 
     from PySide6.QtWidgets import QApplication
     from spritegen.user_settings import UserSettingsStore
@@ -863,7 +888,7 @@ def test_main_window_check_run_writes_preflight_summary(tmp_path):
     window.generation_variants_spin.setValue(2)
     window._set_combo_value(window.layout_combo, "single_sprite")
 
-    assert window.check_run_btn.text() == "Check Current Run"
+    assert window.check_run_btn.text() == "Check Run"
 
     window._on_check_run()
 
@@ -874,6 +899,8 @@ def test_main_window_check_run_writes_preflight_summary(tmp_path):
     assert "Images: 8 atlas image(s), 8 sliced sprite(s)" in preview
     assert "single_sprite: 1024x1024, 1 region(s), 4 packet(s)" in preview
     assert "Run check ready" in window.status_label.text()
+    assert "Run check ready" in window.run_summary_label.text()
+    assert window.prompt_preview_edit.isVisibleTo(window.workspace_panel) is True
 
     window.close()
     app.processEvents()

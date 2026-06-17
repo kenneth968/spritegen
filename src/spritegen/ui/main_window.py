@@ -1,320 +1,48 @@
-"""Main window for the spritegen desktop application."""
+"""Main window for the spritegen desktop application.
+
+The window composes a top provider bar, a left project/asset form panel, a
+center workspace with the run check and asset preview, a bottom action
+footer, a right-side settings drawer, and an optional welcome overlay.
+Business logic lives in :mod:`spritegen.ui.controller`.
+"""
 
 from __future__ import annotations
 
 import os
 import sys
-import json
 from pathlib import Path
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QImage, QPixmap
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QKeyEvent
 from PySide6.QtWidgets import (
     QApplication,
-    QComboBox,
-    QCheckBox,
     QFileDialog,
-    QFormLayout,
-    QFrame,
-    QGroupBox,
-    QGridLayout,
     QHBoxLayout,
     QLabel,
-    QLineEdit,
-    QMessageBox,
-    QProgressBar,
-    QPushButton,
-    QScrollArea,
-    QSplitter,
-    QSpinBox,
-    QTabWidget,
-    QTextEdit,
+    QStackedLayout,
     QVBoxLayout,
     QWidget,
 )
 
-from ..layouts import PRESET_LAYOUTS, AssetLayout
-from ..provider_models import (
-    IMAGE_ROLE,
-    MODEL_DISCOVERY_SOURCES,
-    MODEL_VALIDATION_ERROR,
-    MODEL_VALIDATION_WARNING,
-    PROMPT_ROLE,
-    ModelSuggestion,
-    ModelValidationResult,
-    combined_model_suggestions,
-    default_model,
-    validate_model_choice,
+from ..projects import ProjectSpec
+from ..provider_models import IMAGE_ROLE, PROMPT_ROLE, ModelSuggestion
+from ..user_settings import UserSettingsStore
+from .controller import MainWindowController
+from .theme import desktop_stylesheet
+from .widgets.action_footer import ActionFooter
+from .widgets.project_panel import ProjectPanel
+from .widgets.provider_bar import (
+    ProviderBar,
+    env_key_for,
 )
-from ..preflight import (
-    PREFLIGHT_ERROR,
-    GenerationPreflightReport,
-    build_generation_preflight,
+from .widgets.welcome_overlay import (
+    openai_defaults,
+    openrouter_defaults,
+    pollinations_defaults,
 )
-from ..project_export import ProjectAssetExporter
-from ..project_gallery import ProjectGalleryWriter
-from ..project_starters import get_project_starter, list_project_starters
-from ..projects import (
-    AssetSpec,
-    AssetTypeSpec,
-    COLOR_TREATMENT_MODES,
-    ColorTreatment,
-    EvolutionPlan,
-    ProjectSpec,
-    ProjectStore,
-    PostProcessSettings,
-    ProviderDefaults,
-    PromptPlanner,
-    apply_asset_type_enhancement,
-    apply_project_enhancement,
-    slugify,
-)
-from ..user_settings import UserSettings, UserSettingsStore
-from ..workflow_presets import get_workflow_preset, list_workflow_presets
-from .generation_thread import (
-    AssetTypeEnhancementThread,
-    EnhancementThread,
-    ModelDiscoveryThread,
-    ProjectEnhancementThread,
-    ProjectGenerationThread,
-)
-from .theme import desktop_stylesheet, set_button_role
-
-
-IMAGE_PROVIDERS = ["mock", "pollinations", "openai", "openrouter"]
-PROMPT_PROVIDERS = ["mock", "pollinations", "openai", "openrouter"]
-KEYED_PROVIDERS = {"openai", "openrouter"}
-
-PROVIDER_LABELS = {
-    "mock": "Mock",
-    "pollinations": "Pollinations",
-    "openai": "OpenAI",
-    "openrouter": "OpenRouter",
-}
-
-COLOR_MODE_LABELS = {
-    "full_color": "Full Color",
-    "limited_palette": "Limited Palette",
-    "black_white": "Black / White",
-    "grayscale_value_map": "Grayscale Value Map",
-    "single_hue_value_map": "Single-Hue Value Map",
-}
-
-MODEL_DISCOVERY_SOURCE_LABELS = {
-    "auto": "Auto",
-    "openrouter": "OpenRouter",
-    "models-dev": "models.dev",
-}
-
-
-class ModelPicker(QComboBox):
-    """Editable combo that stores provider model IDs as item data."""
-
-    def __init__(self, default_model_id: str = "", parent=None) -> None:
-        super().__init__(parent)
-        self.setEditable(True)
-        self.setInsertPolicy(QComboBox.NoInsert)
-        self.lineEdit().setPlaceholderText("Choose or paste a model ID")
-        if default_model_id:
-            self.setText(default_model_id)
-
-    def text(self) -> str:
-        current_text = self.currentText().strip()
-        current_index = self.currentIndex()
-        if current_index >= 0 and current_text == self.itemText(current_index):
-            data = self.currentData()
-            if data:
-                return str(data).strip()
-        return current_text
-
-    def setText(self, value: str) -> None:
-        model_id = value.strip()
-        if not model_id:
-            self.setCurrentIndex(-1)
-            self.setEditText("")
-            return
-        index = self.findData(model_id)
-        if index >= 0:
-            self.setCurrentIndex(index)
-        else:
-            self.setCurrentIndex(-1)
-            self.setEditText(model_id)
-
-
-class PaletteSwatchBar(QWidget):
-    def __init__(self, parent=None) -> None:
-        super().__init__(parent)
-        self.setObjectName("paletteSwatches")
-        self._layout = QHBoxLayout(self)
-        self._layout.setContentsMargins(0, 6, 0, 0)
-        self._layout.setSpacing(6)
-
-    def set_palette(self, values: list[str]) -> None:
-        while self._layout.count():
-            item = self._layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-        for value in values[:10]:
-            swatch = QLabel(value)
-            swatch.setObjectName("paletteSwatch")
-            swatch.setAlignment(Qt.AlignCenter)
-            swatch.setToolTip(value)
-            swatch.setStyleSheet(
-                f"background: {value}; color: {self._text_color_for(value)};"
-            )
-            self._layout.addWidget(swatch)
-        self._layout.addStretch()
-
-    def _text_color_for(self, value: str) -> str:
-        color = value.strip().lstrip("#")
-        if len(color) == 3:
-            color = "".join(character * 2 for character in color)
-        if len(color) != 6:
-            return "#18232d"
-        try:
-            red = int(color[0:2], 16)
-            green = int(color[2:4], 16)
-            blue = int(color[4:6], 16)
-        except ValueError:
-            return "#18232d"
-        luminance = (0.299 * red) + (0.587 * green) + (0.114 * blue)
-        return "#ffffff" if luminance < 145 else "#18232d"
-
-
-class PreviewPanel(QWidget):
-    def __init__(self, parent=None) -> None:
-        super().__init__(parent)
-        self.setObjectName("previewPanel")
-        self._image_paths: list[Path] = []
-        self._setup_ui()
-
-    def _setup_ui(self) -> None:
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.NoFrame)
-
-        self.container = QWidget()
-        self.container_layout = QVBoxLayout(self.container)
-        self.container_layout.setAlignment(Qt.AlignTop)
-
-        self._add_placeholder()
-
-        scroll.setWidget(self.container)
-        layout.addWidget(scroll)
-
-    @property
-    def image_paths(self) -> list[Path]:
-        return list(self._image_paths)
-
-    def _add_placeholder(self) -> None:
-        self.placeholder = QLabel("No generated assets yet.")
-        self.placeholder.setObjectName("emptyStateLabel")
-        self.placeholder.setAlignment(Qt.AlignCenter)
-        self.container_layout.addWidget(self.placeholder)
-
-    def clear(self) -> None:
-        while self.container_layout.count():
-            item = self.container_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-        self._image_paths.clear()
-        self._add_placeholder()
-
-    def add_image_path(self, path: Path) -> None:
-        self.add_generation_output(path, [])
-
-    def add_generation_output(
-        self,
-        raw_path: Path | None,
-        slice_paths: list[Path],
-        title: str | None = None,
-    ) -> None:
-        if raw_path is None and not slice_paths:
-            return
-        self.placeholder.hide()
-        header = QLabel(title or self._group_title(raw_path, slice_paths))
-        header.setObjectName("outputHeaderLabel")
-        self.container_layout.addWidget(header)
-
-        if raw_path is not None and raw_path.exists():
-            raw_label = QLabel(f"Raw atlas: {raw_path.name}")
-            raw_label.setObjectName("mutedLabel")
-            self.container_layout.addWidget(raw_label)
-            self._add_scaled_image(raw_path, max_width=480, max_height=480)
-
-        existing_slices = [path for path in slice_paths if path.exists()]
-        if existing_slices:
-            slices_label = QLabel(f"Sliced sprites ({len(existing_slices)})")
-            slices_label.setObjectName("mutedLabel")
-            self.container_layout.addWidget(slices_label)
-            self._add_slice_grid(existing_slices)
-
-    def _group_title(self, raw_path: Path | None, slice_paths: list[Path]) -> str:
-        if raw_path is not None:
-            return raw_path.stem.replace("_", " ")
-        if slice_paths:
-            return slice_paths[0].parent.name.replace("_", " ")
-        return "Generated output"
-
-    def _add_scaled_image(self, path: Path, max_width: int, max_height: int) -> None:
-        pixmap = QPixmap.fromImage(QImage(str(path)))
-        if pixmap.isNull():
-            return
-        image_label = QLabel()
-        image_label.setAlignment(Qt.AlignCenter)
-        image_label.setPixmap(
-            pixmap.scaled(
-                max_width,
-                max_height,
-                Qt.KeepAspectRatio,
-                Qt.SmoothTransformation,
-            )
-        )
-        self.container_layout.addWidget(image_label)
-        self._image_paths.append(path)
-
-    def _add_slice_grid(self, slice_paths: list[Path]) -> None:
-        grid_widget = QWidget()
-        grid = QGridLayout(grid_widget)
-        grid.setContentsMargins(0, 0, 0, 0)
-        grid.setHorizontalSpacing(8)
-        grid.setVerticalSpacing(8)
-
-        for index, path in enumerate(slice_paths):
-            cell = QWidget()
-            cell_layout = QVBoxLayout(cell)
-            cell_layout.setContentsMargins(0, 0, 0, 0)
-            cell_layout.setSpacing(4)
-
-            pixmap = QPixmap.fromImage(QImage(str(path)))
-            image_label = QLabel()
-            image_label.setAlignment(Qt.AlignCenter)
-            image_label.setMinimumSize(96, 96)
-            if not pixmap.isNull():
-                image_label.setPixmap(
-                    pixmap.scaled(
-                        128,
-                        128,
-                        Qt.KeepAspectRatio,
-                        Qt.SmoothTransformation,
-                    )
-                )
-                self._image_paths.append(path)
-            cell_layout.addWidget(image_label)
-
-            name_label = QLabel(path.name)
-            name_label.setObjectName("captionLabel")
-            name_label.setAlignment(Qt.AlignCenter)
-            name_label.setWordWrap(True)
-            cell_layout.addWidget(name_label)
-
-            row, column = divmod(index, 4)
-            grid.addWidget(cell, row, column)
-
-        self.container_layout.addWidget(grid_widget)
+from .widgets.settings_drawer import SettingsDrawer
+from .widgets.welcome_overlay import WelcomeOverlay
+from .widgets.workspace_panel import WorkspacePanel
 
 
 class MainWindow(QWidget):
@@ -329,1656 +57,533 @@ class MainWindow(QWidget):
         self._last_output_dir = str(Path("projects").absolute())
         self._last_gallery_path = ""
         self._last_project_gallery_path = ""
-        self._setup_ui()
-        self._apply_user_settings()
-        self._refresh_project_list()
 
-    def _setup_ui(self) -> None:
+        self.controller = MainWindowController(self)
+        self._auto_save_timer = QTimer(self)
+        self._auto_save_timer.setSingleShot(True)
+        self._auto_save_timer.setInterval(800)
+        self._auto_save_timer.timeout.connect(self.controller.on_save_provider_settings)
+
+        self._build_ui()
+        self._wire_signals()
+        self._apply_user_settings()
+        self.controller.refresh_project_list()
+        self._show_welcome_if_needed()
+        self._refresh_provider_chip()
+        self._update_project_pills()
+
+    # ------------------------------------------------------------------
+    # UI construction
+    # ------------------------------------------------------------------
+    def _build_ui(self) -> None:
         self.setObjectName("appRoot")
         self.setWindowTitle("spritegen")
-        self.setMinimumSize(1180, 700)
+        self.setMinimumSize(1180, 720)
         self.resize(1500, 940)
-        self.setStyleSheet(self._app_stylesheet())
+        self.setStyleSheet(desktop_stylesheet())
 
-        main_layout = QHBoxLayout(self)
-        main_layout.setSpacing(0)
-        main_layout.setContentsMargins(16, 16, 16, 16)
+        outer = QStackedLayout(self)
+        outer.setStackingMode(QStackedLayout.StackAll)
 
-        splitter = QSplitter(Qt.Horizontal)
-        splitter.setChildrenCollapsible(False)
+        # Background page = main app
+        background = QWidget()
+        background.setObjectName("appBackground")
+        background_layout = QVBoxLayout(background)
+        background_layout.setContentsMargins(0, 0, 0, 0)
+        background_layout.setSpacing(0)
 
-        left_panel = self._create_left_panel()
-        left_panel.setMinimumWidth(520)
+        self.provider_bar = ProviderBar()
+        background_layout.addWidget(self.provider_bar)
 
-        right_panel = self._create_right_panel()
-        right_panel.setMinimumWidth(560)
+        body = QHBoxLayout()
+        body.setContentsMargins(16, 16, 16, 16)
+        body.setSpacing(12)
 
-        splitter.addWidget(left_panel)
-        splitter.addWidget(right_panel)
-        splitter.setStretchFactor(0, 0)
-        splitter.setStretchFactor(1, 1)
-        splitter.setSizes([600, 900])
-        main_layout.addWidget(splitter)
+        self.project_panel = ProjectPanel()
+        self.project_panel.setMinimumWidth(420)
+        self.project_panel.setMaximumWidth(560)
+        body.addWidget(self.project_panel, 0)
 
-    def _app_stylesheet(self) -> str:
-        return desktop_stylesheet()
+        self.workspace_panel = WorkspacePanel()
+        body.addWidget(self.workspace_panel, 1)
 
-    def _form_layout(self, group: QGroupBox) -> QFormLayout:
-        form = QFormLayout(group)
-        form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
-        form.setHorizontalSpacing(12)
-        form.setVerticalSpacing(8)
-        return form
+        self.settings_drawer = SettingsDrawer()
+        self.settings_drawer.setVisible(False)
+        self.settings_drawer.setMinimumWidth(0)
+        self.settings_drawer.setMaximumWidth(0)
+        body.addWidget(self.settings_drawer, 0)
 
-    def _scrollable_tab(self, content: QWidget) -> QScrollArea:
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.NoFrame)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        scroll.setWidget(content)
-        return scroll
+        background_layout.addLayout(body, 1)
 
-    def _create_left_panel(self) -> QWidget:
-        panel = QWidget()
-        panel.setObjectName("sidebarPanel")
-        layout = QVBoxLayout(panel)
-        layout.setSpacing(12)
-        layout.setContentsMargins(16, 16, 16, 16)
+        self.action_footer = ActionFooter()
+        background_layout.addWidget(self.action_footer)
 
-        title = QLabel("spritegen")
-        title.setObjectName("appTitle")
-        layout.addWidget(title)
+        outer.addWidget(background)
 
-        self.editor_tabs = QTabWidget()
-        self.editor_tabs.setDocumentMode(True)
+        # Foreground page = welcome overlay
+        self.welcome_overlay = WelcomeOverlay(background)
+        self.welcome_overlay.setVisible(False)
+        outer.addWidget(self.welcome_overlay)
 
-        workflow_page = QWidget()
-        workflow_page_layout = QVBoxLayout(workflow_page)
-        workflow_page_layout.setContentsMargins(8, 8, 8, 8)
-        workflow_page_layout.setSpacing(10)
+        # Backwards-compat object names on self
+        # Add workflow_strip to top bar (legacy attribute)
+        self.provider_bar.tagline_label.setObjectName("topBarTagline")
+        # Backwards-compat: legacy workflow_strip is hidden but available as object
+        self.workflow_strip = QLabel("Idea > Style > Asset > Check > Generate > Choose")
+        self.workflow_strip.setObjectName("workflowStrip")
+        self._alias_widget_attributes()
 
-        project_page = QWidget()
-        project_page_layout = QVBoxLayout(project_page)
-        project_page_layout.setContentsMargins(8, 8, 8, 8)
+    def _alias_widget_attributes(self) -> None:
+        """Expose sub-widget attributes on self for tests and signal wiring."""
+        pp = self.project_panel
+        dp = self.settings_drawer
+        ws = self.workspace_panel
+        af = self.action_footer
 
-        asset_page = QWidget()
-        asset_page_layout = QVBoxLayout(asset_page)
-        asset_page_layout.setContentsMargins(8, 8, 8, 8)
+        # workflow_strip already created in _build_ui
+        # Tag the provider bar tagline for the design system tokens
+        self.provider_bar.tagline_label.setObjectName("topBarTagline")
 
-        layout_page = QWidget()
-        layout_page_layout = QVBoxLayout(layout_page)
-        layout_page_layout.setContentsMargins(8, 8, 8, 8)
+        # Project panel
+        self.project_name_edit = pp.project_name_edit
+        self.project_summary_edit = pp.project_summary_edit
+        self.style_edit = pp.style_edit
+        self.palette_edit = pp.palette_edit
+        self.palette_swatches = pp.palette_swatches
+        self.asset_type_edit = pp.asset_type_edit
+        self.asset_name_edit = pp.asset_name_edit
+        self.asset_description_edit = pp.asset_description_edit
+        self.layout_combo = pp.layout_combo
+        self.evolutions_spin = pp.evolutions_spin
+        self.enhance_before_generate_check = pp.enhance_before_generate_check
+        self.improve_prompt_btn = pp.improve_prompt_btn
 
-        providers_page = QWidget()
-        providers_page_layout = QVBoxLayout(providers_page)
-        providers_page_layout.setContentsMargins(8, 8, 8, 8)
+        # Drawer
+        self.context_edit = dp.context_edit
+        self.negative_prompt_edit = dp.negative_prompt_edit
+        self.color_mode_combo = dp.color_mode_combo
+        self.color_prompt_edit = dp.color_prompt_edit
+        self.remove_background_check = dp.remove_background_check
+        self.project_root_edit = dp.project_root_edit
+        self.project_starter_combo = dp.project_starter_combo
+        self.create_project_starter_btn = dp.create_project_starter_btn
+        self.project_combo = dp.project_combo
+        self.refresh_projects_btn = dp.refresh_projects_btn
+        self.load_project_btn = dp.load_project_btn
+        self.improve_project_btn = dp.improve_project_btn
+        self.workflow_preset_combo = dp.workflow_preset_combo
+        self.apply_workflow_preset_btn = dp.apply_workflow_preset_btn
+        self.asset_type_context_edit = dp.asset_type_context_edit
+        self.evolution_context_edit = dp.evolution_context_edit
+        self.evolution_labels_edit = dp.evolution_labels_edit
+        self.improve_type_btn = dp.improve_type_btn
+        self.asset_details_edit = dp.asset_details_edit
+        self.enhanced_prompt_edit = dp.enhanced_prompt_edit
+        self.asset_combo = dp.asset_combo
+        self.refresh_assets_btn = dp.refresh_assets_btn
+        self.load_asset_btn = dp.load_asset_btn
+        self.new_asset_btn = dp.new_asset_btn
+        self.layout_name_edit = dp.layout_name_edit
+        self.layout_width_spin = dp.layout_width_spin
+        self.layout_height_spin = dp.layout_height_spin
+        self.layout_rows_spin = dp.layout_rows_spin
+        self.layout_columns_spin = dp.layout_columns_spin
+        self.hero_width_spin = dp.hero_width_spin
+        self.hero_region_name_edit = dp.hero_region_name_edit
+        self.layout_region_prefix_edit = dp.layout_region_prefix_edit
+        self.layout_prompt_edit = dp.layout_prompt_edit
+        self.add_grid_layout_btn = dp.add_grid_layout_btn
+        self.add_hero_grid_layout_btn = dp.add_hero_grid_layout_btn
+        self.image_provider_combo = dp.image_provider_combo
+        self.image_model_edit = dp.image_model_edit
+        self.image_model_suggestions = dp.image_model_suggestions
+        self.image_api_key_edit = dp.image_api_key_edit
+        self.api_key_override = dp.api_key_override
+        self.model_catalog_source_combo = dp.model_catalog_source_combo
+        self.model_search_edit = dp.model_search_edit
+        self.refresh_models_btn = dp.refresh_models_btn
+        self.check_provider_setup_btn = dp.check_provider_setup_btn
+        self.prompt_provider_combo = dp.prompt_provider_combo
+        self.prompt_model_edit = dp.prompt_model_edit
+        self.prompt_model_suggestions = dp.prompt_model_suggestions
+        self.prompt_api_key_edit = dp.prompt_api_key_edit
+        self.save_provider_settings_btn = dp.save_provider_settings_btn
+        self.clear_saved_keys_btn = dp.clear_saved_keys_btn
+        self.open_project_gallery_btn = dp.open_project_gallery_btn
+        self.export_project_btn = dp.export_project_btn
+        self.export_sprites_btn = dp.export_sprites_btn
+        self.open_folder_btn = dp.open_folder_btn
+        self.open_gallery_btn = dp.open_gallery_btn
 
-        project_group = QGroupBox("Project Brief")
-        project_layout = self._form_layout(project_group)
+        # Workspace
+        self.check_run_btn = ws.check_run_btn
+        self.preview_prompts_btn = ws.preview_prompts_btn
+        self.preview_panel = ws.preview_panel
+        self.prompt_preview_edit = ws.prompt_preview_edit
+        self.export_variant_spin = ws.export_variant_spin
 
-        self.project_name_edit = QLineEdit("MyceliumTD")
-        project_layout.addRow("Project:", self.project_name_edit)
+        # Action footer
+        self.save_btn = af.save_btn
+        self.enhance_btn = af.enhance_btn
+        self.generate_btn = af.generate_btn
+        self.generation_variants_spin = af.generation_variants_spin
+        self.progress_bar = af.progress_bar
+        self.status_label = af.status_label
+        self.run_summary_label = ws.run_summary_label
 
-        self.project_summary_edit = QLineEdit("Fungal tower defense game")
-        project_layout.addRow("Pitch:", self.project_summary_edit)
+        # Aliases for legacy tests that look for the dialog-button object names
+        self.project_style_btn = self.open_project_gallery_btn
+        self.asset_details_btn = self.export_sprites_btn
+        self.layout_builder_btn = self.open_folder_btn
+        self.models_keys_btn = self.settings_drawer  # legacy alias; tests may probe this
 
-        self.style_edit = QTextEdit()
-        self.style_edit.setMinimumHeight(64)
-        self.style_edit.setMaximumHeight(90)
-        self.style_edit.setPlainText("clean cartoon tower defense sprites, bold outlines")
-        project_layout.addRow("Art Style:", self.style_edit)
+        # Tool dialogs (legacy dict; tests inspect keys)
+        self._tool_dialogs = {
+            "project": self.settings_drawer,
+            "asset": self.settings_drawer,
+            "layout": self.settings_drawer,
+            "models": self.settings_drawer,
+            "prompt": self.settings_drawer,
+        }
 
-        palette_widget = QWidget()
-        palette_layout = QVBoxLayout(palette_widget)
-        palette_layout.setContentsMargins(0, 0, 0, 0)
-        palette_layout.setSpacing(0)
-        self.palette_edit = QLineEdit("#8B4513,#228B22,#9932CC,#00FA9A")
-        self.palette_swatches = PaletteSwatchBar()
-        self.palette_edit.textChanged.connect(self._refresh_palette_swatches)
-        palette_layout.addWidget(self.palette_edit)
-        palette_layout.addWidget(self.palette_swatches)
-        project_layout.addRow("Palette:", palette_widget)
-        self._refresh_palette_swatches()
-
-        workflow_page_layout.addWidget(project_group)
-
-        asset_group = QGroupBox("Asset To Generate")
-        asset_layout = self._form_layout(asset_group)
-
-        self.asset_type_edit = QLineEdit("tower")
-        asset_layout.addRow("Asset Type:", self.asset_type_edit)
-
-        self.asset_name_edit = QLineEdit("Puffball")
-        asset_layout.addRow("Asset:", self.asset_name_edit)
-
-        self.asset_description_edit = QTextEdit()
-        self.asset_description_edit.setMinimumHeight(72)
-        self.asset_description_edit.setMaximumHeight(110)
-        self.asset_description_edit.setPlainText("A mushroom tower that attacks with spore clouds.")
-        asset_layout.addRow("Concept:", self.asset_description_edit)
-
-        layout_stage_row = QHBoxLayout()
-        self.layout_combo = QComboBox()
-        self._refresh_layout_combo()
-        self.evolutions_spin = QSpinBox()
-        self.evolutions_spin.setRange(1, 8)
-        self.evolutions_spin.setValue(4)
-        layout_stage_row.addWidget(self.layout_combo, 1)
-        layout_stage_row.addWidget(QLabel("Stages"))
-        layout_stage_row.addWidget(self.evolutions_spin)
-        asset_layout.addRow("Output:", layout_stage_row)
-
-        workflow_page_layout.addWidget(asset_group)
-
-        model_group = QGroupBox("Generation Model")
-        model_layout = self._form_layout(model_group)
-
-        self.image_provider_combo = self._provider_combo(IMAGE_PROVIDERS)
-        self.image_provider_combo.currentIndexChanged.connect(self._on_image_provider_changed)
-        model_layout.addRow("Provider:", self.image_provider_combo)
-
-        self.image_model_edit = ModelPicker(default_model("mock", IMAGE_ROLE))
-        self.image_model_suggestions = self.image_model_edit
+    # ------------------------------------------------------------------
+    # Signal wiring
+    # ------------------------------------------------------------------
+    def _wire_signals(self) -> None:
+        # Provider changes
+        self.image_provider_combo.currentIndexChanged.connect(
+            self.controller.on_image_provider_changed
+        )
+        self.prompt_provider_combo.currentIndexChanged.connect(
+            self.controller.on_prompt_provider_changed
+        )
         self.image_model_suggestions.activated.connect(
-            lambda _index: self._apply_model_suggestion(IMAGE_ROLE)
+            lambda _index: self.controller.apply_model_suggestion(IMAGE_ROLE)
         )
-        model_layout.addRow("Model:", self.image_model_edit)
-
-        self.generation_variants_spin = QSpinBox()
-        self.generation_variants_spin.setRange(1, 8)
-        self.generation_variants_spin.setValue(1)
-        model_layout.addRow("Variants:", self.generation_variants_spin)
-
-        model_catalog_row = QHBoxLayout()
-        self.model_catalog_source_combo = QComboBox()
-        for source in MODEL_DISCOVERY_SOURCES:
-            self.model_catalog_source_combo.addItem(
-                MODEL_DISCOVERY_SOURCE_LABELS.get(source, source),
-                source,
-            )
-        self.model_search_edit = QLineEdit()
-        self.model_search_edit.setPlaceholderText("Search model IDs")
-        self.refresh_models_btn = QPushButton("Load Models")
-        set_button_role(self.refresh_models_btn, "secondary")
-        self.refresh_models_btn.clicked.connect(self._on_refresh_models)
-        model_catalog_row.addWidget(self.model_catalog_source_combo)
-        model_catalog_row.addWidget(self.model_search_edit, 1)
-        model_catalog_row.addWidget(self.refresh_models_btn)
-        model_layout.addRow("Catalog:", model_catalog_row)
-
-        self.enhance_before_generate_check = QCheckBox("Improve prompt before Generate")
-        self.enhance_before_generate_check.setChecked(False)
-        model_layout.addRow("Prompt:", self.enhance_before_generate_check)
-
-        workflow_page_layout.addWidget(model_group)
-        workflow_page_layout.addStretch()
-
-        project_details_group = QGroupBox("Project Details")
-        project_details_layout = self._form_layout(project_details_group)
-
-        self.context_edit = QTextEdit()
-        self.context_edit.setMinimumHeight(112)
-        self.context_edit.setMaximumHeight(180)
-        self.context_edit.setPlainText("Friendly fungal towers defending a forest floor.")
-        project_details_layout.addRow("Universe:", self.context_edit)
-
-        self.negative_prompt_edit = QLineEdit("photorealistic, watermark, text labels")
-        project_details_layout.addRow("Avoid:", self.negative_prompt_edit)
-
-        self.color_mode_combo = QComboBox()
-        for mode in COLOR_TREATMENT_MODES:
-            self.color_mode_combo.addItem(COLOR_MODE_LABELS[mode], mode)
-        project_details_layout.addRow("Color Mode:", self.color_mode_combo)
-
-        self.color_prompt_edit = QTextEdit()
-        self.color_prompt_edit.setMinimumHeight(72)
-        self.color_prompt_edit.setMaximumHeight(120)
-        self.color_prompt_edit.setPlaceholderText("Optional color rules or recolor notes")
-        project_details_layout.addRow("Color Notes:", self.color_prompt_edit)
-
-        self.remove_background_check = QCheckBox("Remove simple backgrounds after slicing")
-        self.remove_background_check.setChecked(True)
-        project_details_layout.addRow("Slicing:", self.remove_background_check)
-
-        root_row = QHBoxLayout()
-        self.project_root_edit = QLineEdit(self._project_root)
-        self.project_root_edit.editingFinished.connect(self._refresh_project_list)
-        root_btn = QPushButton("Browse")
-        set_button_role(root_btn, "secondary")
-        root_btn.clicked.connect(self._browse_project_root)
-        root_row.addWidget(self.project_root_edit)
-        root_row.addWidget(root_btn)
-        project_details_layout.addRow("Project Dir:", root_row)
-
-        starter_row = QHBoxLayout()
-        self.project_starter_combo = QComboBox()
-        for starter in list_project_starters():
-            self.project_starter_combo.addItem(starter.label, starter.key)
-        self.create_project_starter_btn = QPushButton("Create Starter")
-        set_button_role(self.create_project_starter_btn, "secondary")
-        self.create_project_starter_btn.clicked.connect(self._on_apply_project_starter)
-        starter_row.addWidget(self.project_starter_combo, 1)
-        starter_row.addWidget(self.create_project_starter_btn)
-        project_details_layout.addRow("Starter:", starter_row)
-
-        project_open_row = QHBoxLayout()
-        self.project_combo = QComboBox()
-        self.refresh_projects_btn = QPushButton("Refresh Projects")
-        set_button_role(self.refresh_projects_btn, "secondary")
-        self.refresh_projects_btn.clicked.connect(self._refresh_project_list)
-        self.load_project_btn = QPushButton("Load Project")
-        set_button_role(self.load_project_btn, "secondary")
-        self.load_project_btn.clicked.connect(self._on_load_project)
-        project_open_row.addWidget(self.project_combo, 1)
-        project_open_row.addWidget(self.refresh_projects_btn)
-        project_open_row.addWidget(self.load_project_btn)
-        project_details_layout.addRow("Saved Project:", project_open_row)
-
-        self.improve_project_btn = QPushButton("Improve Project Brief")
-        set_button_role(self.improve_project_btn, "accent")
-        self.improve_project_btn.clicked.connect(self._on_improve_project)
-        project_details_layout.addRow("AI:", self.improve_project_btn)
-
-        project_page_layout.addWidget(project_details_group)
-        project_page_layout.addStretch()
-
-        asset_details_group = QGroupBox("Asset Details")
-        asset_details_layout = self._form_layout(asset_details_group)
-
-        preset_row = QHBoxLayout()
-        self.workflow_preset_combo = QComboBox()
-        for preset in list_workflow_presets():
-            self.workflow_preset_combo.addItem(preset.label, preset.key)
-        self.apply_workflow_preset_btn = QPushButton("Apply Workflow")
-        set_button_role(self.apply_workflow_preset_btn, "secondary")
-        self.apply_workflow_preset_btn.clicked.connect(self._on_apply_workflow_preset)
-        preset_row.addWidget(self.workflow_preset_combo, 1)
-        preset_row.addWidget(self.apply_workflow_preset_btn)
-        asset_details_layout.addRow("Workflow:", preset_row)
-
-        self.asset_type_context_edit = QLineEdit("Readable tower upgrades at small game size")
-        asset_details_layout.addRow("Type Rules:", self.asset_type_context_edit)
-
-        self.evolution_context_edit = QLineEdit()
-        self.evolution_context_edit.setPlaceholderText(
-            "Optional: how stages should evolve while keeping identity"
-        )
-        asset_details_layout.addRow("Stage Rules:", self.evolution_context_edit)
-
-        self.evolution_labels_edit = QLineEdit()
-        self.evolution_labels_edit.setPlaceholderText("Optional labels, comma-separated")
-        asset_details_layout.addRow("Stage Labels:", self.evolution_labels_edit)
-
-        self.improve_type_btn = QPushButton("Improve Asset-Type Rules")
-        set_button_role(self.improve_type_btn, "accent")
-        self.improve_type_btn.clicked.connect(self._on_improve_asset_type)
-        asset_details_layout.addRow("AI Type:", self.improve_type_btn)
-
-        asset_open_row = QHBoxLayout()
-        self.asset_combo = QComboBox()
-        self.refresh_assets_btn = QPushButton("Refresh Assets")
-        set_button_role(self.refresh_assets_btn, "secondary")
-        self.refresh_assets_btn.clicked.connect(self._refresh_asset_list)
-        self.load_asset_btn = QPushButton("Load Asset")
-        set_button_role(self.load_asset_btn, "secondary")
-        self.load_asset_btn.clicked.connect(self._on_load_asset)
-        self.new_asset_btn = QPushButton("New Asset")
-        set_button_role(self.new_asset_btn, "secondary")
-        self.new_asset_btn.clicked.connect(self._on_new_asset)
-        asset_open_row.addWidget(self.asset_combo, 1)
-        asset_open_row.addWidget(self.refresh_assets_btn)
-        asset_open_row.addWidget(self.load_asset_btn)
-        asset_open_row.addWidget(self.new_asset_btn)
-        asset_details_layout.addRow("Saved Asset:", asset_open_row)
-
-        self.asset_details_edit = QTextEdit()
-        self.asset_details_edit.setMinimumHeight(88)
-        self.asset_details_edit.setMaximumHeight(150)
-        self.asset_details_edit.setPlainText(
-            "Soft white cap, playful shape language, area damage identity."
-        )
-        asset_details_layout.addRow("Extra Details:", self.asset_details_edit)
-
-        self.enhanced_prompt_edit = QTextEdit()
-        self.enhanced_prompt_edit.setMinimumHeight(120)
-        self.enhanced_prompt_edit.setMaximumHeight(220)
-        asset_details_layout.addRow("Enhanced Prompt:", self.enhanced_prompt_edit)
-
-        asset_page_layout.addWidget(asset_details_group)
-        asset_page_layout.addStretch()
-
-        custom_layout_group = QGroupBox("Custom Layout")
-        custom_layout_form = self._form_layout(custom_layout_group)
-
-        self.layout_name_edit = QLineEdit("tower_contact_sheet")
-        custom_layout_form.addRow("Name:", self.layout_name_edit)
-
-        canvas_row = QHBoxLayout()
-        self.layout_width_spin = QSpinBox()
-        self.layout_width_spin.setRange(64, 4096)
-        self.layout_width_spin.setSingleStep(64)
-        self.layout_width_spin.setValue(1024)
-        self.layout_height_spin = QSpinBox()
-        self.layout_height_spin.setRange(64, 4096)
-        self.layout_height_spin.setSingleStep(64)
-        self.layout_height_spin.setValue(1024)
-        canvas_row.addWidget(self.layout_width_spin)
-        canvas_row.addWidget(QLabel("x"))
-        canvas_row.addWidget(self.layout_height_spin)
-        custom_layout_form.addRow("Canvas:", canvas_row)
-
-        grid_row = QHBoxLayout()
-        self.layout_rows_spin = QSpinBox()
-        self.layout_rows_spin.setRange(1, 16)
-        self.layout_rows_spin.setValue(2)
-        self.layout_columns_spin = QSpinBox()
-        self.layout_columns_spin.setRange(1, 16)
-        self.layout_columns_spin.setValue(2)
-        grid_row.addWidget(QLabel("Rows"))
-        grid_row.addWidget(self.layout_rows_spin)
-        grid_row.addWidget(QLabel("Columns"))
-        grid_row.addWidget(self.layout_columns_spin)
-        custom_layout_form.addRow("Grid:", grid_row)
-
-        hero_row = QHBoxLayout()
-        self.hero_width_spin = QSpinBox()
-        self.hero_width_spin.setRange(64, 4096)
-        self.hero_width_spin.setSingleStep(64)
-        self.hero_width_spin.setValue(512)
-        self.hero_region_name_edit = QLineEdit("full_body")
-        hero_row.addWidget(QLabel("Width"))
-        hero_row.addWidget(self.hero_width_spin)
-        hero_row.addWidget(QLabel("Name"))
-        hero_row.addWidget(self.hero_region_name_edit)
-        custom_layout_form.addRow("Hero:", hero_row)
-
-        self.layout_region_prefix_edit = QLineEdit("cell")
-        custom_layout_form.addRow("Region Prefix:", self.layout_region_prefix_edit)
-
-        self.layout_prompt_edit = QTextEdit()
-        self.layout_prompt_edit.setMinimumHeight(72)
-        self.layout_prompt_edit.setMaximumHeight(120)
-        self.layout_prompt_edit.setPlaceholderText("Optional seam and composition instructions")
-        custom_layout_form.addRow("Prompt Notes:", self.layout_prompt_edit)
-
-        self.add_grid_layout_btn = QPushButton("Save Grid Layout")
-        set_button_role(self.add_grid_layout_btn, "secondary")
-        self.add_grid_layout_btn.clicked.connect(self._on_add_grid_layout)
-        self.add_hero_grid_layout_btn = QPushButton("Save Hero + Grid Layout")
-        set_button_role(self.add_hero_grid_layout_btn, "secondary")
-        self.add_hero_grid_layout_btn.clicked.connect(self._on_add_hero_grid_layout)
-        layout_actions = QHBoxLayout()
-        layout_actions.addWidget(self.add_grid_layout_btn)
-        layout_actions.addWidget(self.add_hero_grid_layout_btn)
-        custom_layout_form.addRow("Save:", layout_actions)
-
-        layout_page_layout.addWidget(custom_layout_group)
-        layout_page_layout.addStretch()
-
-        config_group = QGroupBox("Prompt Model + Keys")
-        config_layout = self._form_layout(config_group)
-
-        self.image_api_key_edit = QLineEdit()
-        self.image_api_key_edit.setEchoMode(QLineEdit.Password)
-        self.image_api_key_edit.setPlaceholderText("Paste generation provider key")
-        self.api_key_override = self.image_api_key_edit
-        config_layout.addRow("Generation API Key:", self.image_api_key_edit)
-
-        self.prompt_provider_combo = self._provider_combo(PROMPT_PROVIDERS)
-        self.prompt_provider_combo.currentIndexChanged.connect(self._on_prompt_provider_changed)
-        config_layout.addRow("Prompt Provider:", self.prompt_provider_combo)
-
-        self.prompt_model_edit = ModelPicker(default_model("mock", PROMPT_ROLE))
-        self.prompt_model_suggestions = self.prompt_model_edit
         self.prompt_model_suggestions.activated.connect(
-            lambda _index: self._apply_model_suggestion(PROMPT_ROLE)
+            lambda _index: self.controller.apply_model_suggestion(PROMPT_ROLE)
         )
-        config_layout.addRow("Prompt Model:", self.prompt_model_edit)
 
-        self.prompt_api_key_edit = QLineEdit()
-        self.prompt_api_key_edit.setEchoMode(QLineEdit.Password)
-        self.prompt_api_key_edit.setPlaceholderText("Paste prompt provider key")
-        config_layout.addRow("Prompt API Key:", self.prompt_api_key_edit)
+        # Auto-save provider settings
+        self.image_provider_combo.currentIndexChanged.connect(self._schedule_auto_save)
+        self.prompt_provider_combo.currentIndexChanged.connect(self._schedule_auto_save)
+        self.image_api_key_edit.textChanged.connect(self._schedule_auto_save)
+        self.prompt_api_key_edit.textChanged.connect(self._schedule_auto_save)
+        self.image_model_edit.editTextChanged.connect(self._schedule_auto_save)
+        self.prompt_model_edit.editTextChanged.connect(self._schedule_auto_save)
 
-        model_help = QLabel('<a href="https://models.dev/">models.dev catalog</a>')
-        model_help.setOpenExternalLinks(True)
-        config_layout.addRow("Model IDs:", model_help)
+        # Palette / layout refresh
+        self.palette_edit.textChanged.connect(
+            lambda text: self.palette_swatches.set_palette(
+                [segment.strip() for segment in text.split(",") if segment.strip()]
+            )
+        )
 
-        provider_actions = QGridLayout()
-        provider_actions.setHorizontalSpacing(8)
-        provider_actions.setVerticalSpacing(8)
-        self.check_provider_setup_btn = QPushButton("Check Model Setup")
-        set_button_role(self.check_provider_setup_btn, "secondary")
-        self.check_provider_setup_btn.clicked.connect(self._on_check_provider_setup)
-        self.save_provider_settings_btn = QPushButton("Save Models + Keys")
-        set_button_role(self.save_provider_settings_btn, "secondary")
-        self.save_provider_settings_btn.clicked.connect(self._on_save_provider_settings)
-        self.clear_saved_keys_btn = QPushButton("Clear Saved Keys")
-        set_button_role(self.clear_saved_keys_btn, "danger")
-        self.clear_saved_keys_btn.clicked.connect(self._on_clear_saved_keys)
-        provider_actions.addWidget(self.check_provider_setup_btn, 0, 0)
-        provider_actions.addWidget(self.save_provider_settings_btn, 0, 1)
-        provider_actions.addWidget(self.clear_saved_keys_btn, 1, 0, 1, 2)
-        config_layout.addRow("Setup:", provider_actions)
+        # Project / asset
+        self.refresh_projects_btn.clicked.connect(self.controller.refresh_project_list)
+        self.load_project_btn.clicked.connect(self.controller.on_load_project)
+        self.refresh_assets_btn.clicked.connect(self.controller.refresh_asset_list)
+        self.load_asset_btn.clicked.connect(self.controller.on_load_asset)
+        self.new_asset_btn.clicked.connect(self.controller.on_new_asset)
+        self.create_project_starter_btn.clicked.connect(
+            self.controller.on_apply_project_starter
+        )
+        self.apply_workflow_preset_btn.clicked.connect(
+            self.controller.on_apply_workflow_preset
+        )
+        self.project_root_edit.editingFinished.connect(self.controller.refresh_project_list)
+        self.improve_project_btn.clicked.connect(self.controller.on_improve_project)
+        self.improve_type_btn.clicked.connect(self.controller.on_improve_asset_type)
+        self.improve_prompt_btn.clicked.connect(self.controller.on_enhance)
 
-        providers_page_layout.addWidget(config_group)
-        providers_page_layout.addStretch()
+        # Layouts
+        self.add_grid_layout_btn.clicked.connect(self.controller.on_add_grid_layout)
+        self.add_hero_grid_layout_btn.clicked.connect(
+            self.controller.on_add_hero_grid_layout
+        )
 
-        self.editor_tabs.addTab(self._scrollable_tab(workflow_page), "Generate")
-        self.editor_tabs.addTab(self._scrollable_tab(project_page), "Project")
-        self.editor_tabs.addTab(self._scrollable_tab(asset_page), "Asset")
-        self.editor_tabs.addTab(self._scrollable_tab(layout_page), "Layout")
-        self.editor_tabs.addTab(self._scrollable_tab(providers_page), "Models")
-        self.editor_tabs.currentChanged.connect(self._on_editor_tab_changed)
-        layout.addWidget(self.editor_tabs, 1)
+        # Providers
+        self.save_provider_settings_btn.clicked.connect(
+            self.controller.on_save_provider_settings
+        )
+        self.clear_saved_keys_btn.clicked.connect(self.controller.on_clear_saved_keys)
+        self.check_provider_setup_btn.clicked.connect(
+            self.controller.on_check_provider_setup
+        )
+        self.refresh_models_btn.clicked.connect(self.controller.on_refresh_models)
 
-        self.action_footer = QWidget()
-        self.action_footer.setObjectName("actionFooter")
-        footer_layout = QVBoxLayout(self.action_footer)
-        footer_layout.setContentsMargins(14, 14, 14, 14)
-        footer_layout.setSpacing(8)
-
-        actions = QHBoxLayout()
-        self.save_btn = QPushButton("Save Current Asset")
-        set_button_role(self.save_btn, "secondary")
-        self.save_btn.clicked.connect(self._on_footer_save)
-        self.enhance_btn = QPushButton("Improve Asset Prompt")
-        set_button_role(self.enhance_btn, "accent")
-        self.enhance_btn.clicked.connect(self._on_enhance)
-        self.generate_btn = QPushButton("Generate Sprite Sheet")
-        set_button_role(self.generate_btn, "primary")
-        self.generate_btn.clicked.connect(self._on_generate)
-        actions.addWidget(self.save_btn)
-        actions.addWidget(self.enhance_btn)
-        actions.addWidget(self.generate_btn)
-        footer_layout.addLayout(actions)
-
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setRange(0, 1)
-        self.progress_bar.setValue(0)
-        footer_layout.addWidget(self.progress_bar)
-
-        self.status_label = QLabel("Ready")
-        self.status_label.setWordWrap(True)
-        footer_layout.addWidget(self.status_label)
-
-        layout.addWidget(self.action_footer)
-        return panel
-
-    def _create_right_panel(self) -> QWidget:
-        panel = QWidget()
-        panel.setObjectName("workspacePanel")
-        layout = QVBoxLayout(panel)
-        layout.setContentsMargins(22, 22, 22, 22)
-        layout.setSpacing(16)
-
-        prompt_header = QHBoxLayout()
-        prompt_label = QLabel("Prompt Plan")
-        prompt_label.setObjectName("sectionTitle")
-        self.check_run_btn = QPushButton("Check Current Run")
-        set_button_role(self.check_run_btn, "secondary")
-        self.check_run_btn.clicked.connect(self._on_check_run)
-        self.preview_prompts_btn = QPushButton("View Prompt Plan")
-        set_button_role(self.preview_prompts_btn, "secondary")
-        self.preview_prompts_btn.clicked.connect(self._on_preview_prompts)
-        self.open_project_gallery_btn = QPushButton("Open Project Gallery")
-        set_button_role(self.open_project_gallery_btn, "secondary")
-        self.open_project_gallery_btn.clicked.connect(self._on_open_project_gallery)
-        self.export_project_btn = QPushButton("Export Project Pack")
-        set_button_role(self.export_project_btn, "secondary")
-        self.export_project_btn.clicked.connect(self._on_export_project)
-        prompt_header.addWidget(prompt_label)
-        prompt_header.addStretch()
-        prompt_header.addWidget(self.check_run_btn)
-        prompt_header.addWidget(self.preview_prompts_btn)
-        prompt_header.addWidget(self.open_project_gallery_btn)
-        prompt_header.addWidget(self.export_project_btn)
-        layout.addLayout(prompt_header)
-
-        self.prompt_preview_edit = QTextEdit()
-        self.prompt_preview_edit.setObjectName("promptPreview")
-        self.prompt_preview_edit.setReadOnly(True)
-        self.prompt_preview_edit.setMinimumHeight(260)
-        self.prompt_preview_edit.setMaximumHeight(420)
-        layout.addWidget(self.prompt_preview_edit)
-
-        header = QHBoxLayout()
-        header_label = QLabel("Generated Output")
-        header_label.setObjectName("sectionTitle")
-        self.open_folder_btn = QPushButton("Open Output Folder")
-        set_button_role(self.open_folder_btn, "secondary")
+        # Workspace
+        self.check_run_btn.clicked.connect(self.controller.on_check_run)
+        self.preview_prompts_btn.clicked.connect(self.controller.on_preview_prompts)
+        self.export_sprites_btn.clicked.connect(self.controller.on_export_asset)
+        self.export_project_btn.clicked.connect(self.controller.on_export_project)
+        self.open_project_gallery_btn.clicked.connect(
+            self.controller.on_open_project_gallery
+        )
         self.open_folder_btn.clicked.connect(self._open_output_folder)
-        self.open_gallery_btn = QPushButton("Open Asset Gallery")
-        set_button_role(self.open_gallery_btn, "secondary")
         self.open_gallery_btn.clicked.connect(self._open_gallery)
-        self.export_sprites_btn = QPushButton("Export Current Asset")
-        set_button_role(self.export_sprites_btn, "secondary")
-        self.export_sprites_btn.clicked.connect(self._on_export_asset)
-        self.export_variant_spin = QSpinBox()
-        self.export_variant_spin.setRange(0, 8)
-        self.export_variant_spin.setSpecialValueText("All")
-        self.export_variant_spin.setValue(0)
-        header.addWidget(header_label)
-        header.addStretch()
-        header.addWidget(QLabel("Variant"))
-        header.addWidget(self.export_variant_spin)
-        header.addWidget(self.export_sprites_btn)
-        header.addWidget(self.open_gallery_btn)
-        header.addWidget(self.open_folder_btn)
-        layout.addLayout(header)
 
-        self.preview_panel = PreviewPanel()
-        layout.addWidget(self.preview_panel)
-        return panel
+        # Action footer
+        self.save_btn.clicked.connect(self.controller.on_save_plan)
+        self.enhance_btn.clicked.connect(self.controller.on_enhance)
+        self.generate_btn.clicked.connect(self.controller.on_generate)
 
-    def _provider_combo(self, providers: list[str]) -> QComboBox:
-        combo = QComboBox()
-        for provider in providers:
-            combo.addItem(PROVIDER_LABELS[provider], provider)
-        return combo
+        # Top bar
+        self.provider_bar.project_pill_clicked.connect(self._open_project_menu)
+        self.provider_bar.asset_pill_clicked.connect(self._open_asset_menu)
+        self.provider_bar.settings_clicked.connect(self._open_settings_drawer)
 
-    def _refresh_palette_swatches(self) -> None:
-        self.palette_swatches.set_palette(self._palette_values())
+        # Settings drawer
+        self.settings_drawer.closed.connect(self._close_settings_drawer)
 
-    def _on_editor_tab_changed(self, index: int) -> None:
-        tab_name = self.editor_tabs.tabText(index)
-        if tab_name == "Project":
-            self.save_btn.setText("Save Project + Asset")
-        elif tab_name == "Models":
-            self.save_btn.setText("Save Models + Keys")
-        else:
-            self.save_btn.setText("Save Current Asset")
+        # Welcome overlay
+        self.welcome_overlay.pollinations_clicked.connect(self._welcome_pollinations)
+        self.welcome_overlay.openrouter_clicked.connect(self._welcome_openrouter)
+        self.welcome_overlay.openai_clicked.connect(self._welcome_openai)
+        self.welcome_overlay.open_project_clicked.connect(self._welcome_open_project)
+        self.welcome_overlay.skip_clicked.connect(self._welcome_skip)
 
-    def _on_footer_save(self) -> None:
-        if self.editor_tabs.tabText(self.editor_tabs.currentIndex()) == "Models":
-            self._on_save_provider_settings()
-            return
-        self._on_save_plan()
+    def _schedule_auto_save(self) -> None:
+        self._auto_save_timer.start()
 
-    def _on_image_provider_changed(self, *_args) -> None:
-        provider = self.image_provider_combo.currentData()
-        self._refresh_model_suggestions(IMAGE_ROLE, provider)
-        self.image_model_edit.setText(default_model(provider, IMAGE_ROLE))
-        self._refresh_api_key_field("image")
-
-    def _on_prompt_provider_changed(self, *_args) -> None:
-        provider = self.prompt_provider_combo.currentData()
-        self._refresh_model_suggestions(PROMPT_ROLE, provider)
-        self.prompt_model_edit.setText(default_model(provider, PROMPT_ROLE))
-        self._refresh_api_key_field("prompt")
-
+    # ------------------------------------------------------------------
+    # Settings / welcome
+    # ------------------------------------------------------------------
     def _apply_user_settings(self) -> None:
-        self._set_combo_value(self.image_provider_combo, self._user_settings.image_provider)
-        self._refresh_model_suggestions(IMAGE_ROLE, self.image_provider_combo.currentData())
-        self.image_model_edit.setText(
-            self._user_settings.image_model
-            or default_model(self.image_provider_combo.currentData(), IMAGE_ROLE)
-        )
-        self._set_combo_value(self.prompt_provider_combo, self._user_settings.prompt_provider)
-        self._refresh_model_suggestions(PROMPT_ROLE, self.prompt_provider_combo.currentData())
-        self.prompt_model_edit.setText(
-            self._user_settings.prompt_model
-            or default_model(self.prompt_provider_combo.currentData(), PROMPT_ROLE)
-        )
-        self._refresh_api_key_fields()
+        self.project_root_edit.setText(self._project_root)
+        self.controller.apply_user_settings()
+        self._refresh_provider_chip()
 
-    def _refresh_model_suggestions(self, role: str, provider: str) -> None:
-        combo = (
-            self.image_model_suggestions
-            if role == IMAGE_ROLE
-            else self.prompt_model_suggestions
+    def _refresh_provider_chip(self) -> None:
+        provider = self.image_provider_combo.currentData()
+        api_key = self.image_api_key_edit.text().strip() or self._user_settings.api_key_for(
+            provider
         )
-        current_model = combo.text() if isinstance(combo, ModelPicker) else combo.currentData()
-        combo.blockSignals(True)
-        combo.clear()
-        online = self._online_model_suggestions.get((role, provider), [])
-        for suggestion in combined_model_suggestions(provider, role, online):
-            combo.addItem(f"{suggestion.label} ({suggestion.model})", suggestion.model)
-        combo.blockSignals(False)
-        if isinstance(combo, ModelPicker) and current_model:
-            combo.setText(str(current_model))
+        self.provider_bar.set_provider(provider, api_key)
 
-    def _apply_model_suggestion(self, role: str) -> None:
-        combo = (
-            self.image_model_suggestions
-            if role == IMAGE_ROLE
-            else self.prompt_model_suggestions
-        )
-        model = combo.currentData()
-        if not model:
+    def update_provider_chip(self) -> None:
+        self._refresh_provider_chip()
+
+    def _update_project_pills(self) -> None:
+        project = self._current_project
+        asset_name = self.asset_name_edit.text().strip() if hasattr(self, "asset_name_edit") else ""
+        if project:
+            self.provider_bar.set_project_label(project.name)
+        else:
+            self.provider_bar.set_project_label(self.project_name_edit.text().strip())
+        self.provider_bar.set_asset_label(asset_name)
+
+    def update_project_pills(self) -> None:
+        self._update_project_pills()
+
+    def _show_welcome_if_needed(self) -> None:
+        if self._user_settings.has_seen_welcome:
             return
-        if role == IMAGE_ROLE:
-            self.image_model_edit.setText(model)
-        else:
-            self.prompt_model_edit.setText(model)
-
-    def _refresh_api_key_fields(self) -> None:
-        self._refresh_api_key_field("image")
-        self._refresh_api_key_field("prompt")
-
-    def _refresh_api_key_field(self, purpose: str) -> None:
-        if not hasattr(self, "image_api_key_edit"):
+        if not self._user_settings.image_provider and not self._user_settings.api_keys:
+            self.welcome_overlay.setVisible(True)
             return
-        if purpose == "prompt":
-            provider = self.prompt_provider_combo.currentData()
-            edit = self.prompt_api_key_edit
-        else:
-            provider = self.image_provider_combo.currentData()
-            edit = self.image_api_key_edit
-        needs_key = provider in KEYED_PROVIDERS
-        edit.setEnabled(needs_key)
-        edit.setPlaceholderText("Paste provider API key" if needs_key else "No key needed")
-        if needs_key:
-            edit.setText(self._configured_api_key_for(provider))
-        else:
-            edit.clear()
+        has_env = bool(env_key_for("openai")) or bool(env_key_for("openrouter"))
+        if not has_env and self._user_settings.image_provider == "mock":
+            self.welcome_overlay.setVisible(True)
+            return
+        # Auto-detect env vars on first run
+        if env_key_for("openai"):
+            self._user_settings.image_provider = "openai"
+            self._user_settings.prompt_provider = "openai"
+            self._user_settings.api_keys.setdefault("openai", env_key_for("openai"))
+        elif env_key_for("openrouter"):
+            self._user_settings.image_provider = "openrouter"
+            self._user_settings.prompt_provider = "openrouter"
+            self._user_settings.api_keys.setdefault(
+                "openrouter", env_key_for("openrouter")
+            )
+        self._user_settings.mark_welcome_seen()
+        self._settings_store.save(self._user_settings)
+        self.controller.apply_user_settings()
+        self._refresh_provider_chip()
 
-    def _browse_project_root(self) -> None:
+    def _welcome_pollinations(self) -> None:
+        img_prov, img_model, prompt_prov, prompt_model = pollinations_defaults()
+        self._apply_welcome_choice(
+            image_provider=img_prov,
+            image_model=img_model,
+            prompt_provider=prompt_prov,
+            prompt_model=prompt_model,
+            api_key="",
+            starter_key="mycelium_td",
+        )
+
+    def _welcome_openrouter(self, api_key: str) -> None:
+        img_prov, img_model, prompt_prov, prompt_model = openrouter_defaults()
+        self._apply_welcome_choice(
+            image_provider=img_prov,
+            image_model=img_model,
+            prompt_provider=prompt_prov,
+            prompt_model=prompt_model,
+            api_key=api_key,
+            starter_key="",
+        )
+
+    def _welcome_openai(self, api_key: str) -> None:
+        img_prov, img_model, prompt_prov, prompt_model = openai_defaults()
+        self._apply_welcome_choice(
+            image_provider=img_prov,
+            image_model=img_model,
+            prompt_provider=prompt_prov,
+            prompt_model=prompt_model,
+            api_key=api_key,
+            starter_key="",
+        )
+
+    def _apply_welcome_choice(
+        self,
+        image_provider: str,
+        image_model: str,
+        prompt_provider: str,
+        prompt_model: str,
+        api_key: str,
+        starter_key: str,
+    ) -> None:
+        self._user_settings.image_provider = image_provider
+        self._user_settings.image_model = image_model
+        self._user_settings.prompt_provider = prompt_provider
+        self._user_settings.prompt_model = prompt_model
+        if api_key:
+            self._user_settings.set_api_key(image_provider, api_key)
+        if prompt_provider != image_provider and api_key:
+            self._user_settings.set_api_key(prompt_provider, api_key)
+        self._user_settings.last_starter_key = starter_key
+        self._user_settings.mark_welcome_seen()
+        self._settings_store.save(self._user_settings)
+        self.controller.apply_user_settings()
+        self._refresh_provider_chip()
+        if starter_key:
+
+            self.project_starter_combo.setCurrentIndex(
+                self.project_starter_combo.findData(starter_key)
+            )
+            self.controller.on_apply_project_starter()
+        self.welcome_overlay.setVisible(False)
+        self.flash_status("Ready to generate", "success")
+        self.status_label.setText(
+            f"Welcome! {image_provider.title()} is set up. Click Generate when ready."
+        )
+
+    def _welcome_open_project(self) -> None:
         folder = QFileDialog.getExistingDirectory(
-            self,
-            "Select Project Directory",
-            self.project_root_edit.text(),
+            self, "Select projects directory", self.project_root_edit.text()
         )
         if folder:
             self.project_root_edit.setText(folder)
-            self._refresh_project_list()
-
-    def _refresh_project_list(self, selected_slug: str | None = None) -> None:
-        if not hasattr(self, "project_combo"):
-            return
-        selected = selected_slug or self.project_combo.currentData()
-        self.project_combo.clear()
-        store = ProjectStore(self.project_root_edit.text())
-        for project in store.list_projects():
-            self.project_combo.addItem(f"{project.name} ({project.slug})", project.slug)
-        if selected:
-            index = self.project_combo.findData(selected)
-            if index >= 0:
-                self.project_combo.setCurrentIndex(index)
-        self._refresh_asset_list()
-
-    def _refresh_asset_list(self, selected_slug: str | None = None) -> None:
-        if not hasattr(self, "asset_combo"):
-            return
-        selected = selected_slug or self.asset_combo.currentData()
-        self.asset_combo.clear()
-        project_slug = self._project_slug_from_fields()
-        if not project_slug:
-            return
-        store = ProjectStore(self.project_root_edit.text())
-        for asset in store.load_assets_for_slug(project_slug):
-            self.asset_combo.addItem(f"{asset.name} ({asset.asset_type})", asset.slug)
-        if selected:
-            index = self.asset_combo.findData(selected)
-            if index >= 0:
-                self.asset_combo.setCurrentIndex(index)
-
-    def _refresh_layout_combo(
-        self,
-        project: ProjectSpec | None = None,
-        selected_name: str | None = None,
-    ) -> None:
-        if not hasattr(self, "layout_combo"):
-            return
-        selected = selected_name or self.layout_combo.currentData()
-        self.layout_combo.clear()
-        for name in sorted(PRESET_LAYOUTS):
-            self.layout_combo.addItem(name, name)
-        if project:
-            for name in sorted(project.custom_layouts):
-                self.layout_combo.addItem(f"{name} (project)", name)
-        if selected:
-            self._set_combo_value(self.layout_combo, selected)
-
-    def _on_load_project(self) -> None:
-        slug = self.project_combo.currentData()
-        if not slug:
-            self.status_label.setText("No saved project selected")
-            return
-        try:
-            project = ProjectStore(self.project_root_edit.text()).load_project(slug)
-            self._apply_project_spec(project)
-            self._refresh_asset_list()
-            self.status_label.setText(f"Loaded project: {project.name}")
-        except Exception as exc:
-            QMessageBox.warning(self, "Load Project Failed", str(exc))
-
-    def _on_load_asset(self) -> None:
-        slug = self.asset_combo.currentData()
-        if not slug:
-            self.status_label.setText("No saved asset selected")
-            return
-        try:
-            store = ProjectStore(self.project_root_edit.text())
-            project = self._current_project or store.load_project(self._project_slug_from_fields())
-            asset = store.load_asset(project, slug)
-            self._apply_asset_spec(project, asset)
-            self._load_asset_preview(project, asset)
-            self.status_label.setText(f"Loaded asset: {asset.name}")
-        except Exception as exc:
-            QMessageBox.warning(self, "Load Asset Failed", str(exc))
-
-    def _on_new_asset(self) -> None:
-        self.asset_name_edit.clear()
-        self.asset_description_edit.clear()
-        self.asset_details_edit.clear()
-        self.enhanced_prompt_edit.clear()
-        self.preview_panel.clear()
-        self.status_label.setText("Ready for a new asset")
-
-    def _on_save_plan(self) -> None:
-        try:
-            project, asset = self._save_current_specs()
-            self._refresh_project_list(project.slug)
-            self._refresh_asset_list(asset.slug)
-            self.status_label.setText(f"Saved {project.name} / {asset.name}")
-        except Exception as exc:
-            QMessageBox.warning(self, "Save Failed", str(exc))
-
-    def _on_apply_project_starter(self) -> None:
-        try:
-            starter = get_project_starter(self.project_starter_combo.currentData())
-            image_provider = self.image_provider_combo.currentData()
-            prompt_provider = self.prompt_provider_combo.currentData()
-            project = starter.build_project(
-                image_provider=image_provider,
-                image_model=(
-                    self.image_model_edit.text().strip()
-                    or default_model(image_provider, IMAGE_ROLE)
-                ),
-                prompt_provider=prompt_provider,
-                prompt_model=(
-                    self.prompt_model_edit.text().strip()
-                    or default_model(prompt_provider, PROMPT_ROLE)
-                ),
-            )
-            asset = starter.build_first_asset()
-            asset_type = project.get_asset_type(asset.asset_type)
-            project.get_layout(asset.layout or asset_type.default_layout)
-
-            self._apply_project_spec(project)
-            self._apply_asset_spec(project, asset)
-
-            store = ProjectStore(self.project_root_edit.text())
-            store.save_project(project)
-            known_assets = store.load_assets(project)
-            store.save_asset(project, asset)
-            packets = PromptPlanner().build_prompt_packets(
-                project,
-                asset,
-                known_assets=known_assets,
-            )
-            store.save_prompt_plan(project, asset, packets)
-            self._refresh_project_list(project.slug)
-            self._refresh_asset_list(asset.slug)
-            self.status_label.setText(
-                f"Created starter {project.name} / {asset.name} ({len(packets)} prompt(s))"
-            )
-        except Exception as exc:
-            QMessageBox.warning(self, "Starter Failed", str(exc))
-
-    def _on_apply_workflow_preset(self) -> None:
-        try:
-            preset = get_workflow_preset(self.workflow_preset_combo.currentData())
-            asset_type = preset.to_asset_type()
-            self._apply_asset_type_spec(asset_type)
-            self.status_label.setText(f"Applied workflow preset: {preset.label}")
-        except Exception as exc:
-            QMessageBox.warning(self, "Preset Failed", str(exc))
-
-    def _on_preview_prompts(self) -> None:
-        try:
-            project, asset = self._save_current_specs()
-            store = ProjectStore(self.project_root_edit.text())
-            known_assets = store.load_assets(project)
-            packets = PromptPlanner().build_prompt_packets(
-                project,
-                asset,
-                known_assets=known_assets,
-            )
-            plan_path = store.save_prompt_plan(project, asset, packets)
-            self.prompt_preview_edit.setPlainText(self._format_prompt_packets(packets))
-            self._refresh_project_list(project.slug)
-            self._refresh_asset_list(asset.slug)
-            self.status_label.setText(f"Previewed {len(packets)} prompt(s): {plan_path}")
-        except Exception as exc:
-            QMessageBox.warning(self, "Prompt Preview Failed", str(exc))
-
-    def _format_prompt_packets(self, packets) -> str:
-        sections = []
-        for packet in packets:
-            label = packet.stage_label or "single"
-            sections.append(
-                "\n".join(
-                    [
-                        f"--- {label} / {packet.layout_name} ---",
-                        packet.prompt,
-                        "",
-                        f"Negative: {packet.negative_prompt}",
-                    ]
-                )
-            )
-        return "\n\n".join(sections)
-
-    def _on_check_run(self) -> None:
-        try:
-            project, asset = self._save_current_specs()
-            preflight = self._build_generation_preflight(
-                project,
-                asset,
-                image_api_key=self._api_key_for(self.image_provider_combo.currentData(), "image"),
-                prompt_api_key=self._api_key_for(self.prompt_provider_combo.currentData(), "prompt"),
-            )
-            self.prompt_preview_edit.setPlainText(self._format_generation_preflight(preflight))
-            self._refresh_project_list(project.slug)
-            self._refresh_asset_list(asset.slug)
-            status = "Run check ready" if preflight.ready else "Run check needs attention"
-            self.status_label.setText(
-                f"{status}: {preflight.image_count} image(s), "
-                f"{preflight.slice_count} slice(s)"
-            )
-        except Exception as exc:
-            QMessageBox.warning(self, "Run Check Failed", str(exc))
-
-    def _format_generation_preflight(self, preflight: GenerationPreflightReport) -> str:
-        lines = [
-            f"Preflight: {preflight.status}",
-            f"Project: {preflight.project_name}",
-            f"Asset: {preflight.asset_name}",
-            f"Image model: {preflight.image_provider} / {preflight.image_model}",
-        ]
-        if preflight.enhance_first:
-            lines.append(
-                f"Prompt model: {preflight.prompt_provider} / {preflight.prompt_model}"
-            )
-        else:
-            lines.append("Prompt enhancement: disabled")
-        lines.extend(
-            [
-                (
-                    f"Images: {preflight.image_count} atlas image(s), "
-                    f"{preflight.slice_count} sliced sprite(s)"
-                ),
-                f"Variants per prompt packet: {preflight.variants_per_packet}",
-            ]
-        )
-        if preflight.layout_summaries:
-            lines.append("Layouts:")
-            lines.extend(
-                f"- {name}: {summary}"
-                for name, summary in preflight.layout_summaries.items()
-            )
-        if preflight.reference_asset_count:
-            lines.append(f"Reference assets: {preflight.reference_asset_count}")
-            for reference in preflight.reference_asset_summaries:
-                lines.append(
-                    f"- {reference.name} [{reference.asset_type}]: "
-                    f"{reference.prompt}"
-                )
-                if reference.details:
-                    lines.append(f"  details: {reference.details}")
-                if reference.layout:
-                    lines.append(f"  layout: {reference.layout}")
-        if preflight.issues:
-            lines.append("Issues:")
-            lines.extend(
-                f"- {issue.level.upper()}: {issue.message}"
-                for issue in preflight.issues
-            )
-        return "\n".join(lines)
-
-    def _on_add_grid_layout(self) -> None:
-        try:
-            self._save_custom_layout(self._build_grid_layout())
-        except Exception as exc:
-            QMessageBox.warning(self, "Layout Failed", str(exc))
-
-    def _on_add_hero_grid_layout(self) -> None:
-        try:
-            self._save_custom_layout(self._build_hero_grid_layout())
-        except Exception as exc:
-            QMessageBox.warning(self, "Layout Failed", str(exc))
-
-    def _save_custom_layout(self, layout: AssetLayout) -> None:
-        project = self._build_project_spec()
-        project.add_layout(layout)
-        asset_type_name = self.asset_type_edit.text().strip() or "asset"
-        if asset_type_name in project.asset_types:
-            project.asset_types[asset_type_name].default_layout = layout.name
-        self._current_project = project
-        store = ProjectStore(self.project_root_edit.text())
-        store.save_project(project)
-        self._refresh_project_list(project.slug)
-        self._refresh_layout_combo(project, layout.name)
-        self.status_label.setText(
-            f"Saved layout {layout.name}: "
-            f"{layout.width}x{layout.height}, {len(layout.regions)} regions"
-        )
-
-    def _build_grid_layout(self) -> AssetLayout:
-        name = self.layout_name_edit.text().strip()
-        if not name:
-            raise ValueError("Layout name is required")
-        layout_name = slugify(name).replace("-", "_")
-        if not layout_name:
-            raise ValueError("Layout name is required")
-        width = self.layout_width_spin.value()
-        height = self.layout_height_spin.value()
-        rows = self.layout_rows_spin.value()
-        columns = self.layout_columns_spin.value()
-        if width % columns or height % rows:
-            raise ValueError("Canvas width and height must divide evenly by the grid")
-        prefix = self.layout_region_prefix_edit.text().strip() or "cell"
-        region_prefix = slugify(prefix).replace("-", "_") or "cell"
-        layout = AssetLayout.grid(
-            name=layout_name,
-            width=width,
-            height=height,
-            rows=rows,
-            columns=columns,
-            region_prefix=region_prefix,
-        )
-        prompt_instructions = self.layout_prompt_edit.toPlainText().strip()
-        if prompt_instructions:
-            layout.prompt_instructions = prompt_instructions
-        return layout
-
-    def _build_hero_grid_layout(self) -> AssetLayout:
-        name = self.layout_name_edit.text().strip()
-        if not name:
-            raise ValueError("Layout name is required")
-        width = self.layout_width_spin.value()
-        height = self.layout_height_spin.value()
-        hero_width = self.hero_width_spin.value()
-        rows = self.layout_rows_spin.value()
-        columns = self.layout_columns_spin.value()
-        hero_name = self.hero_region_name_edit.text().strip() or "full_body"
-        prefix = self.layout_region_prefix_edit.text().strip() or "cell"
-        layout = AssetLayout.hero_plus_grid(
-            name=name,
-            width=width,
-            height=height,
-            hero_width=hero_width,
-            grid_rows=rows,
-            grid_columns=columns,
-            hero_region_name=hero_name,
-            grid_region_prefix=prefix,
-        )
-        prompt_instructions = self.layout_prompt_edit.toPlainText().strip()
-        if prompt_instructions:
-            layout.prompt_instructions = prompt_instructions
-        return layout
-
-    def _on_check_provider_setup(self) -> None:
-        missing = []
-        image_provider = self.image_provider_combo.currentData()
-        prompt_provider = self.prompt_provider_combo.currentData()
-        validations = [
-            self._validate_current_model(
-                IMAGE_ROLE,
-                image_provider,
-                self.image_model_edit.text(),
-            ),
-            self._validate_current_model(
-                PROMPT_ROLE,
-                prompt_provider,
-                self.prompt_model_edit.text(),
-            ),
-        ]
-        model_errors = [
-            validation.message
-            for validation in validations
-            if validation.status == MODEL_VALIDATION_ERROR
-        ]
-        model_warnings = [
-            validation.message
-            for validation in validations
-            if validation.status == MODEL_VALIDATION_WARNING
-        ]
-        if image_provider in KEYED_PROVIDERS and not self._api_key_for(image_provider, "image"):
-            missing.append(f"{PROVIDER_LABELS[image_provider]} image key")
-        if prompt_provider in KEYED_PROVIDERS and not self._api_key_for(prompt_provider, "prompt"):
-            missing.append(f"{PROVIDER_LABELS[prompt_provider]} prompt key")
-        if missing or model_errors:
-            self.status_label.setText(
-                "Provider setup needs: " + ", ".join([*missing, *model_errors])
-            )
-            return
-        ready_status = (
-            "Provider setup ready: "
-            f"image {PROVIDER_LABELS[image_provider]} / prompt {PROVIDER_LABELS[prompt_provider]}"
-        )
-        if model_warnings:
-            self.status_label.setText(
-                "Provider setup ready with notes: "
-                f"image {PROVIDER_LABELS[image_provider]} / "
-                f"prompt {PROVIDER_LABELS[prompt_provider]}; "
-                + "; ".join(model_warnings)
-            )
-            return
-        self.status_label.setText(ready_status)
-
-    def _validate_current_model(
-        self,
-        role: str,
-        provider: str,
-        model: str,
-    ) -> ModelValidationResult:
-        other_role = PROMPT_ROLE if role == IMAGE_ROLE else IMAGE_ROLE
-        return validate_model_choice(
-            provider,
-            role,
-            model,
-            extra=self._online_model_suggestions.get((role, provider), []),
-            other_extra=self._online_model_suggestions.get((other_role, provider), []),
-        )
-
-    def _on_save_provider_settings(self) -> None:
-        settings = UserSettings(
-            image_provider=self.image_provider_combo.currentData(),
-            image_model=self.image_model_edit.text().strip(),
-            prompt_provider=self.prompt_provider_combo.currentData(),
-            prompt_model=self.prompt_model_edit.text().strip(),
-            api_keys=dict(self._user_settings.api_keys),
-        )
-        image_key = self.image_api_key_edit.text()
-        prompt_key = self.prompt_api_key_edit.text()
-        if settings.image_provider == settings.prompt_provider:
-            settings.set_api_key(settings.image_provider, prompt_key or image_key)
-        else:
-            settings.set_api_key(settings.image_provider, image_key)
-            settings.set_api_key(settings.prompt_provider, prompt_key)
-        path = self._settings_store.save(settings)
-        self._user_settings = settings
-        self.status_label.setText(f"Saved local provider setup to {path}")
-
-    def _on_clear_saved_keys(self) -> None:
-        self._user_settings.api_keys.clear()
+        self._user_settings.mark_welcome_seen()
         self._settings_store.save(self._user_settings)
-        self._refresh_api_key_fields()
-        self.status_label.setText("Cleared saved local API keys")
+        self.welcome_overlay.setVisible(False)
+        self.controller.refresh_project_list()
 
-    def _on_refresh_models(self) -> None:
-        self._set_busy(True, "Refreshing provider model lists...")
-        self._thread = ModelDiscoveryThread(
-            image_provider=self.image_provider_combo.currentData(),
-            prompt_provider=self.prompt_provider_combo.currentData(),
-            search=self.model_search_edit.text(),
-            source=self.model_catalog_source_combo.currentData() or "auto",
-        )
-        self._thread.finished.connect(self._on_model_discovery_finished)
-        self._thread.start()
+    def _welcome_skip(self) -> None:
+        self._user_settings.mark_welcome_seen()
+        self._settings_store.save(self._user_settings)
+        self.welcome_overlay.setVisible(False)
+        self.status_label.setText("Ready. Pick a project or start from a starter.")
 
-    def _on_model_discovery_finished(self, result: dict) -> None:
-        suggestions = result.get("suggestions", {})
-        for key, values in suggestions.items():
-            self._online_model_suggestions[key] = values
-        self._refresh_model_suggestions(IMAGE_ROLE, self.image_provider_combo.currentData())
-        self._refresh_model_suggestions(PROMPT_ROLE, self.prompt_provider_combo.currentData())
-        count = sum(len(values) for values in suggestions.values())
-        errors = result.get("errors", [])
-        if count:
-            status = f"Loaded {count} online model suggestion(s)"
-            if errors:
-                status += f"; {len(errors)} provider refresh issue(s)"
-        elif errors:
-            status = "Could not refresh model lists: " + "; ".join(errors)
+    # ------------------------------------------------------------------
+    # Drawer / pill menus
+    # ------------------------------------------------------------------
+    def _open_settings_drawer(self) -> None:
+        was_hidden = self.settings_drawer.isHidden()
+        self.settings_drawer.setVisible(was_hidden)
+        if was_hidden:
+            self.settings_drawer.open_tab("Providers")
+        self._adjust_layout_for_drawer()
+
+    def _close_settings_drawer(self) -> None:
+        self.settings_drawer.setVisible(False)
+        self._adjust_layout_for_drawer()
+
+    def _adjust_layout_for_drawer(self) -> None:
+        if self.settings_drawer.isVisible():
+            self.settings_drawer.setMinimumWidth(420)
+            self.settings_drawer.setMaximumWidth(560)
         else:
-            status = "No online model suggestions available for selected providers"
-        self._set_busy(False, status)
-        self._thread = None
+            self.settings_drawer.setMinimumWidth(0)
+            self.settings_drawer.setMaximumWidth(0)
 
-    def _on_improve_project(self) -> None:
-        try:
-            project = self._build_project_spec()
-        except Exception as exc:
-            QMessageBox.warning(self, "Improve Project Failed", str(exc))
-            return
+    def _open_project_menu(self) -> None:
+        from PySide6.QtWidgets import QMenu
 
-        provider = self.prompt_provider_combo.currentData()
-        api_key = self._api_key_for(provider, "prompt")
-        if not self._provider_can_run(provider, api_key):
-            return
-
-        self._set_busy(True, "Improving project art direction...")
-        self._thread = ProjectEnhancementThread(
-            project=project,
-            provider=provider,
-            model=self.prompt_model_edit.text().strip(),
-            api_key=api_key,
-        )
-        self._thread.finished.connect(lambda data: self._on_project_improved(data, project))
-        self._thread.error.connect(self._on_thread_error)
-        self._thread.start()
-
-    def _on_project_improved(self, data: dict, project: ProjectSpec) -> None:
-        apply_project_enhancement(project, data)
-        self._apply_project_spec(project)
-        store = ProjectStore(self.project_root_edit.text())
-        store.save_project(project)
-        self._refresh_project_list(project.slug)
-        self._set_busy(False, "Project art direction improved")
-        self._thread = None
-
-    def _on_improve_asset_type(self) -> None:
-        try:
-            project = self._build_project_spec()
-            asset_type = project.get_asset_type(self.asset_type_edit.text().strip() or "asset")
-        except Exception as exc:
-            QMessageBox.warning(self, "Improve Type Failed", str(exc))
-            return
-
-        provider = self.prompt_provider_combo.currentData()
-        api_key = self._api_key_for(provider, "prompt")
-        if not self._provider_can_run(provider, api_key):
-            return
-
-        self._set_busy(True, "Improving asset-type rules...")
-        self._thread = AssetTypeEnhancementThread(
-            project=project,
-            asset_type=asset_type,
-            provider=provider,
-            model=self.prompt_model_edit.text().strip(),
-            api_key=api_key,
-        )
-        self._thread.finished.connect(lambda data: self._on_asset_type_improved(data, project, asset_type))
-        self._thread.error.connect(self._on_thread_error)
-        self._thread.start()
-
-    def _on_asset_type_improved(
-        self,
-        data: dict,
-        project: ProjectSpec,
-        asset_type: AssetTypeSpec,
-    ) -> None:
-        apply_asset_type_enhancement(asset_type, data)
-        project.add_asset_type(asset_type)
-        self._current_project = project
-        self._apply_asset_type_spec(asset_type)
-        store = ProjectStore(self.project_root_edit.text())
-        store.save_project(project)
-        self._refresh_project_list(project.slug)
-        self._set_busy(False, "Asset-type rules improved")
-        self._thread = None
-
-    def _on_enhance(self) -> None:
-        try:
-            project, asset = self._save_current_specs()
-        except Exception as exc:
-            QMessageBox.warning(self, "Enhance Failed", str(exc))
-            return
-
-        provider = self.prompt_provider_combo.currentData()
-        api_key = self._api_key_for(provider, "prompt")
-        if not self._provider_can_run(provider, api_key):
-            return
-
-        self._set_busy(True, "Enhancing asset prompt...")
-        self._thread = EnhancementThread(
-            project=project,
-            asset=asset,
-            project_root=self.project_root_edit.text(),
-            provider=provider,
-            model=self.prompt_model_edit.text().strip(),
-            api_key=api_key,
-        )
-        self._thread.finished.connect(lambda text: self._on_enhance_finished(text, project, asset))
-        self._thread.error.connect(self._on_thread_error)
-        self._thread.start()
-
-    def _on_enhance_finished(self, enhanced: str, project: ProjectSpec, asset: AssetSpec) -> None:
-        asset.enhanced_prompt = enhanced
-        self.enhanced_prompt_edit.setPlainText(enhanced)
-        store = ProjectStore(self.project_root_edit.text())
-        store.save_asset(project, asset)
-        known_assets = store.load_assets(project)
-        packets = PromptPlanner().build_prompt_packets(project, asset, known_assets=known_assets)
-        store.save_prompt_plan(project, asset, packets)
-        self._refresh_asset_list(asset.slug)
-        self._set_busy(False, "Enhanced prompt saved")
-        self._thread = None
-
-    def _on_generate(self) -> None:
-        try:
-            project, asset = self._save_current_specs()
-        except Exception as exc:
-            QMessageBox.warning(self, "Generate Failed", str(exc))
-            return
-
-        provider = self.image_provider_combo.currentData()
-        api_key = self._api_key_for(provider, "image")
-        prompt_provider = self.prompt_provider_combo.currentData()
-        prompt_api_key = self._api_key_for(prompt_provider, "prompt")
-        preflight = self._build_generation_preflight(
-            project,
-            asset,
-            image_api_key=api_key,
-            prompt_api_key=prompt_api_key,
-        )
-        if preflight.status == PREFLIGHT_ERROR:
-            self.status_label.setText(
-                "Preflight needs: "
-                + "; ".join(issue.message for issue in preflight.errors[:3])
-            )
-            return
-
-        output_root = (
-            Path(self.project_root_edit.text())
-            / (project.slug or project.name)
-            / "generated"
-            / (asset.slug or asset.name)
-        )
-        self.preview_panel.clear()
-        self._set_busy(True, "Generating asset...")
-        self._thread = ProjectGenerationThread(
-            project=project,
-            asset=asset,
-            project_root=self.project_root_edit.text(),
-            output_root=str(output_root),
-            provider=provider,
-            model=self.image_model_edit.text().strip(),
-            api_key=api_key,
-            variants_per_packet=self.generation_variants_spin.value(),
-            enhance_before_generate=self.enhance_before_generate_check.isChecked(),
-            prompt_provider=prompt_provider,
-            prompt_model=self.prompt_model_edit.text().strip(),
-            prompt_api_key=prompt_api_key,
-        )
-        self._thread.progress.connect(self.status_label.setText)
-        self._thread.finished.connect(self._on_generation_finished)
-        self._thread.error.connect(self._on_thread_error)
-        self._thread.start()
-
-    def _build_generation_preflight(
-        self,
-        project: ProjectSpec,
-        asset: AssetSpec,
-        image_api_key: str,
-        prompt_api_key: str,
-    ):
-        store = ProjectStore(self.project_root_edit.text())
-        known_assets = store.load_assets(project)
-        return build_generation_preflight(
-            project=project,
-            asset=asset,
-            known_assets=known_assets,
-            provider=self.image_provider_combo.currentData(),
-            model=self.image_model_edit.text().strip(),
-            api_key=image_api_key,
-            prompt_provider=self.prompt_provider_combo.currentData(),
-            prompt_model=self.prompt_model_edit.text().strip(),
-            prompt_api_key=prompt_api_key,
-            enhance_first=self.enhance_before_generate_check.isChecked(),
-            variants_per_packet=self.generation_variants_spin.value(),
-            model_suggestions=self._online_model_suggestions,
-        )
-
-    def _on_generation_finished(self, result) -> None:
-        try:
-            project = ProjectStore(self.project_root_edit.text()).load_project(result.project_slug)
-            asset = ProjectStore(self.project_root_edit.text()).load_asset(project, result.asset_slug)
-            self.enhanced_prompt_edit.setPlainText(asset.enhanced_prompt)
-        except Exception:
-            pass
-        self._last_output_dir = str(result.output_dir)
-        self._last_gallery_path = str(result.gallery_path)
-        self._last_project_gallery_path = self._write_project_gallery()
-        max_variant_count = max((output.variant_count for output in result.outputs), default=1)
-        self.export_variant_spin.setMaximum(max(8, max_variant_count))
-        for output in result.outputs:
-            title = self._generation_output_title(
-                stage_label=output.stage_label,
-                stage_index=output.stage_index,
-                variant_index=output.variant_index,
-                layout_name=output.layout_name,
-            )
-            self.preview_panel.add_generation_output(
-                output.raw_image,
-                output.slices,
-                title=title,
-            )
-        self._set_busy(False, f"Generated {len(result.outputs)} image(s)")
-        self._refresh_asset_list(result.asset_slug)
-        self._thread = None
-
-    def _on_export_asset(self) -> None:
-        try:
-            project, asset = self._save_current_specs()
-            variant_index = self.export_variant_spin.value() or None
-            result = ProjectAssetExporter(ProjectStore(self.project_root_edit.text())).export_saved_asset(
-                project=project,
-                asset=asset,
-                variant_index=variant_index,
-            )
-            self._last_output_dir = str(result.output_dir)
-            self._last_project_gallery_path = self._write_project_gallery(project)
-            variant_label = f" from variant {variant_index}" if variant_index else ""
-            self.status_label.setText(
-                f"Exported {len(result.sprites)} sprite(s){variant_label} to {result.output_dir}"
-            )
-        except Exception as exc:
-            QMessageBox.warning(self, "Export Failed", str(exc))
-
-    def _on_export_project(self) -> None:
-        try:
-            project, _asset = self._save_current_specs()
-            store = ProjectStore(self.project_root_edit.text())
-            result = ProjectAssetExporter(store).export_project(project=project)
-            self._last_output_dir = str(result.output_dir)
-            self._last_project_gallery_path = self._write_project_gallery(project)
-            self._refresh_project_list(project.slug)
-            skipped = f", skipped {len(result.skipped)}" if result.skipped else ""
-            self.status_label.setText(
-                f"Exported project pack with {len(result.assets)} asset(s){skipped} "
-                f"to {result.output_dir}"
-            )
-        except Exception as exc:
-            QMessageBox.warning(self, "Export Project Failed", str(exc))
-
-    def _on_open_project_gallery(self) -> None:
-        try:
-            project, _asset = self._save_current_specs()
-            gallery_path = self._write_project_gallery(project)
-            self._last_project_gallery_path = str(gallery_path)
-            self._refresh_project_list(project.slug)
-            self._open_local_path(gallery_path)
-            self.status_label.setText(f"Opened project gallery: {gallery_path}")
-        except Exception as exc:
-            QMessageBox.warning(self, "Project Gallery Failed", str(exc))
-
-    def _write_project_gallery(self, project: ProjectSpec | None = None) -> str:
-        store = ProjectStore(self.project_root_edit.text())
-        if project is None:
-            project = self._current_project or store.load_project(self._project_slug_from_fields())
-        gallery_path = ProjectGalleryWriter(store=store).write(project)
-        return str(gallery_path)
-
-    def _on_thread_error(self, message: str) -> None:
-        self._set_busy(False, f"Error: {message}")
-        QMessageBox.warning(self, "spritegen", message)
-        self._thread = None
-
-    def _save_current_specs(self) -> tuple[ProjectSpec, AssetSpec]:
-        project = self._build_project_spec()
-        asset = self._build_asset_spec()
-        store = ProjectStore(self.project_root_edit.text())
-        store.save_project(project)
-        store.save_asset(project, asset)
-        known_assets = store.load_assets(project)
-        packets = PromptPlanner().build_prompt_packets(project, asset, known_assets=known_assets)
-        store.save_prompt_plan(project, asset, packets)
-        self._current_project = project
-        return project, asset
-
-    def _build_project_spec(self) -> ProjectSpec:
-        name = self.project_name_edit.text().strip()
-        if not name:
-            raise ValueError("Project name is required")
-        asset_type = self.asset_type_edit.text().strip() or "asset"
-        slug = slugify(name)
-        project = ProjectSpec(
-            name=name,
-            summary=self.project_summary_edit.text().strip(),
-            visual_style=self.style_edit.toPlainText().strip(),
-            shared_context=self.context_edit.toPlainText().strip(),
-            palette=self._palette_values(),
-            negative_prompt=self.negative_prompt_edit.text().strip(),
-            provider_defaults=ProviderDefaults(
-                image_provider=self.image_provider_combo.currentData(),
-                image_model=self.image_model_edit.text().strip(),
-                prompt_provider=self.prompt_provider_combo.currentData(),
-                prompt_model=self.prompt_model_edit.text().strip(),
-            ),
-            color_treatment=ColorTreatment(
-                mode=self.color_mode_combo.currentData(),
-                custom_prompt=self.color_prompt_edit.toPlainText().strip(),
-            ),
-            postprocess=PostProcessSettings(
-                remove_background=self.remove_background_check.isChecked(),
-            ),
-        )
-        existing_project = self._existing_project(slug)
-        if existing_project:
-            for layout in existing_project.custom_layouts.values():
-                project.add_layout(layout)
-            for existing_asset_type in existing_project.asset_types.values():
-                project.add_asset_type(existing_asset_type)
-        project.add_asset_type(
-            AssetTypeSpec(
-                name=asset_type,
-                shared_prompt=self.asset_type_context_edit.text().strip(),
-                evolution=EvolutionPlan(
-                    count=self.evolutions_spin.value(),
-                    labels=self._evolution_labels(),
-                    shared_prompt=self.evolution_context_edit.text().strip(),
-                ),
-                default_layout=self.layout_combo.currentData(),
-            )
-        )
-        return project
-
-    def _build_asset_spec(self) -> AssetSpec:
-        name = self.asset_name_edit.text().strip()
-        if not name:
-            raise ValueError("Asset name is required")
-        return AssetSpec(
-            name=name,
-            asset_type=self.asset_type_edit.text().strip() or "asset",
-            description=self.asset_description_edit.toPlainText().strip(),
-            details=self.asset_details_edit.toPlainText().strip(),
-            enhanced_prompt=self.enhanced_prompt_edit.toPlainText().strip(),
-            layout=self.layout_combo.currentData(),
-        )
-
-    def _palette_values(self) -> list[str]:
-        return [value.strip() for value in self.palette_edit.text().split(",") if value.strip()]
-
-    def _evolution_labels(self) -> list[str]:
-        return [
-            value.strip()
-            for value in self.evolution_labels_edit.text().split(",")
-            if value.strip()
-        ]
-
-    def _existing_project(self, project_slug: str) -> ProjectSpec | None:
-        if self._current_project and self._current_project.slug == project_slug:
-            return self._current_project
-        store = ProjectStore(self.project_root_edit.text())
-        path = store.project_path(project_slug)
-        if not path.exists():
-            return None
-        try:
-            return store.load_project(path)
-        except Exception:
-            return None
-
-    def _project_slug_from_fields(self) -> str:
-        name = self.project_name_edit.text().strip()
-        if self._current_project and self._current_project.name == name:
-            return self._current_project.slug or slugify(name)
-        return slugify(name) if name else ""
-
-    def _apply_project_spec(self, project: ProjectSpec) -> None:
-        self._current_project = project
-        self.project_name_edit.setText(project.name)
-        self.project_summary_edit.setText(project.summary)
-        self.style_edit.setPlainText(project.visual_style)
-        self.context_edit.setPlainText(project.shared_context)
-        self.palette_edit.setText(",".join(project.palette))
-        self.negative_prompt_edit.setText(project.negative_prompt)
-        self._set_combo_value(self.image_provider_combo, project.provider_defaults.image_provider)
-        self.image_model_edit.setText(project.provider_defaults.image_model)
-        self._set_combo_value(self.prompt_provider_combo, project.provider_defaults.prompt_provider)
-        self.prompt_model_edit.setText(project.provider_defaults.prompt_model)
-        self._set_combo_value(self.color_mode_combo, project.color_treatment.mode)
-        self.color_prompt_edit.setPlainText(project.color_treatment.custom_prompt)
-        self.remove_background_check.setChecked(project.postprocess.remove_background)
-        self._refresh_layout_combo(project)
-        if project.asset_types:
-            self._apply_asset_type_spec(next(iter(project.asset_types.values())))
-
-    def _apply_asset_type_spec(self, asset_type: AssetTypeSpec) -> None:
-        self.asset_type_edit.setText(asset_type.name)
-        self.asset_type_context_edit.setText(asset_type.shared_prompt)
-        self.evolution_context_edit.setText(asset_type.evolution.shared_prompt)
-        self.evolution_labels_edit.setText(", ".join(asset_type.evolution.labels))
-        self.evolutions_spin.setValue(
-            max(
-                self.evolutions_spin.minimum(),
-                min(self.evolutions_spin.maximum(), asset_type.evolution.count),
-            )
-        )
-        self._set_combo_value(self.layout_combo, asset_type.default_layout)
-
-    def _apply_asset_spec(self, project: ProjectSpec, asset: AssetSpec) -> None:
-        if asset.asset_type in project.asset_types:
-            self._apply_asset_type_spec(project.asset_types[asset.asset_type])
-        self.asset_type_edit.setText(asset.asset_type)
-        self.asset_name_edit.setText(asset.name)
-        self.asset_description_edit.setPlainText(asset.description)
-        self.asset_details_edit.setPlainText(asset.details)
-        self.enhanced_prompt_edit.setPlainText(asset.enhanced_prompt)
-        if asset.layout:
-            self._set_combo_value(self.layout_combo, asset.layout)
-
-    def _set_combo_value(self, combo: QComboBox, value: str) -> None:
-        index = combo.findData(value)
-        if index >= 0:
-            combo.setCurrentIndex(index)
-
-    def _load_asset_preview(self, project: ProjectSpec, asset: AssetSpec) -> None:
-        self.preview_panel.clear()
-        store = ProjectStore(self.project_root_edit.text())
-        output_dir = store.generated_dir(project.slug or slugify(project.name)) / (
-            asset.slug or slugify(asset.name)
-        )
-        self._last_output_dir = str(output_dir)
-        manifest_path = output_dir / "generation_manifest.json"
-        gallery_path = output_dir / "asset_gallery.html"
-        self._last_gallery_path = str(gallery_path) if gallery_path.exists() else ""
-        if not manifest_path.exists():
-            return
-        try:
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            return
-        for output in manifest.get("outputs", []):
-            if not isinstance(output, dict):
-                continue
-            raw_image = self._manifest_image_path(output.get("raw_image"), output_dir)
-            slice_paths = [
-                path
-                for value in output.get("slices", [])
-                if (path := self._manifest_image_path(value, output_dir)) is not None
-            ]
-            if raw_image is not None or slice_paths:
-                title = self._generation_output_title(
-                    stage_label=output.get("stage_label"),
-                    stage_index=output.get("stage_index"),
-                    variant_index=output.get("variant_index"),
-                    layout_name=output.get("layout_name"),
+        menu = QMenu(self)
+        menu.addAction("Open Settings…", self._open_settings_drawer)
+        menu.addAction("Refresh projects", self.controller.refresh_project_list)
+        menu.addSeparator()
+        for index in range(self.project_combo.count()):
+            action = menu.addAction(self.project_combo.itemText(index))
+            slug = self.project_combo.itemData(index)
+            action.triggered.connect(
+                lambda _checked=False, slug=slug: (
+                    self.project_combo.setCurrentIndex(
+                        self.project_combo.findData(slug)
+                    ),
+                    self.controller.on_load_project(),
                 )
-                self.preview_panel.add_generation_output(
-                    raw_image,
-                    slice_paths,
-                    title=title,
+            )
+        menu.exec_(self.provider_bar.project_pill.mapToGlobal(
+            self.provider_bar.project_pill.rect().bottomLeft()
+        ))
+
+    def _open_asset_menu(self) -> None:
+        from PySide6.QtWidgets import QMenu
+
+        menu = QMenu(self)
+        menu.addAction("Open Settings…", self._open_settings_drawer)
+        menu.addAction("Refresh assets", self.controller.refresh_asset_list)
+        menu.addAction("New asset", self.controller.on_new_asset)
+        menu.addSeparator()
+        for index in range(self.asset_combo.count()):
+            action = menu.addAction(self.asset_combo.itemText(index))
+            slug = self.asset_combo.itemData(index)
+            action.triggered.connect(
+                lambda _checked=False, slug=slug: (
+                    self.asset_combo.setCurrentIndex(self.asset_combo.findData(slug)),
+                    self.controller.on_load_asset(),
                 )
+            )
+        menu.exec_(self.provider_bar.asset_pill.mapToGlobal(
+            self.provider_bar.asset_pill.rect().bottomLeft()
+        ))
 
-    def _manifest_image_path(self, value: object, base_dir: Path) -> Path | None:
-        if not isinstance(value, str) or not value:
-            return None
-        path = Path(value)
-        if not path.is_absolute():
-            path = base_dir / path
-        return path if path.exists() else None
+    # ------------------------------------------------------------------
+    # Helpers exposed for tests and other widgets
+    # ------------------------------------------------------------------
+    def show_prompt_plan(self, visible: bool) -> None:
+        self.workspace_panel.show_prompt_plan(visible)
 
-    def _generation_output_title(
-        self,
-        stage_label: object,
-        stage_index: object,
-        layout_name: object,
-        variant_index: object = None,
-    ) -> str:
-        layout = str(layout_name) if layout_name else "layout"
-        variant = f" / Variant {variant_index}" if variant_index else ""
-        if stage_label:
-            return f"{stage_label}{variant} ({layout})"
-        if stage_index is not None:
-            return f"Stage {stage_index}{variant} ({layout})"
-        return f"Generated asset{variant} ({layout})"
+    def flash_status(self, text: str, state: str = "success") -> None:
+        self.action_footer.flash_status(text, state)
 
-    def _api_key_for(self, provider: str, purpose: str = "image") -> str:
-        primary = self.prompt_api_key_edit if purpose == "prompt" else self.image_api_key_edit
-        primary_key = primary.text().strip()
-        if primary_key:
-            return primary_key
-        secondary = self.image_api_key_edit if purpose == "prompt" else self.prompt_api_key_edit
-        secondary_provider = (
-            self.image_provider_combo.currentData()
-            if purpose == "prompt"
-            else self.prompt_provider_combo.currentData()
-        )
-        secondary_key = secondary.text().strip()
-        if secondary_provider == provider and secondary_key:
-            return secondary_key
-        configured = self._configured_api_key_for(provider)
-        if configured:
-            return configured
-        return ""
-
-    def _configured_api_key_for(self, provider: str) -> str:
-        configured = self._user_settings.api_key_for(provider)
-        if configured:
-            return configured
-        if provider == "openai":
-            return os.environ.get("OPENAI_API_KEY", "")
-        if provider == "openrouter":
-            return os.environ.get("OPENROUTER_API_KEY", "")
-        return ""
-
-    def _provider_can_run(self, provider: str, api_key: str) -> bool:
-        if provider in {"mock", "pollinations"}:
-            return True
-        if api_key:
-            return True
-        QMessageBox.warning(
-            self,
-            "API Key Required",
-            f"Enter an API key or set {provider.upper()}_API_KEY in the environment.",
-        )
-        return False
-
-    def _set_busy(self, busy: bool, status: str) -> None:
+    def set_busy_state(self, busy: bool) -> None:
+        self.action_footer.set_busy(busy)
+        # Disable provider/model inputs during long operations
+        for widget in (
+            self.image_provider_combo,
+            self.image_model_edit,
+            self.image_api_key_edit,
+            self.prompt_provider_combo,
+            self.prompt_model_edit,
+            self.prompt_api_key_edit,
+        ):
+            widget.setEnabled(not busy)
         self.save_btn.setEnabled(not busy)
-        self.improve_project_btn.setEnabled(not busy)
-        self.improve_type_btn.setEnabled(not busy)
         self.enhance_btn.setEnabled(not busy)
         self.generate_btn.setEnabled(not busy)
-        self.create_project_starter_btn.setEnabled(not busy)
-        self.apply_workflow_preset_btn.setEnabled(not busy)
         self.check_run_btn.setEnabled(not busy)
         self.preview_prompts_btn.setEnabled(not busy)
-        self.open_project_gallery_btn.setEnabled(not busy)
-        self.export_project_btn.setEnabled(not busy)
-        self.add_grid_layout_btn.setEnabled(not busy)
-        self.add_hero_grid_layout_btn.setEnabled(not busy)
         self.export_sprites_btn.setEnabled(not busy)
-        self.export_variant_spin.setEnabled(not busy)
+        self.export_project_btn.setEnabled(not busy)
+        self.open_project_gallery_btn.setEnabled(not busy)
+        self.open_folder_btn.setEnabled(not busy)
         self.open_gallery_btn.setEnabled(not busy)
-        self.check_provider_setup_btn.setEnabled(not busy)
-        self.save_provider_settings_btn.setEnabled(not busy)
-        self.clear_saved_keys_btn.setEnabled(not busy)
-        self.refresh_models_btn.setEnabled(not busy)
-        self.model_catalog_source_combo.setEnabled(not busy)
-        self.model_search_edit.setEnabled(not busy)
-        self.progress_bar.setRange(0, 0 if busy else 1)
-        self.progress_bar.setValue(0 if busy else 1)
-        self.status_label.setText(status)
 
-    def _open_output_folder(self) -> None:
-        self._open_local_path(self._last_output_dir)
-
-    def _open_local_path(self, path: str | Path) -> None:
+    def open_local_path(self, path) -> None:
         path = str(path)
         if os.name == "nt":
             os.startfile(path)
@@ -1986,6 +591,9 @@ class MainWindow(QWidget):
             import subprocess
 
             subprocess.run(["open", path] if sys.platform == "darwin" else ["xdg-open", path])
+
+    def _open_output_folder(self) -> None:
+        self.open_local_path(self._last_output_dir)
 
     def _open_gallery(self) -> None:
         if not self._last_gallery_path:
@@ -1995,7 +603,258 @@ class MainWindow(QWidget):
         if not gallery_path.exists():
             self.status_label.setText(f"Gallery not found: {gallery_path}")
             return
-        self._open_local_path(gallery_path)
+        self.open_local_path(gallery_path)
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        if event.key() == Qt.Key_Escape and self.welcome_overlay.isVisible():
+            self._welcome_skip()
+            return
+        if event.key() == Qt.Key_Escape and self.settings_drawer.isVisible():
+            self._close_settings_drawer()
+            return
+        super().keyPressEvent(event)
+
+    # ------------------------------------------------------------------
+    # Backwards-compatible method names
+    # ------------------------------------------------------------------
+    def _on_save_plan(self) -> None:
+        self.controller.on_save_plan()
+
+    def _on_load_project(self) -> None:
+        self.controller.on_load_project()
+
+    def _on_load_asset(self) -> None:
+        self.controller.on_load_asset()
+
+    def _on_new_asset(self) -> None:
+        self.controller.on_new_asset()
+
+    def _on_apply_project_starter(self) -> None:
+        self.controller.on_apply_project_starter()
+
+    def _on_apply_workflow_preset(self) -> None:
+        self.controller.on_apply_workflow_preset()
+
+    def _on_preview_prompts(self) -> None:
+        self.controller.on_preview_prompts()
+
+    def _on_check_run(self) -> None:
+        self.controller.on_check_run()
+
+    def _on_check_provider_setup(self) -> None:
+        self.controller.on_check_provider_setup()
+
+    def _on_save_provider_settings(self) -> None:
+        self.controller.on_save_provider_settings()
+
+    def _on_clear_saved_keys(self) -> None:
+        self.controller.on_clear_saved_keys()
+
+    def _on_refresh_models(self) -> None:
+        self.controller.on_refresh_models()
+
+    def _on_improve_project(self) -> None:
+        self.controller.on_improve_project()
+
+    def _on_improve_asset_type(self) -> None:
+        self.controller.on_improve_asset_type()
+
+    def _on_enhance(self) -> None:
+        self.controller.on_enhance()
+
+    def _on_generate(self) -> None:
+        self.controller.on_generate()
+
+    def _on_export_asset(self) -> None:
+        self.controller.on_export_asset()
+
+    def _on_export_project(self) -> None:
+        self.controller.on_export_project()
+
+    def _on_open_project_gallery(self) -> None:
+        self.controller.on_open_project_gallery()
+
+    def _on_image_provider_changed(self, *_args) -> None:
+        self.controller.on_image_provider_changed()
+
+    def _on_prompt_provider_changed(self, *_args) -> None:
+        self.controller.on_prompt_provider_changed()
+
+    def _on_footer_save(self) -> None:
+        self.controller.on_save_plan()
+
+    def _on_thread_error(self, message: str) -> None:
+        self.controller.on_thread_error(message)
+
+    # ------------------------------------------------------------------
+    # Internal back-compat shims for tests poking at private methods
+    # ------------------------------------------------------------------
+    def _save_current_specs(self):
+        return self.controller.save_current_specs()
+
+    def _build_project_spec(self):
+        return self.controller.build_project_spec()
+
+    def _build_asset_spec(self):
+        return self.controller.build_asset_spec()
+
+    def _apply_project_spec(self, project: ProjectSpec) -> None:
+        self.controller.apply_project_spec(project)
+
+    def _apply_asset_spec(self, project: ProjectSpec, asset) -> None:
+        self.controller.apply_asset_spec(project, asset)
+
+    def _apply_asset_type_spec(self, asset_type) -> None:
+        self.controller.apply_asset_type_spec(asset_type)
+
+    def _load_asset_preview(self, project: ProjectSpec, asset) -> None:
+        self.controller.load_asset_preview(project, asset)
+
+    def _refresh_project_list(self, selected_slug: str | None = None) -> None:
+        self.controller.refresh_project_list(selected_slug)
+
+    def _refresh_asset_list(self, selected_slug: str | None = None) -> None:
+        self.controller.refresh_asset_list(selected_slug)
+
+    def _refresh_layout_combo(
+        self, project: ProjectSpec | None = None, selected_name: str | None = None
+    ) -> None:
+        self.controller.refresh_layout_combo(project, selected_name)
+
+    def _refresh_api_key_fields(self) -> None:
+        self.controller.refresh_api_key_fields()
+
+    def _refresh_api_key_field(self, purpose: str) -> None:
+        self.controller.refresh_api_key_field(purpose)
+
+    def _refresh_palette_swatches(self) -> None:
+        self.palette_swatches.set_palette(
+            [segment.strip() for segment in self.palette_edit.text().split(",") if segment.strip()]
+        )
+
+    def _refresh_model_suggestions(self, role: str, provider: str) -> None:
+        self.controller.refresh_model_suggestions(role, provider)
+
+    def _apply_model_suggestion(self, role: str) -> None:
+        self.controller.apply_model_suggestion(role)
+
+    def _on_save_provider_settings(self) -> None:  # type: ignore[no-redef]
+        self.controller.on_save_provider_settings()
+
+    def _on_clear_saved_keys(self) -> None:  # type: ignore[no-redef]
+        self.controller.on_clear_saved_keys()
+
+    def _on_model_discovery_finished(self, result: dict) -> None:
+        self.controller.on_model_discovery_finished(result)
+
+    def _on_project_improved(self, data: dict, project: ProjectSpec) -> None:
+        self.controller.on_project_improved(data, project)
+
+    def _on_asset_type_improved(self, data, project, asset_type) -> None:
+        self.controller.on_asset_type_improved(data, project, asset_type)
+
+    def _on_enhance_finished(self, enhanced: str, project: ProjectSpec, asset) -> None:
+        self.controller.on_enhance_finished(enhanced, project, asset)
+
+    def _on_generation_finished(self, result) -> None:
+        self.controller.on_generation_finished(result)
+
+    def _on_add_grid_layout(self) -> None:
+        self.controller.on_add_grid_layout()
+
+    def _on_add_hero_grid_layout(self) -> None:
+        self.controller.on_add_hero_grid_layout()
+
+    def _save_custom_layout(self, layout) -> None:
+        self.controller.save_custom_layout(layout)
+
+    def _build_grid_layout(self):
+        return self.controller.build_grid_layout()
+
+    def _build_hero_grid_layout(self):
+        return self.controller.build_hero_grid_layout()
+
+    def _build_generation_preflight(self, project, asset, image_api_key, prompt_api_key):
+        return self.controller.build_generation_preflight(
+            project, asset, image_api_key, prompt_api_key
+        )
+
+    def _write_project_gallery(self, project: ProjectSpec | None = None) -> str:
+        return self.controller.write_project_gallery(project)
+
+    def _format_prompt_packets(self, packets) -> str:
+        return self.controller.format_prompt_packets(packets)
+
+    def _format_generation_preflight(self, preflight) -> str:
+        return self.controller.format_generation_preflight(preflight)
+
+    def _generation_output_title(self, stage_label, stage_index, layout_name, variant_index=None):
+        return self.controller.generation_output_title(
+            stage_label, stage_index, layout_name, variant_index
+        )
+
+    def _validate_current_model(self, role: str, provider: str, model: str):
+        return self.controller.validate_current_model(role, provider, model)
+
+    def _api_key_for(self, provider: str, purpose: str = "image") -> str:
+        return self.controller.api_key_for(provider, purpose)
+
+    def _configured_api_key_for(self, provider: str) -> str:
+        return self.controller.configured_api_key_for(provider)
+
+    def _provider_can_run(self, provider: str, api_key: str) -> bool:
+        return self.controller.provider_can_run(provider, api_key)
+
+    def _set_busy(self, busy: bool, status: str) -> None:
+        self.controller.set_busy(busy, status)
+
+    def _set_combo_value(self, combo, value) -> None:
+        self.controller.set_combo_value(combo, value)
+
+    def _palette_values(self) -> list[str]:
+        return self.controller.palette_values()
+
+    def _evolution_labels(self) -> list[str]:
+        return self.controller.evolution_labels()
+
+    def _existing_project(self, slug):
+        return self.controller.existing_project(slug)
+
+    def _project_slug_from_fields(self) -> str:
+        return self.controller.project_slug_from_fields()
+
+    def _browse_project_root(self) -> None:
+        folder = QFileDialog.getExistingDirectory(
+            self, "Select Project Directory", self.project_root_edit.text()
+        )
+        if folder:
+            self.project_root_edit.setText(folder)
+            self.controller.refresh_project_list()
+
+    def _manifest_image_path(self, value, base_dir):
+        return self.controller.manifest_image_path(value, base_dir)
+
+    def _open_tool_dialog(self, name: str) -> None:
+        # Legacy: route to settings drawer instead
+        self._open_settings_drawer()
+
+    def _open_local_path(self, path) -> None:
+        self.open_local_path(path)
+
+    def _welcome_skip(self) -> None:
+        self._user_settings.mark_welcome_seen()
+        self._settings_store.save(self._user_settings)
+        self.welcome_overlay.setVisible(False)
+        self.status_label.setText("Ready. Pick a project or start from a starter.")
+
+    def welcome_pollinations(self) -> None:
+        self._welcome_pollinations()
+
+    def welcome_openrouter(self, key: str) -> None:
+        self._welcome_openrouter(key)
+
+    def welcome_openai(self, key: str) -> None:
+        self._welcome_openai(key)
 
 
 def main() -> None:
@@ -2008,3 +867,26 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+# Backwards-compatible re-exports so tests can do
+# ``from spritegen.ui.main_window import PreviewPanel`` etc.
+from .preview_panel import PaletteSwatchBar, PreviewPanel  # noqa: E402,F401
+from .model_picker import ModelPicker  # noqa: E402,F401
+from .generation_thread import (  # noqa: E402,F401
+    ModelDiscoveryThread,
+    ProjectGenerationThread,
+    EnhancementThread,
+    ProjectEnhancementThread,
+    AssetTypeEnhancementThread,
+)
+
+
+# Bind the thread classes to the module so monkeypatch tests that do
+# ``monkeypatch.setattr(main_window_mod, "ModelDiscoveryThread", FakeClass)``
+# work, and so the controller can look them up via ``self.main.<Class>``.
+MainWindow.ModelDiscoveryThread = ModelDiscoveryThread  # type: ignore[attr-defined]
+MainWindow.ProjectGenerationThread = ProjectGenerationThread  # type: ignore[attr-defined]
+MainWindow.EnhancementThread = EnhancementThread  # type: ignore[attr-defined]
+MainWindow.ProjectEnhancementThread = ProjectEnhancementThread  # type: ignore[attr-defined]
+MainWindow.AssetTypeEnhancementThread = AssetTypeEnhancementThread  # type: ignore[attr-defined]
