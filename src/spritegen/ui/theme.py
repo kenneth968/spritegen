@@ -20,12 +20,16 @@ DESIGN_TOKENS: dict[str, dict[str, str]] = {
         "muted": "#566979",
         "primary": "#1f7a8c",
         "primary_hover": "#176a79",
+        "primary_soft": "#d8ecf0",
         "accent": "#f3b64b",
         "accent_hover": "#dea139",
         "danger": "#b94747",
         "danger_hover": "#9f3939",
         "success": "#287d52",
+        "success_soft": "#d6efe1",
+        "warning": "#b27516",
         "focus": "#2f8ea4",
+        "scrim": "#18232d",
     },
     "radius": {
         "sm": "4px",
@@ -319,6 +323,168 @@ def desktop_stylesheet(tokens: Mapping[str, Mapping[str, str]] | None = None) ->
     QSplitter::handle {{
         background: transparent;
         width: 12px;
+    }}
+    QWidget#topBar {{
+        background: {color["surface"]};
+        border: 0;
+        border-bottom: 1px solid {color["border"]};
+        min-height: 56px;
+    }}
+    QLabel#topBarTitle {{
+        font-size: 18px;
+        font-weight: 700;
+        color: {color["text"]};
+    }}
+    QLabel#topBarTagline {{
+        color: {color["muted"]};
+        font-size: 11px;
+        font-weight: 600;
+    }}
+    QPushButton#pillButton {{
+        background: {color["surface"]};
+        border: 1px solid {color["border"]};
+        border-radius: 14px;
+        padding: 5px 12px;
+        min-height: 28px;
+        font-weight: 600;
+        text-align: left;
+    }}
+    QPushButton#pillButton:hover {{
+        border-color: {color["focus"]};
+        background: {color["surface_soft"]};
+    }}
+    QPushButton#pillButton::menu-indicator {{ image: none; }}
+    QPushButton#providerChip {{
+        border: 1px solid {color["border"]};
+        border-radius: 14px;
+        padding: 5px 12px 5px 10px;
+        min-height: 28px;
+        font-weight: 700;
+        text-align: left;
+    }}
+    QPushButton#providerChip[providerStatus="ok"] {{
+        background: {color["success_soft"]};
+        border-color: {color["success"]};
+        color: {color["text"]};
+    }}
+    QPushButton#providerChip[providerStatus="missing"] {{
+        background: {color["surface"]};
+        border-color: {color["danger"]};
+        color: {color["danger"]};
+    }}
+    QPushButton#providerChip[providerStatus="mock"] {{
+        background: {color["surface_soft"]};
+        border-color: {color["border"]};
+        color: {color["muted"]};
+    }}
+    QPushButton#providerChip[providerStatus="free"] {{
+        background: {color["primary_soft"]};
+        border-color: {color["primary"]};
+        color: {color["primary_hover"]};
+    }}
+    QPushButton#iconButton {{
+        background: transparent;
+        border: 1px solid transparent;
+        border-radius: {radius["md"]};
+        min-width: 36px;
+        min-height: 36px;
+        font-size: 18px;
+    }}
+    QPushButton#iconButton:hover {{
+        background: {color["surface_soft"]};
+        border-color: {color["border"]};
+    }}
+    QWidget#settingsDrawer {{
+        background: {color["surface"]};
+        border: 0;
+        border-left: 1px solid {color["border"]};
+    }}
+    QWidget#drawerHeader {{
+        background: {color["panel"]};
+        border: 0;
+        border-bottom: 1px solid {color["border"]};
+    }}
+    QFrame#welcomeBackdrop {{
+        background: rgba(24, 35, 45, 180);
+    }}
+    QFrame#welcomeCard {{
+        background: {color["surface"]};
+        border: 1px solid {color["border"]};
+        border-radius: 12px;
+    }}
+    QFrame#welcomeCard[cardStyle="primary"] {{
+        border: 2px solid {color["primary"]};
+    }}
+    QLabel#welcomeTitle {{
+        font-size: 26px;
+        font-weight: 700;
+        color: {color["text"]};
+    }}
+    QLabel#welcomeSubtitle {{
+        color: {color["muted"]};
+        font-size: 14px;
+    }}
+    QLabel#welcomeCardTitle {{
+        font-size: 16px;
+        font-weight: 700;
+        color: {color["text"]};
+    }}
+    QLabel#welcomeCardBody {{
+        color: {color["muted"]};
+    }}
+    QPushButton#welcomeCardButton {{
+        background: {color["primary"]};
+        color: white;
+        border: 1px solid {color["primary"]};
+        border-radius: {radius["md"]};
+        min-height: 38px;
+        font-weight: 700;
+        padding: 6px 14px;
+    }}
+    QPushButton#welcomeCardButton:hover {{
+        background: {color["primary_hover"]};
+        border-color: {color["primary_hover"]};
+    }}
+    QPushButton#welcomeCardButton[cardStyle="outline"] {{
+        background: {color["surface"]};
+        color: {color["text"]};
+        border: 1px solid {color["border_strong"]};
+    }}
+    QPushButton#welcomeCardButton[cardStyle="outline"]:hover {{
+        border-color: {color["primary"]};
+        color: {color["primary_hover"]};
+    }}
+    QPushButton#welcomeSkip {{
+        background: transparent;
+        color: {color["muted"]};
+        border: 0;
+        font-weight: 600;
+        padding: 6px 10px;
+    }}
+    QPushButton#welcomeSkip:hover {{
+        color: {color["text"]};
+    }}
+    QFrame#statusFlash {{
+        background: {color["success_soft"]};
+        border: 1px solid {color["success"]};
+        border-radius: {radius["md"]};
+        color: {color["success"]};
+        padding: 4px 10px;
+        font-weight: 700;
+    }}
+    QFrame#statusFlash[flashState="info"] {{
+        background: {color["primary_soft"]};
+        border-color: {color["primary"]};
+        color: {color["primary_hover"]};
+    }}
+    QFrame#statusFlash[flashState="warning"] {{
+        background: #fff3d6;
+        border-color: {color["warning"]};
+        color: {color["warning"]};
+    }}
+    QLabel#emptyStateTitle {{
+        color: {color["text"]};
+        font-weight: 700;
     }}
     """
 

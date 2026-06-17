@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 
-SETTINGS_SCHEMA_VERSION = 1
+SETTINGS_SCHEMA_VERSION = 2
 
 
 def default_settings_path() -> Path:
@@ -30,6 +30,8 @@ class UserSettings:
     prompt_provider: str = "mock"
     prompt_model: str = "mock"
     api_keys: dict[str, str] = field(default_factory=dict)
+    has_seen_welcome: bool = False
+    last_starter_key: str = ""
 
     def api_key_for(self, provider: str) -> str:
         return self.api_keys.get(provider, "")
@@ -41,6 +43,12 @@ class UserSettings:
         else:
             self.api_keys.pop(provider, None)
 
+    def clear_api_keys(self) -> None:
+        self.api_keys.clear()
+
+    def mark_welcome_seen(self) -> None:
+        self.has_seen_welcome = True
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "version": SETTINGS_SCHEMA_VERSION,
@@ -49,11 +57,14 @@ class UserSettings:
             "prompt_provider": self.prompt_provider,
             "prompt_model": self.prompt_model,
             "api_keys": dict(self.api_keys),
+            "has_seen_welcome": self.has_seen_welcome,
+            "last_starter_key": self.last_starter_key,
         }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "UserSettings":
-        if data.get("version") != SETTINGS_SCHEMA_VERSION:
+        version = data.get("version")
+        if version not in (1, 2, SETTINGS_SCHEMA_VERSION):
             return cls()
         api_keys = {
             str(provider): str(api_key)
@@ -66,6 +77,8 @@ class UserSettings:
             prompt_provider=str(data.get("prompt_provider") or "mock"),
             prompt_model=str(data.get("prompt_model") or "mock"),
             api_keys=api_keys,
+            has_seen_welcome=bool(data.get("has_seen_welcome", False)),
+            last_starter_key=str(data.get("last_starter_key") or ""),
         )
 
 
