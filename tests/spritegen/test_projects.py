@@ -1,8 +1,12 @@
 """Tests for project-aware game asset planning."""
 
 import json
+import urllib.error
+from email.message import Message
 from io import BytesIO
 from pathlib import Path
+
+import pytest
 
 from spritegen.layouts import AssetLayout, get_layout
 from spritegen.projects import (
@@ -17,7 +21,7 @@ from spritegen.projects import (
     apply_asset_type_enhancement,
     apply_project_enhancement,
 )
-from spritegen.enhancement import PromptEnhancer
+from spritegen.enhancement import PromptEnhancer, PromptEnhancementError
 from spritegen.project_export import ProjectAssetExporter
 from spritegen.project_gallery import ProjectGalleryWriter
 from spritegen.project_generation import ProjectAssetGenerator
@@ -1701,6 +1705,40 @@ def test_enhancer_passes_system_prompt_to_openrouter_messages(monkeypatch):
         "role": "user",
         "content": "User brief",
     }
+
+
+def test_enhancer_reports_provider_rate_limit_with_retry_after(monkeypatch):
+    headers = Message()
+    headers["Retry-After"] = "12"
+    body = BytesIO(
+        json.dumps({"error": {"message": "billing hard limit reached"}}).encode("utf-8")
+    )
+
+    def fake_urlopen(request, timeout):
+        raise urllib.error.HTTPError(
+            url=request.full_url,
+            code=429,
+            msg="Too Many Requests",
+            hdrs=headers,
+            fp=body,
+        )
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+
+    with pytest.raises(PromptEnhancementError) as error:
+        PromptEnhancer().enhance(
+            "User brief",
+            provider="openai",
+            model="gpt-5.5",
+            api_key="test-key",
+        )
+
+    message = str(error.value)
+    assert "OpenAI prompt enhancement hit a rate limit or quota limit" in message
+    assert "HTTP 429 Too Many Requests" in message
+    assert "Retry after 12 seconds" in message
+    assert "billing hard limit reached" in message
+    assert "Switch provider/model" in message
 
 
 def test_project_and_type_enhancement_apply_structured_results():
