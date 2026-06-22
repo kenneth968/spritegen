@@ -13,13 +13,14 @@ def test_provider_model_catalog_exposes_defaults_and_sources():
     )
 
     assert default_model("openai", IMAGE_ROLE) == "gpt-image-2"
-    assert default_model("openrouter", IMAGE_ROLE) == "google/gemini-3.1-flash-image-preview"
+    assert default_model("openrouter", IMAGE_ROLE) == "google/gemini-3.1-flash-image"
     assert default_model("openrouter", PROMPT_ROLE) == "openai/gpt-5.5"
 
     openrouter_image_models = {
         suggestion.model
         for suggestion in model_suggestions("openrouter", IMAGE_ROLE)
     }
+    assert "google/gemini-3.1-flash-image" in openrouter_image_models
     assert "google/gemini-3.1-flash-image-preview" in openrouter_image_models
     assert "openai/gpt-5.4-image-2" in openrouter_image_models
 
@@ -46,7 +47,7 @@ def test_validate_model_choice_distinguishes_known_wrong_role_and_custom_ids():
     image_result = validate_model_choice(
         "openrouter",
         IMAGE_ROLE,
-        "google/gemini-3.1-flash-image-preview",
+        "google/gemini-3.1-flash-image",
     )
     assert image_result.status == MODEL_VALIDATION_OK
     assert image_result.suggestion is not None

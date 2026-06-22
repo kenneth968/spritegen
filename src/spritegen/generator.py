@@ -25,11 +25,13 @@ import json
 import os
 import subprocess
 import sys
+import urllib.error
 import urllib.request
 from pathlib import Path
 
 from .config import SpriteConfig, SpriteDefinition, SheetLayout
 from .models import GeneratedSheet, SpriteMetadata
+from .provider_errors import provider_request_error
 from .style import StylePreset, StyleManager
 
 
@@ -138,8 +140,12 @@ class SpriteGenerator:
         try:
             with urllib.request.urlopen(request, timeout=API_TIMEOUT_SECONDS) as resp:
                 result = json.loads(resp.read().decode("utf-8"))
-        except Exception as exc:
-            raise ImageGenerationError(f"OpenAI image generation failed: {exc}") from exc
+        except json.JSONDecodeError as exc:
+            raise ImageGenerationError("OpenAI image generation returned invalid JSON") from exc
+        except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as exc:
+            raise ImageGenerationError(
+                provider_request_error("OpenAI", "image generation", exc)
+            ) from exc
 
         try:
             return self._b64_to_png(result["data"][0]["b64_json"])
@@ -185,8 +191,12 @@ class SpriteGenerator:
         try:
             with urllib.request.urlopen(request, timeout=API_TIMEOUT_SECONDS) as resp:
                 result = json.loads(resp.read().decode("utf-8"))
-        except Exception as exc:
-            raise ImageGenerationError(f"OpenAI image generation failed: {exc}") from exc
+        except json.JSONDecodeError as exc:
+            raise ImageGenerationError("OpenAI image generation returned invalid JSON") from exc
+        except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as exc:
+            raise ImageGenerationError(
+                provider_request_error("OpenAI", "image generation", exc)
+            ) from exc
 
         try:
             return self._extract_openai_response_image(result)

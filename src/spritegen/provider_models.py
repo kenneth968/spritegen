@@ -119,9 +119,17 @@ MODEL_SUGGESTIONS: tuple[ModelSuggestion, ...] = (
     ModelSuggestion(
         provider="openrouter",
         role=IMAGE_ROLE,
+        model="google/gemini-3.1-flash-image",
+        label="Gemini 3.1 Flash Image",
+        note="OpenRouter image-output model currently listed first for image generation.",
+        source_url=OPENROUTER_IMAGE_DOCS_URL,
+    ),
+    ModelSuggestion(
+        provider="openrouter",
+        role=IMAGE_ROLE,
         model="google/gemini-3.1-flash-image-preview",
         label="Gemini 3.1 Flash Image Preview",
-        note="OpenRouter image-output model with extended aspect-ratio support.",
+        note="OpenRouter image-output preview model retained for existing saved projects.",
         source_url=OPENROUTER_IMAGE_DOCS_URL,
     ),
     ModelSuggestion(

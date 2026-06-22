@@ -1036,7 +1036,7 @@ def test_main_window_model_suggestions_are_editable(tmp_path):
     window._set_combo_value(window.image_provider_combo, "openrouter")
     window._on_image_provider_changed()
     assert window.image_model_suggestions.count() >= 2
-    assert window.image_model_edit.text() == "google/gemini-3.1-flash-image-preview"
+    assert window.image_model_edit.text() == "google/gemini-3.1-flash-image"
 
     image_index = window.image_model_suggestions.findData("openai/gpt-5.4-image-2")
     assert image_index >= 0

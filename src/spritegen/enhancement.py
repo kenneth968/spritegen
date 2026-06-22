@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import json
 import os
+import urllib.error
 import urllib.parse
 import urllib.request
+
+from .provider_errors import provider_request_error
 
 
 ENHANCEMENT_TIMEOUT_SECONDS = 45
@@ -74,8 +77,10 @@ class PromptEnhancer:
         try:
             with urllib.request.urlopen(url, timeout=ENHANCEMENT_TIMEOUT_SECONDS) as resp:
                 return resp.read().decode("utf-8").strip()
-        except Exception as exc:
-            raise PromptEnhancementError(f"Pollinations enhancement failed: {exc}") from exc
+        except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as exc:
+            raise PromptEnhancementError(
+                provider_request_error("Pollinations", "prompt enhancement", exc)
+            ) from exc
 
     def _enhance_openai(
         self,
@@ -175,8 +180,12 @@ class PromptEnhancer:
         try:
             with urllib.request.urlopen(request, timeout=ENHANCEMENT_TIMEOUT_SECONDS) as resp:
                 return json.loads(resp.read().decode("utf-8"))
-        except Exception as exc:
-            raise PromptEnhancementError(f"Request failed: {exc}") from exc
+        except json.JSONDecodeError as exc:
+            raise PromptEnhancementError("Prompt provider returned invalid JSON") from exc
+        except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as exc:
+            raise PromptEnhancementError(
+                provider_request_error(_provider_name_for_url(url), "prompt enhancement", exc)
+            ) from exc
 
     def _extract_openai_text(self, result: dict) -> str:
         if isinstance(result.get("output_text"), str):
@@ -222,3 +231,13 @@ class PromptEnhancer:
             if line.startswith(marker):
                 return line.split(marker, 1)[1].strip()
         return ""
+
+
+def _provider_name_for_url(url: str) -> str:
+    if "openrouter.ai" in url:
+        return "OpenRouter"
+    if "openai.com" in url:
+        return "OpenAI"
+    if "pollinations.ai" in url:
+        return "Pollinations"
+    return "Provider"
