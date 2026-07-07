@@ -100,5 +100,32 @@ class WorkspacePanel(QWidget):
         self.prompt_preview_edit.setVisible(False)
         layout.addWidget(self.prompt_preview_edit)
 
+    def show_preflight(self, text: str) -> None:
+        self.prompt_preview_edit.setPlainText(text)
+        self._set_prompt_preview_expanded(True)
+        self.preview_panel.setVisible(False)
+        self.prompt_preview_edit.setVisible(True)
+        self.prompt_preview_edit.setFocus()
+
+    def show_generated_output(self) -> None:
+        self._set_prompt_preview_expanded(False)
+        self.prompt_preview_edit.setVisible(False)
+        self.preview_panel.setVisible(True)
+
     def show_prompt_plan(self, visible: bool) -> None:
+        self._set_prompt_preview_expanded(False)
+        if visible:
+            self.preview_panel.setVisible(True)
         self.prompt_preview_edit.setVisible(visible)
+
+    def _set_prompt_preview_expanded(self, expanded: bool) -> None:
+        if expanded:
+            self.prompt_preview_edit.setMaximumHeight(16777215)
+            self.prompt_preview_edit.setSizePolicy(
+                QSizePolicy.Expanding, QSizePolicy.Expanding
+            )
+            return
+        self.prompt_preview_edit.setMaximumHeight(280)
+        self.prompt_preview_edit.setSizePolicy(
+            QSizePolicy.Expanding, QSizePolicy.Preferred
+        )

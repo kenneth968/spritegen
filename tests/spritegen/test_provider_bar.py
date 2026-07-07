@@ -103,11 +103,13 @@ def test_provider_bar_click_opens_settings_drawer(tmp_path, monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
 
-    from spritegen.user_settings import UserSettingsStore
+    from spritegen.user_settings import UserSettings, UserSettingsStore
     from spritegen.ui.main_window import MainWindow
 
+    settings_store = UserSettingsStore(tmp_path / "settings.json")
+    settings_store.save(UserSettings(has_seen_welcome=True, image_provider="mock"))
     app = _qapp()
-    window = MainWindow(settings_store=UserSettingsStore(tmp_path / "settings.json"))
+    window = MainWindow(settings_store=settings_store)
     assert window.settings_drawer.isHidden()
     window.provider_bar.provider_chip.click()
     app.processEvents()

@@ -57,8 +57,8 @@ class ProjectPanel(QWidget):
         self.project_group.add_row("Pitch", self.project_summary_edit)
 
         self.style_edit = QTextEdit()
-        self.style_edit.setMinimumHeight(72)
-        self.style_edit.setMaximumHeight(110)
+        self.style_edit.setMinimumHeight(88)
+        self.style_edit.setMaximumHeight(140)
         self.style_edit.setPlainText(
             "clean cartoon tower defense sprites, bold outlines, bright readable shapes"
         )
@@ -71,7 +71,7 @@ class ProjectPanel(QWidget):
         palette_widget = QWidget()
         palette_layout = QVBoxLayout(palette_widget)
         palette_layout.setContentsMargins(0, 0, 0, 0)
-        palette_layout.setSpacing(0)
+        palette_layout.setSpacing(6)
         palette_layout.addWidget(self.palette_edit)
         palette_layout.addWidget(self.palette_swatches)
         self.project_group.add_row("Palette", palette_widget)
@@ -87,20 +87,23 @@ class ProjectPanel(QWidget):
         self.asset_group.add_row("Name", self.asset_name_edit)
 
         self.asset_description_edit = QTextEdit()
-        self.asset_description_edit.setMinimumHeight(80)
-        self.asset_description_edit.setMaximumHeight(120)
+        self.asset_description_edit.setMinimumHeight(96)
+        self.asset_description_edit.setMaximumHeight(144)
         self.asset_description_edit.setPlainText(
             "A mushroom tower that attacks with spore clouds."
         )
         self.asset_group.add_row("Concept", self.asset_description_edit)
 
         output_row = QHBoxLayout()
+        output_row.setSpacing(8)
         self.layout_combo = QComboBox()
+        self.layout_combo.setMinimumWidth(220)
         for name in sorted(PRESET_LAYOUTS):
             self.layout_combo.addItem(name, name)
         self.evolutions_spin = QSpinBox()
         self.evolutions_spin.setRange(1, 8)
         self.evolutions_spin.setValue(4)
+        self.evolutions_spin.setMinimumWidth(72)
         output_row.addWidget(self.layout_combo, 1)
         output_row.addWidget(QLabel("Stages"))
         output_row.addWidget(self.evolutions_spin)

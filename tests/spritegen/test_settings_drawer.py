@@ -59,6 +59,7 @@ def test_drawer_has_five_tabs(tmp_path, monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
 
+    from PySide6.QtWidgets import QTabWidget
     from spritegen.user_settings import UserSettingsStore
     from spritegen.ui.main_window import MainWindow
 
@@ -69,6 +70,7 @@ def test_drawer_has_five_tabs(tmp_path, monkeypatch):
         for i in range(window.settings_drawer.tabs.count())
     ]
     assert tab_labels == ["Project", "Asset", "Layouts", "Providers", "Advanced"]
+    assert window.settings_drawer.tabs.tabPosition() == QTabWidget.West
     window.close()
     app.processEvents()
 

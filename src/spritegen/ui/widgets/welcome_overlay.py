@@ -30,6 +30,8 @@ class WelcomeOverlay(QFrame):
         super().__init__(parent)
         self.setObjectName("welcomeBackdrop")
         self.setFrameShape(QFrame.NoFrame)
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setFocusPolicy(Qt.StrongFocus)
         self._build_ui()
 
     def _build_ui(self) -> None:
