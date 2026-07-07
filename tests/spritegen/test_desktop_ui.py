@@ -82,6 +82,11 @@ def test_main_window_uses_guided_workflow_layout(tmp_path, monkeypatch):
     assert window.provider_bar.objectName() == "topBar"
     assert "QPushButton#providerChip" in window.styleSheet()
     assert "QWidget#settingsDrawer" in window.styleSheet()
+    assert window.style_edit.minimumHeight() >= 88
+    assert window.asset_description_edit.minimumHeight() >= 96
+    assert window.palette_edit.parentWidget().layout().spacing() >= 6
+    assert window.layout_combo.minimumWidth() >= 220
+    assert window.evolutions_spin.minimumWidth() >= 72
 
     window.close()
     app.processEvents()
@@ -339,7 +344,10 @@ def test_main_window_exports_loaded_asset_slices(tmp_path):
     exported = tmp_path / "projects" / "myceliumtd" / "exports" / "puffball"
     assert (exported / "sprites" / "single_sprite.png").exists()
     assert (exported / "asset_export_manifest.json").exists()
-    assert str(exported) in window.status_label.text()
+    assert "Exported 1 sprite(s)" in window.status_label.text()
+    assert "puffball" in window.status_label.text()
+    assert str(exported) not in window.status_label.text()
+    assert window.run_summary_label.text() == window.status_label.text()
     assert window._last_output_dir == str(exported)
 
     window.close()
@@ -423,6 +431,7 @@ def test_main_window_exports_selected_variant(tmp_path):
     assert (exported / "sprites" / variant_2.name).exists()
     assert not (exported / "sprites" / variant_1.name).exists()
     assert "from variant 2" in window.status_label.text()
+    assert window.run_summary_label.text() == window.status_label.text()
 
     window.close()
     app.processEvents()
@@ -468,6 +477,8 @@ def test_main_window_exports_project_pack(tmp_path):
     assert (pack_dir / "assets" / "tower" / "puffball" / "sprites" / sprite_path.name).exists()
     assert window._last_output_dir == str(pack_dir)
     assert "Exported project pack with 1 asset" in window.status_label.text()
+    assert str(pack_dir) not in window.status_label.text()
+    assert window.run_summary_label.text() == window.status_label.text()
 
     window.close()
     app.processEvents()
@@ -901,6 +912,69 @@ def test_main_window_check_run_writes_preflight_summary(tmp_path, monkeypatch):
     assert "Run check ready" in window.status_label.text()
     assert "Run check ready" in window.run_summary_label.text()
     assert window.prompt_preview_edit.isVisibleTo(window.workspace_panel) is True
+    assert window.preview_panel.isVisibleTo(window.workspace_panel) is False
+
+    window.close()
+    app.processEvents()
+
+
+def test_main_window_generation_result_reveals_output_after_preflight(tmp_path, monkeypatch):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    pytest.importorskip("PySide6")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+
+    from PIL import Image
+    from PySide6.QtWidgets import QApplication
+    from spritegen.project_generation import GeneratedPacketOutput, ProjectGenerationResult
+    from spritegen.user_settings import UserSettingsStore
+    from spritegen.ui.main_window import MainWindow
+
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow(settings_store=UserSettingsStore(tmp_path / "settings.json"))
+    window.project_root_edit.setText(str(tmp_path / "projects"))
+    project, asset = window._save_current_specs()
+    output_dir = tmp_path / "projects" / project.slug / "generated" / asset.slug
+    output_dir.mkdir(parents=True)
+    raw_path = output_dir / "single.png"
+    sprite_path = output_dir / "single_sprite.png"
+    Image.new("RGBA", (32, 32), (255, 0, 0, 255)).save(raw_path)
+    Image.new("RGBA", (16, 16), (0, 255, 0, 255)).save(sprite_path)
+    manifest_path = output_dir / "generation_manifest.json"
+    manifest_path.write_text("{}", encoding="utf-8")
+    gallery_path = output_dir / "asset_gallery.html"
+    gallery_path.write_text("<html></html>", encoding="utf-8")
+
+    window._on_check_run()
+    assert window.prompt_preview_edit.isVisibleTo(window.workspace_panel) is True
+    assert window.preview_panel.isVisibleTo(window.workspace_panel) is False
+
+    result = ProjectGenerationResult(
+        project_slug=project.slug,
+        asset_slug=asset.slug,
+        output_dir=output_dir,
+        manifest_path=manifest_path,
+        gallery_path=gallery_path,
+        outputs=[
+            GeneratedPacketOutput(
+                stage_index=None,
+                stage_label=None,
+                variant_index=None,
+                variant_count=1,
+                layout_name="single_sprite",
+                prompt="single puffball sprite",
+                raw_image=raw_path,
+                slices=[sprite_path],
+            )
+        ],
+    )
+
+    window._on_generation_finished(result)
+
+    assert window.prompt_preview_edit.isVisibleTo(window.workspace_panel) is False
+    assert window.preview_panel.isVisibleTo(window.workspace_panel) is True
+    assert window.preview_panel.image_paths == [raw_path, sprite_path]
+    assert window.run_summary_label.text() == "Generated 1 image(s)"
 
     window.close()
     app.processEvents()

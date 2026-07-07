@@ -414,7 +414,7 @@ class MainWindowController:
                     self.main.prompt_provider_combo.currentData(), "prompt"
                 ),
             )
-            self.main.prompt_preview_edit.setPlainText(self.format_generation_preflight(preflight))
+            self.main.show_preflight(self.format_generation_preflight(preflight))
             self.refresh_project_list(project.slug)
             self.refresh_asset_list(asset.slug)
             status = "Run check ready" if preflight.ready else "Run check needs attention"
@@ -424,7 +424,6 @@ class MainWindowController:
             )
             self.main.status_label.setText(summary)
             self.main.run_summary_label.setText(summary)
-            self.main.show_prompt_plan(True)
         except Exception as exc:
             QMessageBox.warning(self.main, "Run Check Failed", str(exc))
 
@@ -641,9 +640,9 @@ class MainWindowController:
         else:
             settings.set_api_key(settings.image_provider, image_key)
             settings.set_api_key(settings.prompt_provider, prompt_key)
-        path = self._settings_store.save(settings)
+        self._settings_store.save(settings)
         self._user_settings = settings
-        self.main.status_label.setText(f"Saved local provider setup to {path}")
+        self.main.status_label.setText("Saved local provider setup")
         self.main.flash_status("Saved", "success")
         self.main.update_provider_chip()
 
@@ -831,6 +830,7 @@ class MainWindowController:
             prompt_api_key=prompt_api_key,
         )
         if preflight.status == PREFLIGHT_ERROR:
+            self.main.show_preflight(self.format_generation_preflight(preflight))
             self.main.status_label.setText(
                 "Preflight needs: "
                 + "; ".join(issue.message for issue in preflight.errors[:3])
@@ -844,6 +844,7 @@ class MainWindowController:
             / (asset.slug or asset.name)
         )
         self.main.preview_panel.clear()
+        self.main.show_generated_output()
         self.set_busy(True, "Generating asset...")
         self._thread = self._thread_class("ProjectGenerationThread")(
             project=project,
@@ -915,7 +916,10 @@ class MainWindowController:
                 output.slices,
                 title=title,
             )
-        self.set_busy(False, f"Generated {len(result.outputs)} image(s)")
+        self.main.show_generated_output()
+        summary = f"Generated {len(result.outputs)} image(s)"
+        self.set_busy(False, summary)
+        self.main.run_summary_label.setText(summary)
         self.refresh_asset_list(result.asset_slug)
         self._thread = None
 
@@ -935,8 +939,9 @@ class MainWindowController:
             self._last_output_dir = str(result.output_dir)
             self._last_project_gallery_path = self.write_project_gallery(project)
             variant_label = f" from variant {variant_index}" if variant_index else ""
-            self.main.status_label.setText(
-                f"Exported {len(result.sprites)} sprite(s){variant_label} to {result.output_dir}"
+            self._set_status_and_summary(
+                f"Exported {len(result.sprites)} sprite(s){variant_label} "
+                f"to {self._display_path(result.output_dir)}"
             )
         except Exception as exc:
             QMessageBox.warning(self.main, "Export Failed", str(exc))
@@ -950,9 +955,9 @@ class MainWindowController:
             self._last_project_gallery_path = self.write_project_gallery(project)
             self.refresh_project_list(project.slug)
             skipped = f", skipped {len(result.skipped)}" if result.skipped else ""
-            self.main.status_label.setText(
+            self._set_status_and_summary(
                 f"Exported project pack with {len(result.assets)} asset(s){skipped} "
-                f"to {result.output_dir}"
+                f"to {self._display_path(result.output_dir)}"
             )
         except Exception as exc:
             QMessageBox.warning(self.main, "Export Project Failed", str(exc))
@@ -964,7 +969,9 @@ class MainWindowController:
             self._last_project_gallery_path = str(gallery_path)
             self.refresh_project_list(project.slug)
             self.main._open_local_path(gallery_path)
-            self.main.status_label.setText(f"Opened project gallery: {gallery_path}")
+            self.main.status_label.setText(
+                f"Opened project gallery: {self._display_path(gallery_path)}"
+            )
         except Exception as exc:
             QMessageBox.warning(self.main, "Project Gallery Failed", str(exc))
 
@@ -1265,6 +1272,15 @@ class MainWindowController:
         self.main.status_label.setText(status)
         if busy and hasattr(self.main, "run_summary_label"):
             self.main.run_summary_label.setText(status)
+
+    def _set_status_and_summary(self, text: str) -> None:
+        self.main.status_label.setText(text)
+        if hasattr(self.main, "run_summary_label"):
+            self.main.run_summary_label.setText(text)
+
+    @staticmethod
+    def _display_path(path: Path | str) -> str:
+        return Path(path).name or str(path)
 
     # ------------------------------------------------------------------
     # Helpers

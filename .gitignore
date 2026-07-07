@@ -8,7 +8,9 @@ build/
 .venv/
 venv/
 .env
+.omx/
 output/
+projects/
 styles/
 test_output/
 test_styles/

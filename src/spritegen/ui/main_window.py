@@ -88,6 +88,7 @@ class MainWindow(QWidget):
         # Background page = main app
         background = QWidget()
         background.setObjectName("appBackground")
+        self.app_background = background
         background_layout = QVBoxLayout(background)
         background_layout.setContentsMargins(0, 0, 0, 0)
         background_layout.setSpacing(0)
@@ -380,11 +381,11 @@ class MainWindow(QWidget):
         if self._user_settings.has_seen_welcome:
             return
         if not self._user_settings.image_provider and not self._user_settings.api_keys:
-            self.welcome_overlay.setVisible(True)
+            self._set_welcome_visible(True)
             return
         has_env = bool(env_key_for("openai")) or bool(env_key_for("openrouter"))
         if not has_env and self._user_settings.image_provider == "mock":
-            self.welcome_overlay.setVisible(True)
+            self._set_welcome_visible(True)
             return
         # Auto-detect env vars on first run
         if env_key_for("openai"):
@@ -401,6 +402,15 @@ class MainWindow(QWidget):
         self._settings_store.save(self._user_settings)
         self.controller.apply_user_settings()
         self._refresh_provider_chip()
+
+    def _set_welcome_visible(self, visible: bool) -> None:
+        self.welcome_overlay.setVisible(visible)
+        self.app_background.setEnabled(not visible)
+        if visible:
+            self.welcome_overlay.raise_()
+            self.welcome_overlay.setFocus(Qt.ActiveWindowFocusReason)
+        else:
+            self.setFocus(Qt.OtherFocusReason)
 
     def _welcome_pollinations(self) -> None:
         img_prov, img_model, prompt_prov, prompt_model = pollinations_defaults()
@@ -463,7 +473,7 @@ class MainWindow(QWidget):
                 self.project_starter_combo.findData(starter_key)
             )
             self.controller.on_apply_project_starter()
-        self.welcome_overlay.setVisible(False)
+        self._set_welcome_visible(False)
         self.flash_status("Ready to generate", "success")
         self.status_label.setText(
             f"Welcome! {image_provider.title()} is set up. Click Generate when ready."
@@ -477,13 +487,13 @@ class MainWindow(QWidget):
             self.project_root_edit.setText(folder)
         self._user_settings.mark_welcome_seen()
         self._settings_store.save(self._user_settings)
-        self.welcome_overlay.setVisible(False)
+        self._set_welcome_visible(False)
         self.controller.refresh_project_list()
 
     def _welcome_skip(self) -> None:
         self._user_settings.mark_welcome_seen()
         self._settings_store.save(self._user_settings)
-        self.welcome_overlay.setVisible(False)
+        self._set_welcome_visible(False)
         self.status_label.setText("Ready. Pick a project or start from a starter.")
 
     # ------------------------------------------------------------------
@@ -557,6 +567,12 @@ class MainWindow(QWidget):
     def show_prompt_plan(self, visible: bool) -> None:
         self.workspace_panel.show_prompt_plan(visible)
 
+    def show_preflight(self, text: str) -> None:
+        self.workspace_panel.show_preflight(text)
+
+    def show_generated_output(self) -> None:
+        self.workspace_panel.show_generated_output()
+
     def flash_status(self, text: str, state: str = "success") -> None:
         self.action_footer.flash_status(text, state)
 
@@ -606,10 +622,10 @@ class MainWindow(QWidget):
         self.open_local_path(gallery_path)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
-        if event.key() == Qt.Key_Escape and self.welcome_overlay.isVisible():
+        if event.key() == Qt.Key_Escape and not self.welcome_overlay.isHidden():
             self._welcome_skip()
             return
-        if event.key() == Qt.Key_Escape and self.settings_drawer.isVisible():
+        if event.key() == Qt.Key_Escape and not self.settings_drawer.isHidden():
             self._close_settings_drawer()
             return
         super().keyPressEvent(event)
@@ -840,12 +856,6 @@ class MainWindow(QWidget):
 
     def _open_local_path(self, path) -> None:
         self.open_local_path(path)
-
-    def _welcome_skip(self) -> None:
-        self._user_settings.mark_welcome_seen()
-        self._settings_store.save(self._user_settings)
-        self.welcome_overlay.setVisible(False)
-        self.status_label.setText("Ready. Pick a project or start from a starter.")
 
     def welcome_pollinations(self) -> None:
         self._welcome_pollinations()

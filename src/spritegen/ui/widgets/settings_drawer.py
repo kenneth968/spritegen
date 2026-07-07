@@ -104,6 +104,7 @@ class SettingsDrawer(QFrame):
         # Tabs
         self.tabs = QTabWidget()
         self.tabs.setDocumentMode(True)
+        self.tabs.setTabPosition(QTabWidget.West)
         self.tabs.addTab(self._build_project_tab(), "Project")
         self.tabs.addTab(self._build_asset_tab(), "Asset")
         self.tabs.addTab(self._build_layout_tab(), "Layouts")
