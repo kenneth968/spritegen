@@ -116,11 +116,11 @@ class PreviewPanel(QWidget):
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
 
         self.container = QWidget()
         self.container_layout = QVBoxLayout(self.container)
-        self.container_layout.setAlignment(Qt.AlignTop)
+        self.container_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         self._add_placeholder()
 
@@ -133,15 +133,18 @@ class PreviewPanel(QWidget):
 
     def _add_placeholder(self) -> None:
         self.placeholder = QLabel("No generated assets yet.")
-        self.placeholder.setAlignment(Qt.AlignCenter)
+        self.placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.placeholder.setStyleSheet("color: #666; font-size: 14px; padding: 40px;")
         self.container_layout.addWidget(self.placeholder)
 
     def clear(self) -> None:
         while self.container_layout.count():
             item = self.container_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+            if item is None:
+                continue
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
         self._image_paths.clear()
         self._add_placeholder()
 
@@ -186,13 +189,13 @@ class PreviewPanel(QWidget):
         if pixmap.isNull():
             return
         image_label = QLabel()
-        image_label.setAlignment(Qt.AlignCenter)
+        image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         image_label.setPixmap(
             pixmap.scaled(
                 max_width,
                 max_height,
-                Qt.KeepAspectRatio,
-                Qt.SmoothTransformation,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
             )
         )
         self.container_layout.addWidget(image_label)
@@ -213,22 +216,22 @@ class PreviewPanel(QWidget):
 
             pixmap = QPixmap.fromImage(QImage(str(path)))
             image_label = QLabel()
-            image_label.setAlignment(Qt.AlignCenter)
+            image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             image_label.setMinimumSize(96, 96)
             if not pixmap.isNull():
                 image_label.setPixmap(
                     pixmap.scaled(
                         128,
                         128,
-                        Qt.KeepAspectRatio,
-                        Qt.SmoothTransformation,
+                        Qt.AspectRatioMode.KeepAspectRatio,
+                        Qt.TransformationMode.SmoothTransformation,
                     )
                 )
                 self._image_paths.append(path)
             cell_layout.addWidget(image_label)
 
             name_label = QLabel(path.name)
-            name_label.setAlignment(Qt.AlignCenter)
+            name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             name_label.setWordWrap(True)
             name_label.setStyleSheet("font-size: 11px; color: #555;")
             cell_layout.addWidget(name_label)
@@ -497,10 +500,18 @@ class MainWindow(QWidget):
 
         config_group = QGroupBox("Providers")
         config_layout = QFormLayout(config_group)
+        self.provider_form_layout = config_layout
 
         self.image_provider_combo = self._provider_combo(IMAGE_PROVIDERS)
         self.image_provider_combo.currentIndexChanged.connect(self._on_image_provider_changed)
-        config_layout.addRow("Image Provider:", self.image_provider_combo)
+        config_layout.addRow("Provider:", self.image_provider_combo)
+
+        self.shared_provider_setup_check = QCheckBox("Use same provider for prompt improvement")
+        self.shared_provider_setup_check.setChecked(True)
+        self.shared_provider_setup_check.stateChanged.connect(
+            self._on_shared_provider_setup_changed
+        )
+        config_layout.addRow("Provider Mode:", self.shared_provider_setup_check)
 
         self.image_model_edit = QLineEdit(default_model("mock", IMAGE_ROLE))
         config_layout.addRow("Image Model:", self.image_model_edit)
@@ -530,13 +541,13 @@ class MainWindow(QWidget):
         config_layout.addRow("Prompt Suggestions:", self.prompt_model_suggestions)
 
         self.image_api_key_edit = QLineEdit()
-        self.image_api_key_edit.setEchoMode(QLineEdit.Password)
-        self.image_api_key_edit.setPlaceholderText("Paste image provider key")
+        self.image_api_key_edit.setEchoMode(QLineEdit.EchoMode.Password)
+        self.image_api_key_edit.setPlaceholderText("Paste provider key")
         self.api_key_override = self.image_api_key_edit
-        config_layout.addRow("Image API Key:", self.image_api_key_edit)
+        config_layout.addRow("API Key:", self.image_api_key_edit)
 
         self.prompt_api_key_edit = QLineEdit()
-        self.prompt_api_key_edit.setEchoMode(QLineEdit.Password)
+        self.prompt_api_key_edit.setEchoMode(QLineEdit.EchoMode.Password)
         self.prompt_api_key_edit.setPlaceholderText("Paste prompt provider key")
         config_layout.addRow("Prompt API Key:", self.prompt_api_key_edit)
 
@@ -664,31 +675,75 @@ class MainWindow(QWidget):
             combo.addItem(PROVIDER_LABELS[provider], provider)
         return combo
 
+    def _using_shared_provider_setup(self) -> bool:
+        return self.shared_provider_setup_check.isChecked()
+
+    def _set_provider_field_visible(self, widget: QWidget, visible: bool) -> None:
+        widget.setVisible(visible)
+        label = self.provider_form_layout.labelForField(widget)
+        if label is not None:
+            label.setVisible(visible)
+
+    def _apply_provider_setup_mode(self, reset_prompt_model: bool = False) -> None:
+        shared_setup = self._using_shared_provider_setup()
+        if shared_setup:
+            self._sync_prompt_provider_from_image_provider(reset_model=reset_prompt_model)
+        self._set_provider_field_visible(self.prompt_provider_combo, not shared_setup)
+        self._set_provider_field_visible(self.prompt_api_key_edit, not shared_setup)
+
+    def _sync_prompt_provider_from_image_provider(self, reset_model: bool = True) -> None:
+        provider = self.image_provider_combo.currentData()
+        self.prompt_provider_combo.blockSignals(True)
+        self._set_combo_value(self.prompt_provider_combo, provider)
+        self.prompt_provider_combo.blockSignals(False)
+        self._refresh_model_suggestions(PROMPT_ROLE, provider)
+        if reset_model:
+            self.prompt_model_edit.setText(default_model(provider, PROMPT_ROLE))
+        self._refresh_api_key_field("prompt")
+
+    def _on_shared_provider_setup_changed(self, *_args) -> None:
+        self._apply_provider_setup_mode(reset_prompt_model=True)
+
     def _on_image_provider_changed(self, *_args) -> None:
         provider = self.image_provider_combo.currentData()
         self._refresh_model_suggestions(IMAGE_ROLE, provider)
         self.image_model_edit.setText(default_model(provider, IMAGE_ROLE))
         self._refresh_api_key_field("image")
+        if self._using_shared_provider_setup():
+            self._sync_prompt_provider_from_image_provider(reset_model=True)
 
     def _on_prompt_provider_changed(self, *_args) -> None:
+        if self._using_shared_provider_setup():
+            self._sync_prompt_provider_from_image_provider(reset_model=False)
+            return
         provider = self.prompt_provider_combo.currentData()
         self._refresh_model_suggestions(PROMPT_ROLE, provider)
         self.prompt_model_edit.setText(default_model(provider, PROMPT_ROLE))
         self._refresh_api_key_field("prompt")
 
     def _apply_user_settings(self) -> None:
+        self.shared_provider_setup_check.blockSignals(True)
+        self.shared_provider_setup_check.setChecked(self._user_settings.shared_provider_setup)
+        self.shared_provider_setup_check.blockSignals(False)
+        self.image_provider_combo.blockSignals(True)
         self._set_combo_value(self.image_provider_combo, self._user_settings.image_provider)
+        self.image_provider_combo.blockSignals(False)
         self._refresh_model_suggestions(IMAGE_ROLE, self.image_provider_combo.currentData())
         self.image_model_edit.setText(
             self._user_settings.image_model
             or default_model(self.image_provider_combo.currentData(), IMAGE_ROLE)
         )
+        self.prompt_provider_combo.blockSignals(True)
         self._set_combo_value(self.prompt_provider_combo, self._user_settings.prompt_provider)
+        self.prompt_provider_combo.blockSignals(False)
+        if self._using_shared_provider_setup():
+            self._sync_prompt_provider_from_image_provider(reset_model=False)
         self._refresh_model_suggestions(PROMPT_ROLE, self.prompt_provider_combo.currentData())
         self.prompt_model_edit.setText(
             self._user_settings.prompt_model
             or default_model(self.prompt_provider_combo.currentData(), PROMPT_ROLE)
         )
+        self._apply_provider_setup_mode(reset_prompt_model=False)
         self._refresh_api_key_fields()
 
     def _refresh_model_suggestions(self, role: str, provider: str) -> None:
@@ -1078,7 +1133,7 @@ class MainWindow(QWidget):
     def _on_check_provider_setup(self) -> None:
         missing = []
         image_provider = self.image_provider_combo.currentData()
-        prompt_provider = self.prompt_provider_combo.currentData()
+        prompt_provider = image_provider if self._using_shared_provider_setup() else self.prompt_provider_combo.currentData()
         validations = [
             self._validate_current_model(
                 IMAGE_ROLE,
@@ -1101,10 +1156,14 @@ class MainWindow(QWidget):
             for validation in validations
             if validation.status == MODEL_VALIDATION_WARNING
         ]
-        if image_provider in KEYED_PROVIDERS and not self._api_key_for(image_provider, "image"):
-            missing.append(f"{PROVIDER_LABELS[image_provider]} image key")
-        if prompt_provider in KEYED_PROVIDERS and not self._api_key_for(prompt_provider, "prompt"):
-            missing.append(f"{PROVIDER_LABELS[prompt_provider]} prompt key")
+        if self._using_shared_provider_setup():
+            if image_provider in KEYED_PROVIDERS and not self._api_key_for(image_provider, "image"):
+                missing.append(f"{PROVIDER_LABELS[image_provider]} key")
+        else:
+            if image_provider in KEYED_PROVIDERS and not self._api_key_for(image_provider, "image"):
+                missing.append(f"{PROVIDER_LABELS[image_provider]} image key")
+            if prompt_provider in KEYED_PROVIDERS and not self._api_key_for(prompt_provider, "prompt"):
+                missing.append(f"{PROVIDER_LABELS[prompt_provider]} prompt key")
         if missing or model_errors:
             self.status_label.setText(
                 "Provider setup needs: " + ", ".join([*missing, *model_errors])
@@ -1140,16 +1199,21 @@ class MainWindow(QWidget):
         )
 
     def _on_save_provider_settings(self) -> None:
+        image_provider = self.image_provider_combo.currentData()
+        prompt_provider = image_provider if self._using_shared_provider_setup() else self.prompt_provider_combo.currentData()
         settings = UserSettings(
-            image_provider=self.image_provider_combo.currentData(),
+            image_provider=image_provider,
             image_model=self.image_model_edit.text().strip(),
-            prompt_provider=self.prompt_provider_combo.currentData(),
+            prompt_provider=prompt_provider,
             prompt_model=self.prompt_model_edit.text().strip(),
+            shared_provider_setup=self._using_shared_provider_setup(),
             api_keys=dict(self._user_settings.api_keys),
         )
         image_key = self.image_api_key_edit.text()
         prompt_key = self.prompt_api_key_edit.text()
-        if settings.image_provider == settings.prompt_provider:
+        if settings.shared_provider_setup:
+            settings.set_api_key(settings.image_provider, image_key)
+        elif settings.image_provider == settings.prompt_provider:
             settings.set_api_key(settings.image_provider, prompt_key or image_key)
         else:
             settings.set_api_key(settings.image_provider, image_key)
