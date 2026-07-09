@@ -125,22 +125,64 @@ class MainWindowController:
     # ------------------------------------------------------------------
     # Settings & API keys
     # ------------------------------------------------------------------
+    def using_shared_provider_setup(self) -> bool:
+        return self.main.shared_provider_setup_check.isChecked()
+
+    def apply_provider_setup_mode(self, reset_prompt_model: bool = False) -> None:
+        shared_setup = self.using_shared_provider_setup()
+        if shared_setup:
+            self.sync_prompt_provider_from_image_provider(reset_model=reset_prompt_model)
+        self._set_prompt_field_visible(self.main.prompt_provider_combo, not shared_setup)
+        self._set_prompt_field_visible(self.main.prompt_api_key_edit, not shared_setup)
+
+    def _set_prompt_field_visible(self, widget, visible: bool) -> None:
+        widget.setVisible(visible)
+        label = self.main.prompt_provider_form.labelForField(widget)
+        if label is not None:
+            label.setVisible(visible)
+
+    def sync_prompt_provider_from_image_provider(self, reset_model: bool = True) -> None:
+        provider = self.main.image_provider_combo.currentData()
+        self.main.prompt_provider_combo.blockSignals(True)
+        self.set_combo_value(self.main.prompt_provider_combo, provider)
+        self.main.prompt_provider_combo.blockSignals(False)
+        self.refresh_model_suggestions(PROMPT_ROLE, provider)
+        if reset_model:
+            self.main.prompt_model_edit.setText(default_model(provider, PROMPT_ROLE))
+        self.refresh_api_key_field("prompt")
+
+    def on_shared_provider_setup_changed(self, *_args) -> None:
+        self.apply_provider_setup_mode(reset_prompt_model=True)
+        self.main.update_provider_chip()
+
     def on_image_provider_changed(self, *_args) -> None:
         provider = self.main.image_provider_combo.currentData()
         self.refresh_model_suggestions(IMAGE_ROLE, provider)
         self.main.image_model_edit.setText(default_model(provider, IMAGE_ROLE))
         self.refresh_api_key_field("image")
+        if self.using_shared_provider_setup():
+            self.sync_prompt_provider_from_image_provider(reset_model=True)
 
     def on_prompt_provider_changed(self, *_args) -> None:
+        if self.using_shared_provider_setup():
+            self.sync_prompt_provider_from_image_provider(reset_model=False)
+            return
         provider = self.main.prompt_provider_combo.currentData()
         self.refresh_model_suggestions(PROMPT_ROLE, provider)
         self.main.prompt_model_edit.setText(default_model(provider, PROMPT_ROLE))
         self.refresh_api_key_field("prompt")
 
     def apply_user_settings(self) -> None:
+        self.main.shared_provider_setup_check.blockSignals(True)
+        self.main.shared_provider_setup_check.setChecked(
+            self._user_settings.shared_provider_setup
+        )
+        self.main.shared_provider_setup_check.blockSignals(False)
+        self.main.image_provider_combo.blockSignals(True)
         self.set_combo_value(
             self.main.image_provider_combo, self._user_settings.image_provider
         )
+        self.main.image_provider_combo.blockSignals(False)
         self.refresh_model_suggestions(
             IMAGE_ROLE, self.main.image_provider_combo.currentData()
         )
@@ -151,6 +193,8 @@ class MainWindowController:
         self.set_combo_value(
             self.main.prompt_provider_combo, self._user_settings.prompt_provider
         )
+        if self.using_shared_provider_setup():
+            self.sync_prompt_provider_from_image_provider(reset_model=False)
         self.refresh_model_suggestions(
             PROMPT_ROLE, self.main.prompt_provider_combo.currentData()
         )
@@ -158,6 +202,7 @@ class MainWindowController:
             self._user_settings.prompt_model
             or default_model(self.main.prompt_provider_combo.currentData(), PROMPT_ROLE)
         )
+        self.apply_provider_setup_mode(reset_prompt_model=False)
         self.refresh_api_key_fields()
 
     def refresh_model_suggestions(self, role: str, provider: str) -> None:
@@ -352,6 +397,24 @@ class MainWindowController:
             )
         except Exception as exc:
             QMessageBox.warning(self.main, "Starter Failed", str(exc))
+
+    def on_try_sample_run(self) -> None:
+        self.main.shared_provider_setup_check.setChecked(True)
+        self.set_combo_value(self.main.image_provider_combo, "mock")
+        self.on_image_provider_changed()
+        self.set_combo_value(self.main.prompt_provider_combo, "mock")
+        self.on_prompt_provider_changed()
+        self.main.image_api_key_edit.clear()
+        self.main.prompt_api_key_edit.clear()
+        self.main.generation_variants_spin.setValue(1)
+        self.on_apply_project_starter()
+        self.on_check_run()
+        self.main.status_label.setText(
+            "Sample run ready: reviewed mock preflight; Mock is selected so "
+            "Generate will not spend provider credits."
+        )
+        if hasattr(self.main, "run_summary_label"):
+            self.main.run_summary_label.setText(self.main.status_label.text())
 
     def on_apply_workflow_preset(self) -> None:
         try:
@@ -564,7 +627,11 @@ class MainWindowController:
     def on_check_provider_setup(self) -> None:
         missing = []
         image_provider = self.main.image_provider_combo.currentData()
-        prompt_provider = self.main.prompt_provider_combo.currentData()
+        prompt_provider = (
+            image_provider
+            if self.using_shared_provider_setup()
+            else self.main.prompt_provider_combo.currentData()
+        )
         validations = [
             self.validate_current_model(
                 IMAGE_ROLE, image_provider, self.main.image_model_edit.text()
@@ -583,14 +650,20 @@ class MainWindowController:
             for v in validations
             if v.status == MODEL_VALIDATION_WARNING
         ]
-        if image_provider in KEYED_PROVIDERS and not self.api_key_for(
-            image_provider, "image"
-        ):
-            missing.append(f"{PROVIDER_LABELS[image_provider]} image key")
-        if prompt_provider in KEYED_PROVIDERS and not self.api_key_for(
-            prompt_provider, "prompt"
-        ):
-            missing.append(f"{PROVIDER_LABELS[prompt_provider]} prompt key")
+        if self.using_shared_provider_setup():
+            if image_provider in KEYED_PROVIDERS and not self.api_key_for(
+                image_provider, "image"
+            ):
+                missing.append(f"{PROVIDER_LABELS[image_provider]} key")
+        else:
+            if image_provider in KEYED_PROVIDERS and not self.api_key_for(
+                image_provider, "image"
+            ):
+                missing.append(f"{PROVIDER_LABELS[image_provider]} image key")
+            if prompt_provider in KEYED_PROVIDERS and not self.api_key_for(
+                prompt_provider, "prompt"
+            ):
+                missing.append(f"{PROVIDER_LABELS[prompt_provider]} prompt key")
         if missing or model_errors:
             self.main.status_label.setText(
                 "Provider setup needs: " + ", ".join([*missing, *model_errors])
@@ -626,16 +699,25 @@ class MainWindowController:
         )
 
     def on_save_provider_settings(self) -> None:
+        image_provider = self.main.image_provider_combo.currentData()
+        prompt_provider = (
+            image_provider
+            if self.using_shared_provider_setup()
+            else self.main.prompt_provider_combo.currentData()
+        )
         settings = UserSettings(
-            image_provider=self.main.image_provider_combo.currentData(),
+            image_provider=image_provider,
             image_model=self.main.image_model_edit.text().strip(),
-            prompt_provider=self.main.prompt_provider_combo.currentData(),
+            prompt_provider=prompt_provider,
             prompt_model=self.main.prompt_model_edit.text().strip(),
+            shared_provider_setup=self.using_shared_provider_setup(),
             api_keys=dict(self._user_settings.api_keys),
         )
         image_key = self.main.image_api_key_edit.text()
         prompt_key = self.main.prompt_api_key_edit.text()
-        if settings.image_provider == settings.prompt_provider:
+        if settings.shared_provider_setup:
+            settings.set_api_key(settings.image_provider, image_key)
+        elif settings.image_provider == settings.prompt_provider:
             settings.set_api_key(settings.image_provider, prompt_key or image_key)
         else:
             settings.set_api_key(settings.image_provider, image_key)

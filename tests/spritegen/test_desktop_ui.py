@@ -64,13 +64,17 @@ def test_main_window_uses_guided_workflow_layout(tmp_path, monkeypatch):
         "models",
         "prompt",
     }
-    assert window.action_footer.layout().count() >= 2
+    action_footer_layout = window.action_footer.layout()
+    assert action_footer_layout is not None
+    assert action_footer_layout.count() >= 2
     assert window.style_edit.minimumHeight() >= 64
     assert window.context_edit.minimumHeight() >= 112
     assert window.asset_description_edit.minimumHeight() >= 72
     assert window.image_model_edit.isEditable()
     assert window.image_model_suggestions is window.image_model_edit
-    assert window.palette_swatches.layout().count() >= 5
+    palette_layout = window.palette_swatches.layout()
+    assert palette_layout is not None
+    assert palette_layout.count() >= 5
     assert window.save_btn.text() == "Save"
     assert window.generate_btn.text() == "Generate"
     assert window.check_run_btn.text() == "Check Run"
@@ -84,7 +88,11 @@ def test_main_window_uses_guided_workflow_layout(tmp_path, monkeypatch):
     assert "QWidget#settingsDrawer" in window.styleSheet()
     assert window.style_edit.minimumHeight() >= 88
     assert window.asset_description_edit.minimumHeight() >= 96
-    assert window.palette_edit.parentWidget().layout().spacing() >= 6
+    palette_parent = window.palette_edit.parentWidget()
+    assert palette_parent is not None
+    palette_parent_layout = palette_parent.layout()
+    assert palette_parent_layout is not None
+    assert palette_parent_layout.spacing() >= 6
     assert window.layout_combo.minimumWidth() >= 220
     assert window.evolutions_spin.minimumWidth() >= 72
 
@@ -218,6 +226,8 @@ def test_main_window_loads_saved_project_and_asset(tmp_path):
     )
     store.save_project(project)
     store.save_asset(project, asset)
+    assert project.slug is not None
+    assert asset.slug is not None
     output_dir = store.generated_dir(project.slug) / asset.slug
     slice_dir = output_dir / "single"
     slice_dir.mkdir(parents=True)
@@ -304,6 +314,8 @@ def test_main_window_exports_loaded_asset_slices(tmp_path):
     )
     store.save_project(project)
     store.save_asset(project, asset)
+    assert project.slug is not None
+    assert asset.slug is not None
     output_dir = store.generated_dir(project.slug) / asset.slug
     slice_dir = output_dir / "single"
     slice_dir.mkdir(parents=True)
@@ -378,6 +390,8 @@ def test_main_window_exports_selected_variant(tmp_path):
     )
     store.save_project(project)
     store.save_asset(project, asset)
+    assert project.slug is not None
+    assert asset.slug is not None
     output_dir = store.generated_dir(project.slug) / asset.slug
     output_dir.mkdir(parents=True)
     variant_1 = output_dir / "single-v01_sprite.png"
@@ -496,6 +510,7 @@ def test_generation_thread_can_enhance_before_generate(tmp_path, monkeypatch):
         assert provider == "mock"
         assert model == "mock"
         assert "Raw asset idea: Spore cloud tower." in brief
+        assert system_prompt is not None
         assert "Asset Prompt Guide" in system_prompt
         return "enhanced thread puffball prompt"
 
@@ -789,6 +804,57 @@ def test_main_window_creates_project_starter(tmp_path):
     app.processEvents()
 
 
+def test_main_window_try_sample_run_creates_mock_preflight(tmp_path, monkeypatch):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    pytest.importorskip("PySide6")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+
+    from PySide6.QtWidgets import QApplication
+    from spritegen.projects import ProjectStore
+    from spritegen.user_settings import UserSettingsStore
+    from spritegen.ui.main_window import MainWindow
+
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow(settings_store=UserSettingsStore(tmp_path / "settings.json"))
+    window.project_root_edit.setText(str(tmp_path / "projects"))
+    window.shared_provider_setup_check.setChecked(False)
+    window._set_combo_value(window.image_provider_combo, "openrouter")
+    window._set_combo_value(window.prompt_provider_combo, "openai")
+    window.image_api_key_edit.setText("openrouter-key")
+    window.prompt_api_key_edit.setText("openai-key")
+    window.generation_variants_spin.setValue(4)
+
+    window._on_try_sample_run()
+
+    assert window.shared_provider_setup_check.isChecked() is True
+    assert window.image_provider_combo.currentData() == "mock"
+    assert window.prompt_provider_combo.currentData() == "mock"
+    assert window.image_api_key_edit.text() == ""
+    assert window.prompt_api_key_edit.text() == ""
+    assert window.generation_variants_spin.value() == 1
+    assert window.status_label.text() == (
+        "Sample run ready: reviewed mock preflight; Mock is selected so Generate "
+        "will not spend provider credits."
+    )
+    preview = window.prompt_preview_edit.toPlainText()
+    assert "Preflight: ready" in preview
+    assert "Project: MyceliumTD" in preview
+    assert "Asset: Puffball" in preview
+    assert "Image model: mock / mock" in preview
+    assert "Variants per prompt packet: 1" in preview
+
+    store = ProjectStore(tmp_path / "projects")
+    project = store.load_project("myceliumtd")
+    asset = store.load_asset(project, "puffball")
+    assert project.provider_defaults.image_provider == "mock"
+    assert project.provider_defaults.prompt_provider == "mock"
+    assert asset.name == "Puffball"
+
+    window.close()
+    app.processEvents()
+
+
 def test_main_window_labels_generation_variants(tmp_path):
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     pytest.importorskip("PySide6")
@@ -1053,6 +1119,7 @@ def test_main_window_saves_local_provider_setup(tmp_path, monkeypatch):
             image_model="google/gemini-3.1-flash-image-preview",
             prompt_provider="openai",
             prompt_model="gpt-5.5",
+            shared_provider_setup=False,
             api_keys={
                 "openrouter": "saved-openrouter-key",
                 "openai": "saved-openai-key",
@@ -1316,6 +1383,7 @@ def test_main_window_checks_provider_setup_without_network(tmp_path, monkeypatch
 
     app = QApplication.instance() or QApplication([])
     window = MainWindow(settings_store=UserSettingsStore(tmp_path / "settings.json"))
+    window.shared_provider_setup_check.setChecked(False)
     window._set_combo_value(window.image_provider_combo, "openrouter")
     window._set_combo_value(window.prompt_provider_combo, "openai")
     window.image_api_key_edit.clear()
@@ -1344,6 +1412,115 @@ def test_main_window_checks_provider_setup_without_network(tmp_path, monkeypatch
     assert window.status_label.text().startswith("Provider setup ready with notes:")
     assert "Custom OpenRouter image model" in window.status_label.text()
 
+    window.close()
+    app.processEvents()
+
+
+def test_main_window_uses_shared_provider_setup_by_default(tmp_path, monkeypatch):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    pytest.importorskip("PySide6")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+
+    from PySide6.QtWidgets import QApplication
+    from spritegen.provider_models import IMAGE_ROLE, PROMPT_ROLE, default_model
+    from spritegen.user_settings import UserSettingsStore
+    from spritegen.ui.main_window import MainWindow
+
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow(settings_store=UserSettingsStore(tmp_path / "settings.json"))
+
+    assert window.shared_provider_setup_check.isChecked() is True
+    assert window.prompt_provider_combo.currentData() == window.image_provider_combo.currentData()
+    assert window.prompt_provider_combo.isHidden() is True
+    assert window.prompt_api_key_edit.isHidden() is True
+    assert window.prompt_model_edit.isHidden() is False
+    assert window.prompt_model_suggestions.isHidden() is False
+
+    window._set_combo_value(window.image_provider_combo, "openrouter")
+    window._on_image_provider_changed()
+
+    assert window.prompt_provider_combo.currentData() == "openrouter"
+    assert window.image_model_edit.text() == default_model("openrouter", IMAGE_ROLE)
+    assert window.prompt_model_edit.text() == default_model("openrouter", PROMPT_ROLE)
+
+    window.close()
+    app.processEvents()
+
+
+def test_main_window_shared_provider_setup_saves_one_key(tmp_path, monkeypatch):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    pytest.importorskip("PySide6")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+
+    from PySide6.QtWidgets import QApplication
+    from spritegen.user_settings import UserSettingsStore
+    from spritegen.ui.main_window import MainWindow
+
+    settings_store = UserSettingsStore(tmp_path / "settings.json")
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow(settings_store=settings_store)
+    window._set_combo_value(window.image_provider_combo, "openrouter")
+    window._on_image_provider_changed()
+    window.image_api_key_edit.setText("shared-openrouter-key")
+
+    window._on_check_provider_setup()
+
+    assert window.status_label.text() == "Provider setup ready: image OpenRouter / prompt OpenRouter"
+
+    window._on_save_provider_settings()
+    saved = settings_store.load()
+
+    assert saved.shared_provider_setup is True
+    assert saved.image_provider == "openrouter"
+    assert saved.prompt_provider == "openrouter"
+    assert saved.api_key_for("openrouter") == "shared-openrouter-key"
+    assert saved.api_keys == {"openrouter": "shared-openrouter-key"}
+
+    window.close()
+    app.processEvents()
+
+
+def test_main_window_advanced_provider_setup_remains_available(tmp_path, monkeypatch):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    pytest.importorskip("PySide6")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+
+    from PySide6.QtWidgets import QApplication
+    from spritegen.user_settings import UserSettingsStore
+    from spritegen.ui.main_window import MainWindow
+
+    settings_store = UserSettingsStore(tmp_path / "settings.json")
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow(settings_store=settings_store)
+
+    window.shared_provider_setup_check.setChecked(False)
+    window._set_combo_value(window.image_provider_combo, "openrouter")
+    window._set_combo_value(window.prompt_provider_combo, "openai")
+    window.image_api_key_edit.setText("openrouter-key")
+    window.prompt_api_key_edit.setText("openai-key")
+
+    assert window.prompt_provider_combo.isHidden() is False
+    assert window.prompt_api_key_edit.isHidden() is False
+
+    window._on_save_provider_settings()
+    saved = settings_store.load()
+
+    assert saved.shared_provider_setup is False
+    assert saved.image_provider == "openrouter"
+    assert saved.prompt_provider == "openai"
+    assert saved.api_key_for("openrouter") == "openrouter-key"
+    assert saved.api_key_for("openai") == "openai-key"
+
+    reloaded = MainWindow(settings_store=settings_store)
+    assert reloaded.shared_provider_setup_check.isChecked() is False
+    assert reloaded.prompt_provider_combo.currentData() == "openai"
+    assert reloaded.prompt_provider_combo.isHidden() is False
+    assert reloaded.prompt_api_key_edit.isHidden() is False
+
+    reloaded.close()
     window.close()
     app.processEvents()
 

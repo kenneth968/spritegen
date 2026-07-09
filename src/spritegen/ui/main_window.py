@@ -83,7 +83,7 @@ class MainWindow(QWidget):
         self.setStyleSheet(desktop_stylesheet())
 
         outer = QStackedLayout(self)
-        outer.setStackingMode(QStackedLayout.StackAll)
+        outer.setStackingMode(QStackedLayout.StackingMode.StackAll)
 
         # Background page = main app
         background = QWidget()
@@ -168,6 +168,7 @@ class MainWindow(QWidget):
         self.project_root_edit = dp.project_root_edit
         self.project_starter_combo = dp.project_starter_combo
         self.create_project_starter_btn = dp.create_project_starter_btn
+        self.try_sample_run_btn = dp.try_sample_run_btn
         self.project_combo = dp.project_combo
         self.refresh_projects_btn = dp.refresh_projects_btn
         self.load_project_btn = dp.load_project_btn
@@ -208,6 +209,9 @@ class MainWindow(QWidget):
         self.prompt_model_edit = dp.prompt_model_edit
         self.prompt_model_suggestions = dp.prompt_model_suggestions
         self.prompt_api_key_edit = dp.prompt_api_key_edit
+        self.prompt_provider_form = dp.prompt_provider_form
+        self.prompt_provider_group = dp.prompt_provider_group
+        self.shared_provider_setup_check = dp.shared_provider_setup_check
         self.save_provider_settings_btn = dp.save_provider_settings_btn
         self.clear_saved_keys_btn = dp.clear_saved_keys_btn
         self.open_project_gallery_btn = dp.open_project_gallery_btn
@@ -258,6 +262,9 @@ class MainWindow(QWidget):
         self.prompt_provider_combo.currentIndexChanged.connect(
             self.controller.on_prompt_provider_changed
         )
+        self.shared_provider_setup_check.stateChanged.connect(
+            self.controller.on_shared_provider_setup_changed
+        )
         self.image_model_suggestions.activated.connect(
             lambda _index: self.controller.apply_model_suggestion(IMAGE_ROLE)
         )
@@ -268,6 +275,7 @@ class MainWindow(QWidget):
         # Auto-save provider settings
         self.image_provider_combo.currentIndexChanged.connect(self._schedule_auto_save)
         self.prompt_provider_combo.currentIndexChanged.connect(self._schedule_auto_save)
+        self.shared_provider_setup_check.stateChanged.connect(self._schedule_auto_save)
         self.image_api_key_edit.textChanged.connect(self._schedule_auto_save)
         self.prompt_api_key_edit.textChanged.connect(self._schedule_auto_save)
         self.image_model_edit.editTextChanged.connect(self._schedule_auto_save)
@@ -289,6 +297,7 @@ class MainWindow(QWidget):
         self.create_project_starter_btn.clicked.connect(
             self.controller.on_apply_project_starter
         )
+        self.try_sample_run_btn.clicked.connect(self.controller.on_try_sample_run)
         self.apply_workflow_preset_btn.clicked.connect(
             self.controller.on_apply_workflow_preset
         )
@@ -408,9 +417,9 @@ class MainWindow(QWidget):
         self.app_background.setEnabled(not visible)
         if visible:
             self.welcome_overlay.raise_()
-            self.welcome_overlay.setFocus(Qt.ActiveWindowFocusReason)
+            self.welcome_overlay.setFocus(Qt.FocusReason.ActiveWindowFocusReason)
         else:
-            self.setFocus(Qt.OtherFocusReason)
+            self.setFocus(Qt.FocusReason.OtherFocusReason)
 
     def _welcome_pollinations(self) -> None:
         img_prov, img_model, prompt_prov, prompt_model = pollinations_defaults()
@@ -598,6 +607,7 @@ class MainWindow(QWidget):
         self.open_project_gallery_btn.setEnabled(not busy)
         self.open_folder_btn.setEnabled(not busy)
         self.open_gallery_btn.setEnabled(not busy)
+        self.try_sample_run_btn.setEnabled(not busy)
 
     def open_local_path(self, path) -> None:
         path = str(path)
@@ -622,10 +632,10 @@ class MainWindow(QWidget):
         self.open_local_path(gallery_path)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
-        if event.key() == Qt.Key_Escape and not self.welcome_overlay.isHidden():
+        if event.key() == Qt.Key.Key_Escape and not self.welcome_overlay.isHidden():
             self._welcome_skip()
             return
-        if event.key() == Qt.Key_Escape and not self.settings_drawer.isHidden():
+        if event.key() == Qt.Key.Key_Escape and not self.settings_drawer.isHidden():
             self._close_settings_drawer()
             return
         super().keyPressEvent(event)
@@ -647,6 +657,9 @@ class MainWindow(QWidget):
 
     def _on_apply_project_starter(self) -> None:
         self.controller.on_apply_project_starter()
+
+    def _on_try_sample_run(self) -> None:
+        self.controller.on_try_sample_run()
 
     def _on_apply_workflow_preset(self) -> None:
         self.controller.on_apply_workflow_preset()
@@ -695,6 +708,9 @@ class MainWindow(QWidget):
 
     def _on_prompt_provider_changed(self, *_args) -> None:
         self.controller.on_prompt_provider_changed()
+
+    def _on_shared_provider_setup_changed(self, *_args) -> None:
+        self.controller.on_shared_provider_setup_changed()
 
     def _on_footer_save(self) -> None:
         self.controller.on_save_plan()
@@ -820,6 +836,9 @@ class MainWindow(QWidget):
 
     def _provider_can_run(self, provider: str, api_key: str) -> bool:
         return self.controller.provider_can_run(provider, api_key)
+
+    def _using_shared_provider_setup(self) -> bool:
+        return self.controller.using_shared_provider_setup()
 
     def _set_busy(self, busy: bool, status: str) -> None:
         self.controller.set_busy(busy, status)

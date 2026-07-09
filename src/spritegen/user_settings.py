@@ -29,6 +29,7 @@ class UserSettings:
     image_model: str = "mock"
     prompt_provider: str = "mock"
     prompt_model: str = "mock"
+    shared_provider_setup: bool = True
     api_keys: dict[str, str] = field(default_factory=dict)
     has_seen_welcome: bool = False
     last_starter_key: str = ""
@@ -56,6 +57,7 @@ class UserSettings:
             "image_model": self.image_model,
             "prompt_provider": self.prompt_provider,
             "prompt_model": self.prompt_model,
+            "shared_provider_setup": self.shared_provider_setup,
             "api_keys": dict(self.api_keys),
             "has_seen_welcome": self.has_seen_welcome,
             "last_starter_key": self.last_starter_key,
@@ -71,11 +73,20 @@ class UserSettings:
             for provider, api_key in data.get("api_keys", {}).items()
             if api_key
         }
+        image_provider = str(data.get("image_provider") or "mock")
+        prompt_provider = str(data.get("prompt_provider") or "mock")
+        raw_shared_setup = data.get("shared_provider_setup")
+        shared_provider_setup = (
+            image_provider == prompt_provider
+            if raw_shared_setup is None
+            else bool(raw_shared_setup)
+        )
         return cls(
-            image_provider=str(data.get("image_provider") or "mock"),
+            image_provider=image_provider,
             image_model=str(data.get("image_model") or "mock"),
-            prompt_provider=str(data.get("prompt_provider") or "mock"),
+            prompt_provider=prompt_provider,
             prompt_model=str(data.get("prompt_model") or "mock"),
+            shared_provider_setup=shared_provider_setup,
             api_keys=api_keys,
             has_seen_welcome=bool(data.get("has_seen_welcome", False)),
             last_starter_key=str(data.get("last_starter_key") or ""),

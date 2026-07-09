@@ -53,7 +53,7 @@ PROMPT_PROVIDERS = ["mock", "pollinations", "openai", "openrouter"]
 def _form_group(title: str) -> tuple[QGroupBox, QFormLayout]:
     group = QGroupBox(title)
     form = QFormLayout(group)
-    form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+    form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
     form.setHorizontalSpacing(12)
     form.setVerticalSpacing(8)
     form.setContentsMargins(12, 16, 12, 12)
@@ -75,7 +75,7 @@ class SettingsDrawer(QFrame):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("settingsDrawer")
-        self.setFrameShape(QFrame.NoFrame)
+        self.setFrameShape(QFrame.Shape.NoFrame)
         self.setFixedWidth(420)
         self._build_ui()
 
@@ -94,7 +94,7 @@ class SettingsDrawer(QFrame):
         close_btn = QPushButton("✕")
         close_btn.setObjectName("iconButton")
         close_btn.setToolTip("Close")
-        close_btn.setCursor(Qt.PointingHandCursor)
+        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         close_btn.clicked.connect(self.closed.emit)
         header_layout.addWidget(title)
         header_layout.addStretch()
@@ -104,7 +104,7 @@ class SettingsDrawer(QFrame):
         # Tabs
         self.tabs = QTabWidget()
         self.tabs.setDocumentMode(True)
-        self.tabs.setTabPosition(QTabWidget.West)
+        self.tabs.setTabPosition(QTabWidget.TabPosition.West)
         self.tabs.addTab(self._build_project_tab(), "Project")
         self.tabs.addTab(self._build_asset_tab(), "Asset")
         self.tabs.addTab(self._build_layout_tab(), "Layouts")
@@ -116,7 +116,7 @@ class SettingsDrawer(QFrame):
     def _build_project_tab(self) -> QWidget:
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
         content = QWidget()
         layout = QVBoxLayout(content)
         layout.setContentsMargins(12, 12, 12, 12)
@@ -162,8 +162,11 @@ class SettingsDrawer(QFrame):
             self.project_starter_combo.addItem(starter.label, starter.key)
         self.create_project_starter_btn = QPushButton("Create Starter")
         set_button_role(self.create_project_starter_btn, "secondary")
+        self.try_sample_run_btn = QPushButton("Try Sample Run")
+        set_button_role(self.try_sample_run_btn, "secondary")
         starter_row.addWidget(self.project_starter_combo, 1)
         starter_row.addWidget(self.create_project_starter_btn)
+        starter_row.addWidget(self.try_sample_run_btn)
         form3.addRow("Template", starter_row)
 
         project_open_row = QHBoxLayout()
@@ -199,7 +202,7 @@ class SettingsDrawer(QFrame):
     def _build_asset_tab(self) -> QWidget:
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
         content = QWidget()
         layout = QVBoxLayout(content)
         layout.setContentsMargins(12, 12, 12, 12)
@@ -271,7 +274,7 @@ class SettingsDrawer(QFrame):
     def _build_layout_tab(self) -> QWidget:
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
         content = QWidget()
         layout = QVBoxLayout(content)
         layout.setContentsMargins(12, 12, 12, 12)
@@ -345,7 +348,7 @@ class SettingsDrawer(QFrame):
     def _build_providers_tab(self) -> QWidget:
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
         content = QWidget()
         layout = QVBoxLayout(content)
         layout.setContentsMargins(12, 12, 12, 12)
@@ -354,11 +357,16 @@ class SettingsDrawer(QFrame):
         group, form = _form_group("Image Generation")
         self.image_provider_combo = _provider_combo(IMAGE_PROVIDERS)
         form.addRow("Provider", self.image_provider_combo)
+        self.shared_provider_setup_check = QCheckBox(
+            "Use same provider for prompt improvement"
+        )
+        self.shared_provider_setup_check.setChecked(True)
+        form.addRow("Provider Mode", self.shared_provider_setup_check)
         self.image_model_edit = ModelPicker("mock")
         self.image_model_suggestions = self.image_model_edit
         form.addRow("Model", self.image_model_edit)
         self.image_api_key_edit = QLineEdit()
-        self.image_api_key_edit.setEchoMode(QLineEdit.Password)
+        self.image_api_key_edit.setEchoMode(QLineEdit.EchoMode.Password)
         self.image_api_key_edit.setPlaceholderText("Paste provider API key")
         self.api_key_override = self.image_api_key_edit
         form.addRow("API Key", self.image_api_key_edit)
@@ -383,13 +391,15 @@ class SettingsDrawer(QFrame):
         layout.addWidget(group)
 
         group2, form2 = _form_group("Prompt Improvement")
+        self.prompt_provider_form = form2
+        self.prompt_provider_group = group2
         self.prompt_provider_combo = _provider_combo(PROMPT_PROVIDERS)
         form2.addRow("Provider", self.prompt_provider_combo)
         self.prompt_model_edit = ModelPicker("mock")
         self.prompt_model_suggestions = self.prompt_model_edit
         form2.addRow("Model", self.prompt_model_edit)
         self.prompt_api_key_edit = QLineEdit()
-        self.prompt_api_key_edit.setEchoMode(QLineEdit.Password)
+        self.prompt_api_key_edit.setEchoMode(QLineEdit.EchoMode.Password)
         self.prompt_api_key_edit.setPlaceholderText("Paste provider API key")
         form2.addRow("API Key", self.prompt_api_key_edit)
         layout.addWidget(group2)
@@ -418,7 +428,7 @@ class SettingsDrawer(QFrame):
     def _build_advanced_tab(self) -> QWidget:
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
         content = QWidget()
         layout = QVBoxLayout(content)
         layout.setContentsMargins(12, 12, 12, 12)

@@ -41,15 +41,22 @@ spritegen generate --style pixel_art --sprites "red mushroom" "blue mushroom" --
 On Windows, double-click `launch_spritegen.cmd` from the project folder. The launcher creates
 a local `.venv`, installs the desktop dependencies, and opens the app.
 
-The desktop app exposes separate provider/model fields for image generation and prompt
-improvement. Each provider has suggested model IDs in a picker beside the editable
-model field, so a user can choose a known-good default or paste a newer/custom model.
+Use **Starter / Try Sample Run** for a no-key first pass. It selects Mock for the
+provider, creates the starter project and first asset, and opens the run preflight
+without spending provider credits.
+
+The desktop app uses the same provider for image generation and prompt improvement
+by default. Choose **Provider** and paste one **API Key** when the provider needs
+one; the prompt model remains editable. Clear **Use same provider for prompt improvement**
+to show advanced **Prompt Provider** and **Prompt API Key** fields
+when you intentionally want a different prompt provider. Each provider has
+suggested model IDs in a picker beside the editable model field, so a user can
+choose a known-good default or paste a newer/custom model.
 Use [models.dev](https://models.dev/?search=minim) for current provider model IDs,
 including OpenRouter model names, or set **Model Catalog** to `models.dev`, enter a
 search term, and use **Refresh Models** to pull matching IDs into the pickers. The
 built-in suggestions remain available when offline.
-Paste provider keys into **Image API Key** and **Prompt API Key**. Use **Check Setup**
-to confirm the selected providers have keys and that known model IDs are in the
+Use **Check Setup** to confirm the selected provider has a key and known model IDs are in the
 right image/prompt role. Newer custom IDs from OpenRouter or models.dev stay usable
 with a warning until they appear in refreshed suggestions. Use **Save Local Setup**
 to remember provider defaults and keys on this computer. Keys are never written to project
