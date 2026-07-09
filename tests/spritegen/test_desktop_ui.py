@@ -697,6 +697,57 @@ def test_main_window_creates_project_starter(tmp_path):
     app.processEvents()
 
 
+def test_main_window_try_sample_run_creates_mock_preflight(tmp_path, monkeypatch):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    pytest.importorskip("PySide6")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+
+    from PySide6.QtWidgets import QApplication
+    from spritegen.projects import ProjectStore
+    from spritegen.user_settings import UserSettingsStore
+    from spritegen.ui.main_window import MainWindow
+
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow(settings_store=UserSettingsStore(tmp_path / "settings.json"))
+    window.project_root_edit.setText(str(tmp_path / "projects"))
+    window.shared_provider_setup_check.setChecked(False)
+    window._set_combo_value(window.image_provider_combo, "openrouter")
+    window._set_combo_value(window.prompt_provider_combo, "openai")
+    window.image_api_key_edit.setText("openrouter-key")
+    window.prompt_api_key_edit.setText("openai-key")
+    window.generation_variants_spin.setValue(4)
+
+    window._on_try_sample_run()
+
+    assert window.shared_provider_setup_check.isChecked() is True
+    assert window.image_provider_combo.currentData() == "mock"
+    assert window.prompt_provider_combo.currentData() == "mock"
+    assert window.image_api_key_edit.text() == ""
+    assert window.prompt_api_key_edit.text() == ""
+    assert window.generation_variants_spin.value() == 1
+    assert window.status_label.text() == (
+        "Sample run ready: reviewed mock preflight; Mock is selected so Generate "
+        "will not spend provider credits."
+    )
+    preview = window.prompt_preview_edit.toPlainText()
+    assert "Preflight: ready" in preview
+    assert "Project: MyceliumTD" in preview
+    assert "Asset: Puffball" in preview
+    assert "Image model: mock / mock" in preview
+    assert "Variants per prompt packet: 1" in preview
+
+    store = ProjectStore(tmp_path / "projects")
+    project = store.load_project("myceliumtd")
+    asset = store.load_asset(project, "puffball")
+    assert project.provider_defaults.image_provider == "mock"
+    assert project.provider_defaults.prompt_provider == "mock"
+    assert asset.name == "Puffball"
+
+    window.close()
+    app.processEvents()
+
+
 def test_main_window_labels_generation_variants(tmp_path):
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     pytest.importorskip("PySide6")

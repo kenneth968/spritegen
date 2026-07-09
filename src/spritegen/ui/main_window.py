@@ -338,8 +338,11 @@ class MainWindow(QWidget):
             self.project_starter_combo.addItem(starter.label, starter.key)
         self.create_project_starter_btn = QPushButton("Create Starter")
         self.create_project_starter_btn.clicked.connect(self._on_apply_project_starter)
+        self.try_sample_run_btn = QPushButton("Try Sample Run")
+        self.try_sample_run_btn.clicked.connect(self._on_try_sample_run)
         starter_row.addWidget(self.project_starter_combo, 1)
         starter_row.addWidget(self.create_project_starter_btn)
+        starter_row.addWidget(self.try_sample_run_btn)
         project_layout.addRow("Starter:", starter_row)
 
         project_open_row = QHBoxLayout()
@@ -937,6 +940,22 @@ class MainWindow(QWidget):
             )
         except Exception as exc:
             QMessageBox.warning(self, "Starter Failed", str(exc))
+
+    def _on_try_sample_run(self) -> None:
+        self.shared_provider_setup_check.setChecked(True)
+        self._set_combo_value(self.image_provider_combo, "mock")
+        self._on_image_provider_changed()
+        self._set_combo_value(self.prompt_provider_combo, "mock")
+        self._on_prompt_provider_changed()
+        self.image_api_key_edit.clear()
+        self.prompt_api_key_edit.clear()
+        self.generation_variants_spin.setValue(1)
+        self._on_apply_project_starter()
+        self._on_check_run()
+        self.status_label.setText(
+            "Sample run ready: reviewed mock preflight; Mock is selected so "
+            "Generate will not spend provider credits."
+        )
 
     def _on_apply_workflow_preset(self) -> None:
         try:
@@ -1785,6 +1804,7 @@ class MainWindow(QWidget):
         self.enhance_btn.setEnabled(not busy)
         self.generate_btn.setEnabled(not busy)
         self.create_project_starter_btn.setEnabled(not busy)
+        self.try_sample_run_btn.setEnabled(not busy)
         self.apply_workflow_preset_btn.setEnabled(not busy)
         self.check_run_btn.setEnabled(not busy)
         self.preview_prompts_btn.setEnabled(not busy)
