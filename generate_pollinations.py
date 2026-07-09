@@ -13,7 +13,6 @@ sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from spritegen import (
     SpriteConfig,
-    SpriteDefinition,
     SpriteGenerator,
     StyleManager,
     Slicer,
@@ -50,13 +49,12 @@ def main():
     style = style_mgr.load("mycomed_towers") or create_mycomed_style(style_mgr)
 
     generator = SpriteGenerator(style=style, config=config, style_manager=style_mgr)
-    slicer = Slicer(output_dir=config.output_dir, config=config)
 
     stages = EVOLUTION_STAGES[args.tower]
     selected = args.stages or list(range(1, len(stages) + 1))
 
     print(f"Generating {args.tower} via pollinations.ai (stages: {selected})...")
-    print(f"Mode: one sprite per evolution stage (Bloons TD style upgrades)")
+    print("Mode: one sprite per evolution stage (Bloons TD style upgrades)")
 
     for stage_idx, stage in enumerate(stages):
         stage_num = stage_idx + 1

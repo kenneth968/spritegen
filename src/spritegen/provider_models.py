@@ -26,6 +26,17 @@ MODELS_DEV_SEARCH_URL = "https://models.dev/?search=minim"
 MODELS_DEV_OPENROUTER_SEARCH_URL = MODELS_DEV_SEARCH_URL
 MODEL_DISCOVERY_SOURCES = ("auto", "openrouter", "models-dev")
 
+PROVIDER_LABELS = {
+    "mock": "Mock",
+    "pollinations": "Pollinations",
+    "openai": "OpenAI",
+    "openrouter": "OpenRouter",
+}
+
+
+def provider_label(provider: str) -> str:
+    return PROVIDER_LABELS.get(provider, provider.title())
+
 
 @dataclass(frozen=True)
 class ModelSuggestion:
@@ -108,9 +119,17 @@ MODEL_SUGGESTIONS: tuple[ModelSuggestion, ...] = (
     ModelSuggestion(
         provider="openrouter",
         role=IMAGE_ROLE,
+        model="google/gemini-3.1-flash-image",
+        label="Gemini 3.1 Flash Image",
+        note="OpenRouter image-output model currently listed first for image generation.",
+        source_url=OPENROUTER_IMAGE_DOCS_URL,
+    ),
+    ModelSuggestion(
+        provider="openrouter",
+        role=IMAGE_ROLE,
         model="google/gemini-3.1-flash-image-preview",
         label="Gemini 3.1 Flash Image Preview",
-        note="OpenRouter image-output model with extended aspect-ratio support.",
+        note="OpenRouter image-output preview model retained for existing saved projects.",
         source_url=OPENROUTER_IMAGE_DOCS_URL,
     ),
     ModelSuggestion(
