@@ -32,9 +32,9 @@ class WorkspacePanel(QWidget):
 
         # Run readiness header
         readiness_header = QHBoxLayout()
-        readiness_label = QLabel("Run Readiness")
-        readiness_label.setObjectName("sectionTitle")
-        readiness_header.addWidget(readiness_label)
+        self.readiness_label = QLabel("Run Readiness")
+        self.readiness_label.setObjectName("sectionTitle")
+        readiness_header.addWidget(self.readiness_label)
         readiness_header.addStretch()
         self.check_run_btn = QPushButton("Check Run")
         set_button_role(self.check_run_btn, "secondary")
@@ -61,15 +61,16 @@ class WorkspacePanel(QWidget):
 
         # Generated output header
         output_header = QHBoxLayout()
-        output_label = QLabel("Generated Output")
-        output_label.setObjectName("sectionTitle")
+        self.output_label = QLabel("Generated Output")
+        self.output_label.setObjectName("sectionTitle")
         self.export_variant_spin = QSpinBox()
         self.export_variant_spin.setRange(0, 8)
         self.export_variant_spin.setSpecialValueText("All")
         self.export_variant_spin.setValue(0)
-        output_header.addWidget(output_label)
+        output_header.addWidget(self.output_label)
         output_header.addStretch()
-        output_header.addWidget(QLabel("Variant"))
+        self.export_variant_label = QLabel("Variant")
+        output_header.addWidget(self.export_variant_label)
         output_header.addWidget(self.export_variant_spin)
         layout.addLayout(output_header)
 
@@ -88,7 +89,9 @@ class WorkspacePanel(QWidget):
 
         # PreviewPanel (existing)
         self.preview_panel = PreviewPanel()
-        self.preview_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.preview_panel.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
         layout.addWidget(self.preview_panel, 1)
 
         # Prompt plan (hidden by default, toggled via View Prompt Plan)
@@ -99,6 +102,7 @@ class WorkspacePanel(QWidget):
         self.prompt_preview_edit.setMaximumHeight(280)
         self.prompt_preview_edit.setVisible(False)
         layout.addWidget(self.prompt_preview_edit)
+        self.set_output_available(False)
 
     def show_preflight(self, text: str) -> None:
         self.prompt_preview_edit.setPlainText(text)
@@ -111,6 +115,13 @@ class WorkspacePanel(QWidget):
         self._set_prompt_preview_expanded(False)
         self.prompt_preview_edit.setVisible(False)
         self.preview_panel.setVisible(True)
+        self.set_output_available(True)
+
+    def show_generation_pending(self) -> None:
+        self._set_prompt_preview_expanded(False)
+        self.prompt_preview_edit.setVisible(False)
+        self.preview_panel.setVisible(True)
+        self.set_output_available(False)
 
     def show_prompt_plan(self, visible: bool) -> None:
         self._set_prompt_preview_expanded(False)
@@ -118,14 +129,35 @@ class WorkspacePanel(QWidget):
             self.preview_panel.setVisible(True)
         self.prompt_preview_edit.setVisible(visible)
 
+    def set_quick_mode(self, quick_mode: bool) -> None:
+        for widget in (
+            self.readiness_label,
+            self.check_run_btn,
+            self.preview_prompts_btn,
+            self.open_project_gallery_btn,
+            self.export_project_btn,
+            self.run_summary_label,
+        ):
+            widget.setVisible(not quick_mode)
+
+    def set_output_available(self, available: bool) -> None:
+        for widget in (
+            self.export_variant_label,
+            self.export_variant_spin,
+            self.export_sprites_btn,
+            self.open_gallery_btn,
+            self.open_folder_btn,
+        ):
+            widget.setVisible(available)
+
     def _set_prompt_preview_expanded(self, expanded: bool) -> None:
         if expanded:
             self.prompt_preview_edit.setMaximumHeight(16777215)
             self.prompt_preview_edit.setSizePolicy(
-                QSizePolicy.Expanding, QSizePolicy.Expanding
+                QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
             )
             return
         self.prompt_preview_edit.setMaximumHeight(280)
         self.prompt_preview_edit.setSizePolicy(
-            QSizePolicy.Expanding, QSizePolicy.Preferred
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
         )

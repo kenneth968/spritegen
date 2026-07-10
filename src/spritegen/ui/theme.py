@@ -83,6 +83,35 @@ def desktop_stylesheet(tokens: Mapping[str, Mapping[str, str]] | None = None) ->
         border: 1px solid {color["border"]};
         border-radius: {radius["lg"]};
     }}
+    QWidget#quickComposer {{
+        background: {color["surface"]};
+        border: 1px solid {color["border"]};
+        border-radius: {radius["lg"]};
+    }}
+    QLabel#quickComposerTitle {{
+        font-size: {type_["section"]};
+        font-weight: 700;
+    }}
+    QLabel#quickComposerLabel {{
+        color: {color["muted"]};
+        font-weight: 700;
+    }}
+    QTextEdit#quickDescription,
+    QComboBox#quickOutputType {{
+        background: {color["surface"]};
+        border: 1px solid {color["border"]};
+        border-radius: {radius["md"]};
+    }}
+    QLabel#quickProviderStatus {{
+        color: {color["muted"]};
+        background: {color["surface_soft"]};
+        border-radius: {radius["md"]};
+        padding: {spacing["sm"]};
+    }}
+    QLabel#quickRecovery {{
+        color: {color["danger"]};
+        font-weight: 600;
+    }}
     QDialog#toolDialog {{
         background: {color["panel"]};
     }}
@@ -354,6 +383,17 @@ def desktop_stylesheet(tokens: Mapping[str, Mapping[str, str]] | None = None) ->
         background: {color["surface_soft"]};
     }}
     QPushButton#pillButton::menu-indicator {{ image: none; }}
+    QPushButton#modeButton {{
+        background: {color["surface_soft"]};
+        border: 1px solid {color["border"]};
+        border-radius: {radius["md"]};
+        padding: 5px 10px;
+        font-weight: 700;
+    }}
+    QPushButton#modeButton:hover {{
+        background: {color["primary_soft"]};
+        border-color: {color["focus"]};
+    }}
     QPushButton#providerChip {{
         border: 1px solid {color["border"]};
         border-radius: 14px;

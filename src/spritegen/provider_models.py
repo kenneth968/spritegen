@@ -325,6 +325,28 @@ def validate_model_choice(
             source_urls=tuple(_validation_source_urls(provider, other_role, other_suggestion)),
         )
 
+    other_provider_suggestion = _find_other_provider_suggestion(provider, role, model_id)
+    if other_provider_suggestion:
+        other_provider_label = _provider_label(other_provider_suggestion.provider)
+        return ModelValidationResult(
+            provider=provider,
+            role=role,
+            model=model_id,
+            status=MODEL_VALIDATION_ERROR,
+            message=(
+                f"{model_id} is a known {other_provider_label} {role_label} model, "
+                f"not {_provider_article_label(provider)} model"
+            ),
+            suggestion=other_provider_suggestion,
+            source_urls=tuple(
+                _validation_source_urls(
+                    other_provider_suggestion.provider,
+                    role,
+                    other_provider_suggestion,
+                )
+            ),
+        )
+
     return ModelValidationResult(
         provider=provider,
         role=role,
@@ -361,6 +383,21 @@ def _find_model_suggestion(
     return None
 
 
+def _find_other_provider_suggestion(
+    provider: str,
+    role: str,
+    model: str,
+) -> ModelSuggestion | None:
+    return _find_model_suggestion(
+        [
+            suggestion
+            for suggestion in MODEL_SUGGESTIONS
+            if suggestion.provider != provider and suggestion.role == role
+        ],
+        model,
+    )
+
+
 def _provider_label(provider: str) -> str:
     labels = {
         "mock": "Mock",
@@ -369,6 +406,11 @@ def _provider_label(provider: str) -> str:
         "openrouter": "OpenRouter",
     }
     return labels.get(provider, provider.title())
+
+
+def _provider_article_label(provider: str) -> str:
+    article = "an" if provider in {"openai", "openrouter"} else "a"
+    return f"{article} {_provider_label(provider)}"
 
 
 def _role_label(role: str) -> str:
@@ -444,7 +486,9 @@ def _openrouter_model_to_suggestion(
     model_id = str(item.get("id") or "").strip()
     if not model_id:
         return None
-    architecture = item.get("architecture") if isinstance(item.get("architecture"), dict) else {}
+    architecture = item.get("architecture")
+    if not isinstance(architecture, dict):
+        return None
     outputs = [
         str(value)
         for value in architecture.get("output_modalities", [])
@@ -524,7 +568,9 @@ def _models_dev_model_to_suggestion(
     model_id = str(item.get("id") or key).strip()
     if not model_id:
         return None
-    modalities = item.get("modalities") if isinstance(item.get("modalities"), dict) else {}
+    modalities = item.get("modalities")
+    if not isinstance(modalities, dict):
+        return None
     outputs = [
         str(value)
         for value in modalities.get("output", [])
@@ -534,8 +580,8 @@ def _models_dev_model_to_suggestion(
         return None
     label = str(item.get("name") or model_id)
     note_parts = [f"Outputs: {','.join(outputs)}"]
-    limit = item.get("limit") if isinstance(item.get("limit"), dict) else {}
-    context = limit.get("context")
+    limits = item.get("limit")
+    context = limits.get("context") if isinstance(limits, dict) else None
     if isinstance(context, int) and context > 0:
         note_parts.append(f"context: {context:,} tokens")
     release_date = str(item.get("release_date") or "").strip()

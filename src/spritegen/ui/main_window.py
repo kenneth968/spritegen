@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QStackedLayout,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -31,10 +32,8 @@ from .controller import MainWindowController
 from .theme import desktop_stylesheet
 from .widgets.action_footer import ActionFooter
 from .widgets.project_panel import ProjectPanel
-from .widgets.provider_bar import (
-    ProviderBar,
-    env_key_for,
-)
+from .widgets.provider_bar import ProviderBar
+from .widgets.quick_composer import QuickComposer
 from .widgets.welcome_overlay import (
     openai_defaults,
     openrouter_defaults,
@@ -43,6 +42,7 @@ from .widgets.welcome_overlay import (
 from .widgets.settings_drawer import SettingsDrawer
 from .widgets.welcome_overlay import WelcomeOverlay
 from .widgets.workspace_panel import WorkspacePanel
+from .app_paths import default_project_root
 
 
 class MainWindow(QWidget):
@@ -53,10 +53,11 @@ class MainWindow(QWidget):
         self._settings_store = settings_store or UserSettingsStore()
         self._user_settings = self._settings_store.load()
         self._online_model_suggestions: dict[tuple[str, str], list[ModelSuggestion]] = {}
-        self._project_root = str(Path("projects").absolute())
-        self._last_output_dir = str(Path("projects").absolute())
+        self._project_root = self._user_settings.project_root or str(default_project_root())
+        self._last_output_dir = self._project_root
         self._last_gallery_path = ""
         self._last_project_gallery_path = ""
+        self._app_mode = "quick"
 
         self.controller = MainWindowController(self)
         self._auto_save_timer = QTimer(self)
@@ -67,6 +68,7 @@ class MainWindow(QWidget):
         self._build_ui()
         self._wire_signals()
         self._apply_user_settings()
+        self._set_app_mode("quick")
         self.controller.refresh_project_list()
         self._show_welcome_if_needed()
         self._refresh_provider_chip()
@@ -100,10 +102,14 @@ class MainWindow(QWidget):
         body.setContentsMargins(16, 16, 16, 16)
         body.setSpacing(12)
 
+        self.setup_stack = QStackedWidget()
         self.project_panel = ProjectPanel()
         self.project_panel.setMinimumWidth(420)
         self.project_panel.setMaximumWidth(560)
-        body.addWidget(self.project_panel, 0)
+        self.quick_composer = QuickComposer()
+        self.setup_stack.addWidget(self.project_panel)
+        self.setup_stack.addWidget(self.quick_composer)
+        body.addWidget(self.setup_stack, 0)
 
         self.workspace_panel = WorkspacePanel()
         body.addWidget(self.workspace_panel, 1)
@@ -342,6 +348,12 @@ class MainWindow(QWidget):
         self.provider_bar.project_pill_clicked.connect(self._open_project_menu)
         self.provider_bar.asset_pill_clicked.connect(self._open_asset_menu)
         self.provider_bar.settings_clicked.connect(self._open_settings_drawer)
+        self.provider_bar.mode_requested.connect(self._set_app_mode)
+        self.quick_composer.advanced_requested.connect(
+            lambda: self._set_app_mode("advanced")
+        )
+        self.quick_composer.generate_requested.connect(self.controller.on_quick_generate)
+        self.quick_composer.recovery_requested.connect(self.controller.on_quick_recovery)
 
         # Settings drawer
         self.settings_drawer.closed.connect(self._close_settings_drawer)
@@ -370,6 +382,7 @@ class MainWindow(QWidget):
             provider
         )
         self.provider_bar.set_provider(provider, api_key)
+        self.quick_composer.set_provider_status(self.provider_bar.provider_chip.text())
 
     def update_provider_chip(self) -> None:
         self._refresh_provider_chip()
@@ -377,6 +390,10 @@ class MainWindow(QWidget):
     def _update_project_pills(self) -> None:
         project = self._current_project
         asset_name = self.asset_name_edit.text().strip() if hasattr(self, "asset_name_edit") else ""
+        if self._app_mode == "quick":
+            self.provider_bar.set_project_label("Quick Start")
+            self.provider_bar.set_asset_label(asset_name if project else "")
+            return
         if project:
             self.provider_bar.set_project_label(project.name)
         else:
@@ -387,30 +404,19 @@ class MainWindow(QWidget):
         self._update_project_pills()
 
     def _show_welcome_if_needed(self) -> None:
-        if self._user_settings.has_seen_welcome:
-            return
-        if not self._user_settings.image_provider and not self._user_settings.api_keys:
-            self._set_welcome_visible(True)
-            return
-        has_env = bool(env_key_for("openai")) or bool(env_key_for("openrouter"))
-        if not has_env and self._user_settings.image_provider == "mock":
-            self._set_welcome_visible(True)
-            return
-        # Auto-detect env vars on first run
-        if env_key_for("openai"):
-            self._user_settings.image_provider = "openai"
-            self._user_settings.prompt_provider = "openai"
-            self._user_settings.api_keys.setdefault("openai", env_key_for("openai"))
-        elif env_key_for("openrouter"):
-            self._user_settings.image_provider = "openrouter"
-            self._user_settings.prompt_provider = "openrouter"
-            self._user_settings.api_keys.setdefault(
-                "openrouter", env_key_for("openrouter")
-            )
-        self._user_settings.mark_welcome_seen()
-        self._settings_store.save(self._user_settings)
-        self.controller.apply_user_settings()
-        self._refresh_provider_chip()
+        self._set_welcome_visible(False)
+
+    def _set_app_mode(self, mode: str) -> None:
+        if mode not in {"quick", "advanced"}:
+            raise ValueError(f"Unknown app mode: {mode}")
+        quick_mode = mode == "quick"
+        self._app_mode = mode
+        self.setup_stack.setCurrentWidget(
+            self.quick_composer if quick_mode else self.project_panel
+        )
+        self.action_footer.setVisible(not quick_mode)
+        self.workspace_panel.set_quick_mode(quick_mode)
+        self.provider_bar.set_mode(mode)
 
     def _set_welcome_visible(self, visible: bool) -> None:
         self.welcome_overlay.setVisible(visible)
@@ -581,6 +587,9 @@ class MainWindow(QWidget):
 
     def show_generated_output(self) -> None:
         self.workspace_panel.show_generated_output()
+
+    def show_generation_pending(self) -> None:
+        self.workspace_panel.show_generation_pending()
 
     def flash_status(self, text: str, state: str = "success") -> None:
         self.action_footer.flash_status(text, state)

@@ -58,10 +58,12 @@ class ProviderBar(QWidget):
     project_pill_clicked = Signal()
     asset_pill_clicked = Signal()
     settings_clicked = Signal()
+    mode_requested = Signal(str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("topBar")
+        self._mode = "quick"
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -83,28 +85,34 @@ class ProviderBar(QWidget):
 
         self.project_pill = QPushButton("No project")
         self.project_pill.setObjectName("pillButton")
-        self.project_pill.setCursor(Qt.PointingHandCursor)
+        self.project_pill.setCursor(Qt.CursorShape.PointingHandCursor)
         self.project_pill.clicked.connect(self.project_pill_clicked.emit)
         outer.addWidget(self.project_pill)
 
         self.asset_pill = QPushButton("No asset")
         self.asset_pill.setObjectName("pillButton")
-        self.asset_pill.setCursor(Qt.PointingHandCursor)
+        self.asset_pill.setCursor(Qt.CursorShape.PointingHandCursor)
         self.asset_pill.clicked.connect(self.asset_pill_clicked.emit)
         outer.addWidget(self.asset_pill)
+
+        self.mode_button = QPushButton("Advanced setup")
+        self.mode_button.setObjectName("modeButton")
+        self.mode_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.mode_button.clicked.connect(self._toggle_mode)
+        outer.addWidget(self.mode_button)
 
         outer.addStretch()
 
         self.provider_chip = QPushButton("Provider: Mock")
         self.provider_chip.setObjectName("providerChip")
-        self.provider_chip.setCursor(Qt.PointingHandCursor)
+        self.provider_chip.setCursor(Qt.CursorShape.PointingHandCursor)
         self.provider_chip.clicked.connect(self.settings_clicked.emit)
         outer.addWidget(self.provider_chip)
 
         self.gear_btn = QPushButton("⚙")
         self.gear_btn.setObjectName("iconButton")
         self.gear_btn.setToolTip("Settings")
-        self.gear_btn.setCursor(Qt.PointingHandCursor)
+        self.gear_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.gear_btn.clicked.connect(self.settings_clicked.emit)
         outer.addWidget(self.gear_btn)
 
@@ -124,3 +132,16 @@ class ProviderBar(QWidget):
         provider = settings.image_provider
         api_key = settings.api_key_for(provider)
         self.set_provider(provider, api_key)
+
+    def _toggle_mode(self) -> None:
+        mode = "advanced" if self._mode == "quick" else "quick"
+        self.set_mode(mode)
+        self.mode_requested.emit(mode)
+
+    def set_mode(self, mode: str) -> None:
+        if mode not in {"quick", "advanced"}:
+            raise ValueError(f"Unknown app mode: {mode}")
+        self._mode = mode
+        self.mode_button.setText(
+            "Quick start" if mode == "advanced" else "Advanced setup"
+        )
