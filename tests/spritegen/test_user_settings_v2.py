@@ -1,5 +1,3 @@
-"""Tests for user_settings v2 schema (has_seen_welcome, last_starter_key)."""
-
 from __future__ import annotations
 
 import json
@@ -14,10 +12,11 @@ def test_default_settings_have_welcome_false():
     assert isinstance(settings, UserSettings)
 
 
-def test_round_trip_v2():
+def test_round_trip_v3(tmp_path):
     from spritegen.user_settings import UserSettings, UserSettingsStore
 
-    store = UserSettingsStore("/nonexistent/round_trip.json")
+    project_root = tmp_path / "projects"
+    store = UserSettingsStore(tmp_path / "round_trip.json")
     settings = UserSettings(
         image_provider="openai",
         image_model="gpt-image-2",
@@ -26,6 +25,7 @@ def test_round_trip_v2():
         api_keys={"openai": "sk-test"},
         has_seen_welcome=True,
         last_starter_key="mycelium_td",
+        project_root=str(project_root),
     )
     store.save(settings)
     loaded = store.load()
@@ -34,9 +34,10 @@ def test_round_trip_v2():
     assert loaded.api_key_for("openai") == "sk-test"
     assert loaded.has_seen_welcome is True
     assert loaded.last_starter_key == "mycelium_td"
+    assert loaded.project_root == str(project_root)
 
 
-def test_migrates_v1_settings_without_welcome_field(tmp_path):
+def test_migrates_v1_settings_without_newer_fields(tmp_path):
     from spritegen.user_settings import UserSettingsStore
 
     path = tmp_path / "settings.json"
@@ -59,6 +60,27 @@ def test_migrates_v1_settings_without_welcome_field(tmp_path):
     # New fields default when migrating from v1
     assert settings.has_seen_welcome is False
     assert settings.last_starter_key == ""
+    assert settings.project_root == ""
+
+
+def test_migrates_v2_settings_without_project_root(tmp_path):
+    from spritegen.user_settings import UserSettingsStore
+
+    path = tmp_path / "settings.json"
+    path.write_text(
+        json.dumps(
+            {
+                "version": 2,
+                "image_provider": "pollinations",
+                "image_model": "flux",
+                "prompt_provider": "pollinations",
+                "prompt_model": "openai",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert UserSettingsStore(path).load().project_root == ""
 
 
 def test_clear_api_keys(tmp_path):

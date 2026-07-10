@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 
-SETTINGS_SCHEMA_VERSION = 2
+SETTINGS_SCHEMA_VERSION = 3
 
 
 def default_settings_path() -> Path:
@@ -33,6 +33,7 @@ class UserSettings:
     api_keys: dict[str, str] = field(default_factory=dict)
     has_seen_welcome: bool = False
     last_starter_key: str = ""
+    project_root: str = ""
 
     def api_key_for(self, provider: str) -> str:
         return self.api_keys.get(provider, "")
@@ -61,6 +62,7 @@ class UserSettings:
             "api_keys": dict(self.api_keys),
             "has_seen_welcome": self.has_seen_welcome,
             "last_starter_key": self.last_starter_key,
+            "project_root": self.project_root,
         }
 
     @classmethod
@@ -90,6 +92,7 @@ class UserSettings:
             api_keys=api_keys,
             has_seen_welcome=bool(data.get("has_seen_welcome", False)),
             last_starter_key=str(data.get("last_starter_key") or ""),
+            project_root=str(data.get("project_root") or ""),
         )
 
 

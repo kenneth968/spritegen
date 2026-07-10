@@ -971,7 +971,7 @@ def test_main_window_check_run_writes_preflight_summary(tmp_path, monkeypatch):
 
     preview = window.prompt_preview_edit.toPlainText()
     assert "Preflight: ready" in preview
-    assert "Image model: mock / mock" in preview
+    assert "Image model: pollinations / flux" in preview
     assert "Prompt enhancement: disabled" in preview
     assert "Images: 8 atlas image(s), 8 sliced sprite(s)" in preview
     assert "single_sprite: 1024x1024, 1 region(s), 4 packet(s)" in preview
@@ -1143,6 +1143,7 @@ def test_main_window_saves_local_provider_setup(tmp_path, monkeypatch):
     window.prompt_model_edit.setText("openai/prompt-model")
     window.image_api_key_edit.setText("new-openrouter-key")
     window.prompt_api_key_edit.setText("new-openai-key")
+    window.project_root_edit.setText(str(tmp_path / "saved-projects"))
     window._on_save_provider_settings()
 
     saved = settings_store.load()
@@ -1152,6 +1153,7 @@ def test_main_window_saves_local_provider_setup(tmp_path, monkeypatch):
     assert saved.prompt_model == "openai/prompt-model"
     assert saved.api_key_for("openrouter") == "new-openrouter-key"
     assert saved.api_key_for("openai") == "new-openai-key"
+    assert saved.project_root == str(tmp_path / "saved-projects")
     assert "Saved local provider setup" in window.status_label.text()
 
     window._on_clear_saved_keys()
@@ -1160,6 +1162,166 @@ def test_main_window_saves_local_provider_setup(tmp_path, monkeypatch):
     assert window.prompt_api_key_edit.text() == ""
 
     window.close()
+    app.processEvents()
+
+
+def test_fresh_window_selects_pollinations_without_a_key(tmp_path, monkeypatch):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    pytest.importorskip("PySide6")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+
+    from PySide6.QtWidgets import QApplication
+    from spritegen.provider_models import IMAGE_ROLE, default_model
+    from spritegen.user_settings import UserSettingsStore
+    from spritegen.ui.main_window import MainWindow
+
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow(settings_store=UserSettingsStore(tmp_path / "settings.json"))
+
+    assert window.image_provider_combo.currentData() == "pollinations"
+    assert window.image_model_edit.text() == default_model("pollinations", IMAGE_ROLE)
+
+    window.close()
+    app.processEvents()
+
+
+def test_main_window_switches_between_quick_and_advanced_modes(tmp_path, monkeypatch):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    pytest.importorskip("PySide6")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+
+    from PySide6.QtWidgets import QApplication
+    from spritegen.user_settings import UserSettingsStore
+    from spritegen.ui.main_window import MainWindow
+
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow(settings_store=UserSettingsStore(tmp_path / "settings.json"))
+
+    assert window.quick_composer.isHidden() is False
+    assert window.project_panel.isHidden() is True
+    assert window.action_footer.isHidden() is True
+
+    window.provider_bar.mode_button.click()
+    app.processEvents()
+
+    assert window.quick_composer.isHidden() is True
+    assert window.project_panel.isHidden() is False
+    assert window.action_footer.isHidden() is False
+    assert window.provider_bar.mode_button.text() == "Quick start"
+
+    window.close()
+    app.processEvents()
+
+
+def test_quick_composer_creates_project_and_starts_existing_generation_thread(
+    tmp_path, monkeypatch
+):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    pytest.importorskip("PySide6")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+
+    from PySide6.QtWidgets import QApplication
+    from spritegen.ui import main_window as main_window_mod
+    from spritegen.user_settings import UserSettingsStore
+    from spritegen.ui.main_window import MainWindow
+
+    started = {"value": False}
+
+    def fake_start(self):
+        started["value"] = True
+
+    monkeypatch.setattr(main_window_mod.ProjectGenerationThread, "start", fake_start)
+
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow(settings_store=UserSettingsStore(tmp_path / "settings.json"))
+    window.project_root_edit.setText(str(tmp_path / "projects"))
+    window.quick_composer.description_edit.setPlainText("glowing mushroom tower")
+
+    window.quick_composer.generate_btn.click()
+
+    thread = window.controller._thread
+    assert started["value"] is True
+    assert thread is not None
+    assert thread.project.name == "Quick Start"
+    assert thread.asset.name == "Glowing Mushroom Tower"
+    assert thread.provider == "pollinations"
+    assert (tmp_path / "projects" / "quick-start" / "project.json").exists()
+    assert (tmp_path / "projects" / "quick-start" / "assets" / "glowing-mushroom-tower.json").exists()
+
+    window.close()
+    app.processEvents()
+
+
+def test_quick_composer_shows_inline_recovery_for_missing_key(tmp_path, monkeypatch):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    pytest.importorskip("PySide6")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+
+    from PySide6.QtWidgets import QApplication
+    from spritegen.user_settings import UserSettingsStore
+    from spritegen.ui.main_window import MainWindow
+
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow(settings_store=UserSettingsStore(tmp_path / "settings.json"))
+    window.project_root_edit.setText(str(tmp_path / "projects"))
+    window._set_combo_value(window.image_provider_combo, "openai")
+    window._on_image_provider_changed()
+    window.quick_composer.description_edit.setPlainText("glowing mushroom tower")
+
+    window.quick_composer.generate_btn.click()
+
+    assert window.controller._thread is None
+    assert "OpenAI image API key is required" in window.quick_composer.recovery_label.text()
+    assert window.quick_composer.recovery_btn.text() == "Paste key"
+
+    window.close()
+    app.processEvents()
+
+
+def test_saved_known_provider_mismatch_is_repaired_but_custom_model_is_preserved(
+    tmp_path, monkeypatch
+):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    pytest.importorskip("PySide6")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+
+    from PySide6.QtWidgets import QApplication
+    from spritegen.provider_models import IMAGE_ROLE, default_model
+    from spritegen.user_settings import UserSettings, UserSettingsStore
+    from spritegen.ui.main_window import MainWindow
+
+    app = QApplication.instance() or QApplication([])
+    store = UserSettingsStore(tmp_path / "settings.json")
+    store.save(
+        UserSettings(
+            image_provider="openai",
+            image_model="google/gemini-3.1-flash-image",
+            prompt_provider="openai",
+            prompt_model="gpt-5.5",
+            api_keys={"openai": "sk-test"},
+        )
+    )
+    repaired = MainWindow(settings_store=store)
+    assert repaired.image_model_edit.text() == default_model("openai", IMAGE_ROLE)
+    repaired.close()
+
+    store.save(
+        UserSettings(
+            image_provider="openai",
+            image_model="future-image-model",
+            prompt_provider="openai",
+            prompt_model="gpt-5.5",
+            api_keys={"openai": "sk-test"},
+        )
+    )
+    custom = MainWindow(settings_store=store)
+    assert custom.image_model_edit.text() == "future-image-model"
+    custom.close()
     app.processEvents()
 
 

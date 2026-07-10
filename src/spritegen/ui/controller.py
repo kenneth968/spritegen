@@ -24,6 +24,7 @@ from ..preflight import (
 from ..project_export import ProjectAssetExporter
 from ..project_gallery import ProjectGalleryWriter
 from ..project_starters import get_project_starter
+from ..quick_start import QUICK_START_SLUG, QuickRequest, QuickStartError, build_quick_specs
 from ..projects import (
     AssetSpec,
     AssetTypeSpec,
@@ -58,6 +59,7 @@ from .generation_thread import (  # noqa: F401  (re-exported via main_window for
     ProjectEnhancementThread,
     ProjectGenerationThread,
 )
+from .app_paths import ProjectRootError, ensure_writable_project_root
 
 
 class MainWindowController:
@@ -66,6 +68,9 @@ class MainWindowController:
     def __init__(self, main_window) -> None:
         self.main = main_window
         self._thread = None
+        self._quick_description = ""
+        self._quick_output_type = "single_sprite"
+        self._quick_recovery_action = ""
 
     # ------------------------------------------------------------------
     # Attribute proxies so methods can read widget state in one place.
@@ -173,6 +178,7 @@ class MainWindowController:
         self.refresh_api_key_field("prompt")
 
     def apply_user_settings(self) -> None:
+        self.repair_startup_provider_settings()
         self.main.shared_provider_setup_check.blockSignals(True)
         self.main.shared_provider_setup_check.setChecked(
             self._user_settings.shared_provider_setup
@@ -204,6 +210,50 @@ class MainWindowController:
         )
         self.apply_provider_setup_mode(reset_prompt_model=False)
         self.refresh_api_key_fields()
+
+    def repair_startup_provider_settings(self) -> str:
+        repairs: list[str] = []
+        if not self._settings_store.path.exists():
+            provider = self._preferred_startup_provider()
+            self._user_settings.image_provider = provider
+            self._user_settings.image_model = default_model(provider, IMAGE_ROLE)
+            self._user_settings.prompt_provider = provider
+            self._user_settings.prompt_model = default_model(provider, PROMPT_ROLE)
+            self._user_settings.shared_provider_setup = True
+            repairs.append(f"Selected {PROVIDER_LABELS[provider]} for first use")
+
+        image_validation = validate_model_choice(
+            self._user_settings.image_provider,
+            IMAGE_ROLE,
+            self._user_settings.image_model,
+        )
+        if image_validation.status == MODEL_VALIDATION_ERROR and image_validation.suggestion:
+            self._user_settings.image_model = default_model(
+                self._user_settings.image_provider, IMAGE_ROLE
+            )
+            repairs.append("Repaired saved image model")
+
+        prompt_validation = validate_model_choice(
+            self._user_settings.prompt_provider,
+            PROMPT_ROLE,
+            self._user_settings.prompt_model,
+        )
+        if prompt_validation.status == MODEL_VALIDATION_ERROR and prompt_validation.suggestion:
+            self._user_settings.prompt_model = default_model(
+                self._user_settings.prompt_provider, PROMPT_ROLE
+            )
+            repairs.append("Repaired saved prompt model")
+
+        if repairs:
+            self._settings_store.save(self._user_settings)
+        return "; ".join(repairs)
+
+    def _preferred_startup_provider(self) -> str:
+        if self.configured_api_key_for("openai"):
+            return "openai"
+        if self.configured_api_key_for("openrouter"):
+            return "openrouter"
+        return "pollinations"
 
     def refresh_model_suggestions(self, role: str, provider: str) -> None:
         combo = (
@@ -712,6 +762,9 @@ class MainWindowController:
             prompt_model=self.main.prompt_model_edit.text().strip(),
             shared_provider_setup=self.using_shared_provider_setup(),
             api_keys=dict(self._user_settings.api_keys),
+            has_seen_welcome=self._user_settings.has_seen_welcome,
+            last_starter_key=self._user_settings.last_starter_key,
+            project_root=str(Path(self.main.project_root_edit.text()).expanduser().resolve()),
         )
         image_key = self.main.image_api_key_edit.text()
         prompt_key = self.main.prompt_api_key_edit.text()
@@ -894,13 +947,64 @@ class MainWindowController:
         self.set_busy(False, "Enhanced prompt saved")
         self._thread = None
 
+    def on_quick_generate(self, description: str, output_type: str) -> None:
+        self._quick_description = description
+        self._quick_output_type = output_type
+        try:
+            root = ensure_writable_project_root(self.main.project_root_edit.text())
+            self.main.project_root_edit.setText(str(root))
+            store = ProjectStore(root)
+            existing_project = None
+            quick_project_path = store.project_path(QUICK_START_SLUG)
+            if quick_project_path.exists():
+                existing_project = store.load_project(quick_project_path)
+            existing_assets = (
+                store.load_assets(existing_project) if existing_project is not None else []
+            )
+            project, asset = build_quick_specs(
+                QuickRequest(description=description, output_type=output_type),
+                provider_defaults=self.current_provider_defaults(),
+                existing_project=existing_project,
+                existing_assets=existing_assets,
+            )
+            self.save_specs(project, asset, store)
+        except (ProjectRootError, QuickStartError) as exc:
+            action = "folder" if isinstance(exc, ProjectRootError) else "description"
+            action_label = "Choose another folder" if action == "folder" else "Edit description"
+            self._show_quick_recovery(str(exc), action_label, action)
+            return
+        except (OSError, ValueError) as exc:
+            self._show_quick_recovery(str(exc), "Open advanced setup", "settings")
+            return
+
+        self.apply_project_spec(project)
+        self.apply_asset_spec(project, asset)
+        self._start_generation(project, asset, quick_mode=True)
+
+    def on_quick_recovery(self) -> None:
+        if self._quick_recovery_action == "description":
+            self.main.quick_composer.description_edit.setFocus()
+            return
+        if self._quick_recovery_action == "folder":
+            self.main._browse_project_root()
+            return
+        if self._quick_recovery_action == "settings":
+            self.main._open_settings_drawer()
+            return
+        if self._quick_recovery_action == "retry":
+            self.on_quick_generate(self._quick_description, self._quick_output_type)
+
     def on_generate(self) -> None:
         try:
             project, asset = self.save_current_specs()
         except Exception as exc:
             QMessageBox.warning(self.main, "Generate Failed", str(exc))
             return
+        self._start_generation(project, asset, quick_mode=False)
 
+    def _start_generation(
+        self, project: ProjectSpec, asset: AssetSpec, *, quick_mode: bool
+    ) -> None:
         provider = self.main.image_provider_combo.currentData()
         api_key = self.api_key_for(provider, "image")
         prompt_provider = self.main.prompt_provider_combo.currentData()
@@ -913,10 +1017,15 @@ class MainWindowController:
         )
         if preflight.status == PREFLIGHT_ERROR:
             self.main.show_preflight(self.format_generation_preflight(preflight))
-            self.main.status_label.setText(
-                "Preflight needs: "
-                + "; ".join(issue.message for issue in preflight.errors[:3])
+            message = "Preflight needs: " + "; ".join(
+                issue.message for issue in preflight.errors[:3]
             )
+            self.main.status_label.setText(message)
+            if quick_mode:
+                issue = preflight.errors[0]
+                action_label = "Paste key" if issue.code.endswith("api-key") else "Open advanced setup"
+                action = "settings"
+                self._show_quick_recovery(issue.message, action_label, action)
             return
 
         output_root = (
@@ -926,8 +1035,11 @@ class MainWindowController:
             / (asset.slug or asset.name)
         )
         self.main.preview_panel.clear()
-        self.main.show_generated_output()
+        self.main.show_generation_pending()
         self.set_busy(True, "Generating asset...")
+        if quick_mode:
+            self.main.quick_composer.clear_recovery()
+            self.main.quick_composer.set_busy(True)
         self._thread = self._thread_class("ProjectGenerationThread")(
             project=project,
             asset=asset,
@@ -936,16 +1048,37 @@ class MainWindowController:
             provider=provider,
             model=self.main.image_model_edit.text().strip(),
             api_key=api_key,
-            variants_per_packet=self.main.generation_variants_spin.value(),
-            enhance_before_generate=self.main.enhance_before_generate_check.isChecked(),
+            variants_per_packet=1 if quick_mode else self.main.generation_variants_spin.value(),
+            enhance_before_generate=(
+                False if quick_mode else self.main.enhance_before_generate_check.isChecked()
+            ),
             prompt_provider=prompt_provider,
             prompt_model=self.main.prompt_model_edit.text().strip(),
             prompt_api_key=prompt_api_key,
         )
-        self._thread.progress.connect(self.main.status_label.setText)
+        self._thread.progress.connect(self.on_generation_progress)
         self._thread.finished.connect(self.on_generation_finished)
         self._thread.error.connect(self.on_thread_error)
         self._thread.start()
+
+    def on_generation_progress(self, message: str) -> None:
+        self.main.status_label.setText(message)
+        if self.main._app_mode == "quick":
+            self.main.quick_composer.set_provider_status(message)
+
+    def _show_quick_recovery(self, message: str, action_label: str, action: str) -> None:
+        self._quick_recovery_action = action
+        self.main.quick_composer.set_busy(False)
+        self.main.quick_composer.set_recovery(message, action_label)
+        self.main.status_label.setText(message)
+
+    def current_provider_defaults(self) -> ProviderDefaults:
+        return ProviderDefaults(
+            image_provider=self.main.image_provider_combo.currentData(),
+            image_model=self.main.image_model_edit.text().strip(),
+            prompt_provider=self.main.prompt_provider_combo.currentData(),
+            prompt_model=self.main.prompt_model_edit.text().strip(),
+        )
 
     def build_generation_preflight(
         self,
@@ -1001,6 +1134,10 @@ class MainWindowController:
         self.main.show_generated_output()
         summary = f"Generated {len(result.outputs)} image(s)"
         self.set_busy(False, summary)
+        if self.main._app_mode == "quick":
+            self.main.quick_composer.set_busy(False)
+            self.main.quick_composer.clear_recovery()
+            self.main._refresh_provider_chip()
         self.main.run_summary_label.setText(summary)
         self.refresh_asset_list(result.asset_slug)
         self._thread = None
@@ -1068,7 +1205,10 @@ class MainWindowController:
 
     def on_thread_error(self, message: str) -> None:
         self.set_busy(False, f"Error: {message}")
-        QMessageBox.warning(self.main, "spritegen", message)
+        if self.main._app_mode == "quick":
+            self._show_quick_recovery(message, "Retry", "retry")
+        else:
+            QMessageBox.warning(self.main, "spritegen", message)
         self._thread = None
 
     # ------------------------------------------------------------------
@@ -1077,7 +1217,15 @@ class MainWindowController:
     def save_current_specs(self) -> tuple[ProjectSpec, AssetSpec]:
         project = self.build_project_spec()
         asset = self.build_asset_spec()
-        store = ProjectStore(self.main.project_root_edit.text())
+        root = ensure_writable_project_root(self.main.project_root_edit.text())
+        self.main.project_root_edit.setText(str(root))
+        store = ProjectStore(root)
+        self.save_specs(project, asset, store)
+        return project, asset
+
+    def save_specs(
+        self, project: ProjectSpec, asset: AssetSpec, store: ProjectStore
+    ) -> None:
         store.save_project(project)
         store.save_asset(project, asset)
         known_assets = store.load_assets(project)
@@ -1086,7 +1234,6 @@ class MainWindowController:
         )
         store.save_prompt_plan(project, asset, packets)
         self._current_project = project
-        return project, asset
 
     def build_project_spec(self) -> ProjectSpec:
         name = self.main.project_name_edit.text().strip()

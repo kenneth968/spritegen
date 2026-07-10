@@ -76,6 +76,24 @@ def test_validate_model_choice_distinguishes_known_wrong_role_and_custom_ids():
     assert empty_result.message == "No prompt model selected"
 
 
+def test_validate_model_choice_rejects_model_owned_by_another_provider():
+    from spritegen.provider_models import (
+        IMAGE_ROLE,
+        MODEL_VALIDATION_ERROR,
+        validate_model_choice,
+    )
+
+    result = validate_model_choice(
+        "openai",
+        IMAGE_ROLE,
+        "google/gemini-3.1-flash-image",
+    )
+
+    assert result.status == MODEL_VALIDATION_ERROR
+    assert "known OpenRouter image model" in result.message
+    assert "not an OpenAI model" in result.message
+
+
 def test_validate_model_choice_accepts_cached_online_suggestions():
     from spritegen.provider_models import (
         IMAGE_ROLE,
