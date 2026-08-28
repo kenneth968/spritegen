@@ -22,9 +22,9 @@
 - Key contexts of use: desktop iteration sessions, provider/API-key setup, pre-generation checks, and post-generation asset review.
 
 ## Information architecture
-- Primary navigation: left-side setup tabs for Project, Asset, and Providers; right-side workspace for prompt plan and generated output.
+- Primary navigation: instant composer first, with a compact Quick/Advanced mode control. Advanced mode reveals the existing project, asset, and provider setup beside the same workspace.
 - Core routes/screens: desktop main window, project gallery HTML, asset gallery HTML, CLI project workflow.
-- Content hierarchy: project context first, asset definition second, provider setup third, prompt/output evidence always visible on the right.
+- Content hierarchy: describe one asset first, choose an output shape second, generate third, then inspect prompt/output evidence. Project and provider detail remains available without discarding the quick request.
 
 ## Design Principles
 - Principle 1: Keep the main workflow visible. The user should not lose Save, Enhance, Generate, progress, or status while editing deeper settings.
@@ -42,7 +42,8 @@
 ## Components
 - Existing components to reuse: PySide `QTabWidget`, `QGroupBox`, `QFormLayout`, `QSplitter`, `PreviewPanel`, provider/model controls, prompt preview text area.
 - New/changed components: repo-owned Qt design tokens, role-based button styling, app/sidebar/workspace/action-footer object names, styled empty/output labels.
-- Variants and states: primary Generate, accent Enhance, secondary utility actions, danger Clear Saved Keys, disabled provider-key fields, empty generated-output state.
+- Variants and states: primary Generate, accent Enhance, secondary utility actions, danger Clear Saved Keys, disabled provider-key fields, empty generated-output state, and an instant composer with default, focused, validation-error, provider-recovery, busy, and completed-output states.
+- Quick composer pattern: a single multi-line asset description, a segmented output-type choice, a concise provider-status line, an inline recovery area, and one primary Generate action. Reuse the existing light surfaces, 8 px rhythm, teal primary action, and native Qt focus behavior.
 - Token/component ownership: `src/spritegen/ui/theme.py` owns desktop tokens and QSS; `src/spritegen/ui/main_window.py` assigns semantic object names and button roles.
 
 ## Accessibility
@@ -60,10 +61,11 @@
 ## Interaction states
 - Loading: progress bar and status label report generation/enhancement work.
 - Empty: generated output shows a quiet centered empty state until assets exist.
-- Error: warning dialogs for blocking failures, status text for recoverable workflow states.
+- Error: concise inline recovery for predictable asset-description, storage, provider, and model failures; warning dialogs remain only for destructive confirmations or operating-system folder selection.
 - Success: status label names saved/loaded/generated/exported results and points to paths when useful.
 - Disabled: API key fields disable when the selected provider does not need a key.
 - Offline/slow network, if applicable: model refresh falls back to offline suggestions; provider setup should make missing keys/models visible before generation.
+- Cognitive accessibility: the first screen exposes one clear next action, preserves entered text while advanced setup is opened, and gives each blocked action a specific recovery label.
 
 ## Content voice
 - Tone: direct, concrete, tool-like.
@@ -80,3 +82,6 @@
 ## Open questions
 - [ ] Whether to add icons for high-frequency commands / owner: product / impact: may improve scan speed once icon assets or an icon library are chosen.
 - [ ] Whether to offer compact and comfortable density modes / owner: product / impact: could help both laptop and large-monitor users.
+
+## Accepted design debt
+- The desktop quick composer targets the existing 1180 px minimum window width; touch-first and narrow-phone layouts remain outside this PySide desktop scope.

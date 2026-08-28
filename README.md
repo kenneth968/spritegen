@@ -41,9 +41,24 @@ spritegen generate --style pixel_art --sprites "red mushroom" "blue mushroom" --
 On Windows, double-click `launch_spritegen.cmd` from the project folder. The launcher creates
 a local `.venv`, installs the desktop dependencies, and opens the app.
 
-Use **Starter / Try Sample Run** for a no-key first pass. It selects Mock for the
-provider, creates the starter project and first asset, and opens the run preflight
-without spending provider credits.
+On first launch, use the **Generate one asset** composer: describe the asset, choose
+**Single sprite**, **Evolution chain**, or **Character sheet**, then click **Generate**.
+With no saved API key, Spritegen selects Pollinations and starts a real no-key image
+generation. Each request is saved as a normal asset under the `Quick Start` project,
+so it can be renamed or expanded later.
+
+Desktop projects default to `Documents/Spritegen/projects` (or
+`<home>/Spritegen/projects` when Documents is unavailable), independent of the
+directory used to launch the app. A folder selected in advanced setup is saved locally
+and reused on the next launch.
+
+Choose **Advanced setup** when you want the full project editor, prompt controls,
+provider keys, model IDs, layouts, galleries, or exports. The quick description stays
+in place while switching modes. Missing keys, invalid saved model/provider pairings,
+and unwritable project folders are surfaced inline with a focused recovery action.
+
+Use **Starter / Try Sample Run** when you specifically want a Mock preflight without
+spending provider credits.
 
 The desktop app uses the same provider for image generation and prompt improvement
 by default. Choose **Provider** and paste one **API Key** when the provider needs

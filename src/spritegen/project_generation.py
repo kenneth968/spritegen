@@ -5,11 +5,13 @@ from __future__ import annotations
 import json
 from html import escape
 from dataclasses import dataclass, field
+from io import BytesIO
 from pathlib import Path
 from urllib.parse import quote
 
 from .config import SpriteConfig
 from .generator import SpriteGenerator
+from .layouts import AssetLayout
 from .projects import AssetSpec, ProjectSpec, ProjectStore, PromptPacket, PromptPlanner
 from .slicer import Slicer
 from .style import StylePreset, StyleManager
@@ -156,6 +158,7 @@ class ProjectAssetGenerator:
                     height=layout.height,
                     **kwargs,
                 )
+                image_data = self._normalize_layout_image(image_data, layout)
                 raw_path.write_bytes(image_data)
 
                 slice_dir = base_output / output_name
@@ -223,6 +226,21 @@ class ProjectAssetGenerator:
             gallery_path=gallery_path,
             outputs=outputs,
         )
+
+    @staticmethod
+    def _normalize_layout_image(image_data: bytes, layout: AssetLayout) -> bytes:
+        from PIL import Image
+
+        expected_size = (layout.width, layout.height)
+        with Image.open(BytesIO(image_data)) as image:
+            if image.size == expected_size:
+                return image_data
+            normalized = image.convert("RGBA").resize(
+                expected_size, Image.Resampling.LANCZOS
+            )
+        buffer = BytesIO()
+        normalized.save(buffer, format="PNG")
+        return buffer.getvalue()
 
     def _create_generator(
         self,

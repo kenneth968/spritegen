@@ -116,3 +116,19 @@ def test_provider_bar_click_opens_settings_drawer(tmp_path, monkeypatch):
     assert not window.settings_drawer.isHidden()
     window.close()
     app.processEvents()
+
+
+def test_provider_bar_switches_between_quick_and_advanced_modes():
+    from spritegen.ui.widgets.provider_bar import ProviderBar
+
+    _qapp()
+    provider_bar = ProviderBar()
+    modes: list[str] = []
+    provider_bar.mode_requested.connect(modes.append)
+
+    assert provider_bar.mode_button.text() == "Advanced setup"
+
+    provider_bar.mode_button.click()
+
+    assert modes == ["advanced"]
+    assert provider_bar.mode_button.text() == "Quick start"
