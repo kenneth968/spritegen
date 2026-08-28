@@ -32,6 +32,32 @@ def test_default_project_root_falls_back_to_home(tmp_path: Path) -> None:
     assert default_project_root("", home=tmp_path) == tmp_path / "Spritegen" / "projects"
 
 
+def test_explicit_path_helpers_import_without_qt(tmp_path: Path, monkeypatch) -> None:
+    import builtins
+    import importlib
+    import sys
+
+    module_name = "spritegen.ui.app_paths"
+    previous_module = sys.modules.pop(module_name, None)
+    real_import = builtins.__import__
+
+    def block_qt(name, *args, **kwargs):
+        if name == "PySide6" or name.startswith("PySide6."):
+            raise ModuleNotFoundError("PySide6 is unavailable")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", block_qt)
+    try:
+        module = importlib.import_module(module_name)
+        root = module.ensure_writable_project_root(tmp_path / "projects")
+    finally:
+        sys.modules.pop(module_name, None)
+        if previous_module is not None:
+            sys.modules[module_name] = previous_module
+
+    assert root == (tmp_path / "projects").resolve()
+
+
 def test_ensure_writable_project_root_creates_and_cleans_probe(tmp_path: Path) -> None:
     from spritegen.ui.app_paths import ensure_writable_project_root
 

@@ -1,0 +1,207 @@
+from __future__ import annotations
+
+import json
+import os
+
+import pytest
+
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+pytest.importorskip("PySide6")
+
+
+def _qapp():
+    from PySide6.QtWidgets import QApplication
+
+    return QApplication.instance() or QApplication([])
+
+
+def test_quick_preflight_uses_quick_generation_options(tmp_path):
+    from PySide6.QtWidgets import QApplication
+
+    from spritegen.quick_start import QuickRequest, build_quick_specs
+    from spritegen.projects import ProviderDefaults
+    from spritegen.ui.main_window import MainWindow
+    from spritegen.user_settings import UserSettingsStore
+
+    _qapp()
+    window = MainWindow(settings_store=UserSettingsStore(tmp_path / "settings.json"))
+    window.enhance_before_generate_check.setChecked(True)
+    window.generation_variants_spin.setValue(3)
+    window.shared_provider_setup_check.setChecked(False)
+    window._set_combo_value(window.prompt_provider_combo, "openai")
+    window._on_prompt_provider_changed()
+    project, asset = build_quick_specs(
+        QuickRequest("glowing mushroom tower"),
+        provider_defaults=ProviderDefaults(),
+    )
+
+    report = window.controller.build_generation_preflight(
+        project,
+        asset,
+        image_api_key="",
+        prompt_api_key="",
+        quick_mode=True,
+    )
+
+    assert report.enhance_first is False
+    assert report.variants_per_packet == 1
+    assert report.ready is True
+    window.close()
+    QApplication.processEvents()
+
+
+def test_quick_run_resets_composer_when_mode_changes_before_completion(tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QApplication
+
+    from spritegen.project_generation import ProjectGenerationResult
+    from spritegen.ui import main_window as main_window_mod
+    from spritegen.ui.main_window import MainWindow
+    from spritegen.user_settings import UserSettingsStore
+
+    started = {"value": False}
+
+    def fake_start(self):
+        started["value"] = True
+
+    monkeypatch.setattr(main_window_mod.ProjectGenerationThread, "start", fake_start)
+
+    _qapp()
+    window = MainWindow(settings_store=UserSettingsStore(tmp_path / "settings.json"))
+    window.project_root_edit.setText(str(tmp_path / "projects"))
+    window.quick_composer.description_edit.setPlainText("glowing mushroom tower")
+    window.quick_composer.generate_btn.click()
+    assert started["value"] is True
+    assert window.quick_composer.generate_btn.isEnabled() is False
+
+    window.provider_bar.mode_button.click()
+    result = ProjectGenerationResult(
+        project_slug="quick-start",
+        asset_slug="glowing-mushroom-tower",
+        output_dir=tmp_path / "projects" / "quick-start" / "generated" / "glowing-mushroom-tower",
+        manifest_path=tmp_path / "manifest.json",
+        gallery_path=tmp_path / "gallery.html",
+        outputs=[],
+    )
+    window._on_generation_finished(result)
+
+    assert window.quick_composer.generate_btn.isEnabled() is True
+    assert window.quick_composer.description_edit.isReadOnly() is False
+    window.close()
+    QApplication.processEvents()
+
+
+@pytest.mark.parametrize(
+    "raw_settings",
+    [
+        "not json",
+        json.dumps({"version": 999}),
+        json.dumps({"version": 3, "api_keys": []}),
+    ],
+)
+def test_invalid_saved_settings_use_first_run_provider_repair(
+    tmp_path, monkeypatch, raw_settings
+):
+    from PySide6.QtWidgets import QApplication
+
+    from spritegen.ui.main_window import MainWindow
+    from spritegen.user_settings import UserSettingsStore
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    settings_store = UserSettingsStore(tmp_path / "settings.json")
+    settings_store.path.write_text(raw_settings, encoding="utf-8")
+
+    _qapp()
+    window = MainWindow(settings_store=settings_store)
+
+    assert window.image_provider_combo.currentData() == "pollinations"
+    assert settings_store.load().image_provider == "pollinations"
+    window.close()
+    QApplication.processEvents()
+
+
+def test_loading_saved_asset_with_manifest_reenables_output_actions(tmp_path):
+    from PySide6.QtWidgets import QApplication
+
+    from spritegen.projects import AssetSpec, ProjectSpec, ProjectStore
+    from spritegen.ui.main_window import MainWindow
+    from spritegen.user_settings import UserSettingsStore
+
+    store = ProjectStore(tmp_path / "projects")
+    project = ProjectSpec(
+        name="My Game",
+        slug="my-game",
+        summary="A small game.",
+        visual_style="Readable sprites.",
+        shared_context="",
+    )
+    asset = AssetSpec(
+        name="Puffball",
+        slug="puffball",
+        asset_type="prop",
+        description="A puffball sprite.",
+        layout="single_sprite",
+    )
+    store.save_project(project)
+    store.save_asset(project, asset)
+    output_dir = store.generated_dir(project.slug) / asset.slug
+    output_dir.mkdir(parents=True)
+    (output_dir / "generation_manifest.json").write_text("{}", encoding="utf-8")
+
+    _qapp()
+    window = MainWindow(settings_store=UserSettingsStore(tmp_path / "settings.json"))
+    window.project_root_edit.setText(str(tmp_path / "projects"))
+    window._refresh_project_list()
+    window.project_combo.setCurrentIndex(window.project_combo.findData(project.slug))
+    window._on_load_project()
+    window.asset_combo.setCurrentIndex(window.asset_combo.findData(asset.slug))
+    window._on_load_asset()
+
+    assert window.export_sprites_btn.isHidden() is False
+    assert window.open_gallery_btn.isHidden() is False
+    assert window.open_folder_btn.isHidden() is False
+    window.close()
+    QApplication.processEvents()
+
+
+def test_project_root_editing_finished_persists_without_provider_save(tmp_path):
+    from PySide6.QtWidgets import QApplication
+
+    from spritegen.ui.main_window import MainWindow
+    from spritegen.user_settings import UserSettingsStore
+
+    _qapp()
+    settings_store = UserSettingsStore(tmp_path / "settings.json")
+    window = MainWindow(settings_store=settings_store)
+    chosen_root = tmp_path / "chosen-projects"
+    window.project_root_edit.setText(str(chosen_root))
+    window.project_root_edit.editingFinished.emit()
+
+    assert settings_store.load().project_root == str(chosen_root.resolve())
+    window.close()
+    QApplication.processEvents()
+
+
+def test_browsing_project_root_persists_the_selected_folder(tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QApplication
+
+    from spritegen.ui import main_window as main_window_mod
+    from spritegen.ui.main_window import MainWindow
+    from spritegen.user_settings import UserSettingsStore
+
+    _qapp()
+    settings_store = UserSettingsStore(tmp_path / "settings.json")
+    window = MainWindow(settings_store=settings_store)
+    chosen_root = tmp_path / "browsed-projects"
+    monkeypatch.setattr(
+        main_window_mod.QFileDialog,
+        "getExistingDirectory",
+        lambda *args: str(chosen_root),
+    )
+
+    window._browse_project_root()
+
+    assert settings_store.load().project_root == str(chosen_root.resolve())
+    window.close()
+    QApplication.processEvents()

@@ -220,6 +220,7 @@ class MainWindow(QWidget):
         self.shared_provider_setup_check = dp.shared_provider_setup_check
         self.save_provider_settings_btn = dp.save_provider_settings_btn
         self.clear_saved_keys_btn = dp.clear_saved_keys_btn
+        self.browse_root_btn = dp.browse_root_btn
         self.open_project_gallery_btn = dp.open_project_gallery_btn
         self.export_project_btn = dp.export_project_btn
         self.export_sprites_btn = dp.export_sprites_btn
@@ -307,7 +308,9 @@ class MainWindow(QWidget):
         self.apply_workflow_preset_btn.clicked.connect(
             self.controller.on_apply_workflow_preset
         )
+        self.project_root_edit.editingFinished.connect(self.controller.persist_project_root)
         self.project_root_edit.editingFinished.connect(self.controller.refresh_project_list)
+        self.browse_root_btn.clicked.connect(self.controller.persist_project_root)
         self.improve_project_btn.clicked.connect(self.controller.on_improve_project)
         self.improve_type_btn.clicked.connect(self.controller.on_improve_asset_type)
         self.improve_prompt_btn.clicked.connect(self.controller.on_enhance)
@@ -500,6 +503,7 @@ class MainWindow(QWidget):
         )
         if folder:
             self.project_root_edit.setText(folder)
+            self.controller.persist_project_root()
         self._user_settings.mark_welcome_seen()
         self._settings_store.save(self._user_settings)
         self._set_welcome_visible(False)
@@ -873,6 +877,7 @@ class MainWindow(QWidget):
         )
         if folder:
             self.project_root_edit.setText(folder)
+            self.controller.persist_project_root()
             self.controller.refresh_project_list()
 
     def _manifest_image_path(self, value, base_dir):

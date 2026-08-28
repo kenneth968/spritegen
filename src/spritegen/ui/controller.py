@@ -71,6 +71,7 @@ class MainWindowController:
         self._quick_description = ""
         self._quick_output_type = "single_sprite"
         self._quick_recovery_action = ""
+        self._quick_run_active = False
 
     # ------------------------------------------------------------------
     # Attribute proxies so methods can read widget state in one place.
@@ -213,7 +214,7 @@ class MainWindowController:
 
     def repair_startup_provider_settings(self) -> str:
         repairs: list[str] = []
-        if not self._settings_store.path.exists():
+        if not self._settings_store.path.exists() or self._settings_store.load_was_invalid:
             provider = self._preferred_startup_provider()
             self._user_settings.image_provider = provider
             self._user_settings.image_model = default_model(provider, IMAGE_ROLE)
@@ -967,7 +968,6 @@ class MainWindowController:
                 existing_project=existing_project,
                 existing_assets=existing_assets,
             )
-            self.save_specs(project, asset, store)
         except (ProjectRootError, QuickStartError) as exc:
             action = "folder" if isinstance(exc, ProjectRootError) else "description"
             action_label = "Choose another folder" if action == "folder" else "Edit description"
@@ -1014,6 +1014,7 @@ class MainWindowController:
             asset,
             image_api_key=api_key,
             prompt_api_key=prompt_api_key,
+            quick_mode=quick_mode,
         )
         if preflight.status == PREFLIGHT_ERROR:
             self.main.show_preflight(self.format_generation_preflight(preflight))
@@ -1028,6 +1029,17 @@ class MainWindowController:
                 self._show_quick_recovery(issue.message, action_label, action)
             return
 
+        if quick_mode:
+            try:
+                self.save_specs(
+                    project,
+                    asset,
+                    ProjectStore(self.main.project_root_edit.text()),
+                )
+            except (OSError, ValueError) as exc:
+                self._show_quick_recovery(str(exc), "Open advanced setup", "settings")
+                return
+
         output_root = (
             Path(self.main.project_root_edit.text())
             / (project.slug or project.name)
@@ -1040,6 +1052,7 @@ class MainWindowController:
         if quick_mode:
             self.main.quick_composer.clear_recovery()
             self.main.quick_composer.set_busy(True)
+            self._quick_run_active = True
         self._thread = self._thread_class("ProjectGenerationThread")(
             project=project,
             asset=asset,
@@ -1086,6 +1099,7 @@ class MainWindowController:
         asset: AssetSpec,
         image_api_key: str,
         prompt_api_key: str,
+        quick_mode: bool = False,
     ) -> GenerationPreflightReport:
         store = ProjectStore(self.main.project_root_edit.text())
         known_assets = store.load_assets(project)
@@ -1099,8 +1113,12 @@ class MainWindowController:
             prompt_provider=self.main.prompt_provider_combo.currentData(),
             prompt_model=self.main.prompt_model_edit.text().strip(),
             prompt_api_key=prompt_api_key,
-            enhance_first=self.main.enhance_before_generate_check.isChecked(),
-            variants_per_packet=self.main.generation_variants_spin.value(),
+            enhance_first=(
+                False if quick_mode else self.main.enhance_before_generate_check.isChecked()
+            ),
+            variants_per_packet=(
+                1 if quick_mode else self.main.generation_variants_spin.value()
+            ),
             model_suggestions=self._online_model_suggestions,
         )
 
@@ -1134,9 +1152,11 @@ class MainWindowController:
         self.main.show_generated_output()
         summary = f"Generated {len(result.outputs)} image(s)"
         self.set_busy(False, summary)
-        if self.main._app_mode == "quick":
+        if self._quick_run_active:
+            self._quick_run_active = False
             self.main.quick_composer.set_busy(False)
             self.main.quick_composer.clear_recovery()
+        if self.main._app_mode == "quick":
             self.main._refresh_provider_chip()
         self.main.run_summary_label.setText(summary)
         self.refresh_asset_list(result.asset_slug)
@@ -1205,6 +1225,9 @@ class MainWindowController:
 
     def on_thread_error(self, message: str) -> None:
         self.set_busy(False, f"Error: {message}")
+        if self._quick_run_active:
+            self._quick_run_active = False
+            self.main.quick_composer.set_busy(False)
         if self.main._app_mode == "quick":
             self._show_quick_recovery(message, "Retry", "retry")
         else:
@@ -1421,6 +1444,13 @@ class MainWindowController:
                 self.main.preview_panel.add_generation_output(
                     raw_image, slice_paths, title=title
                 )
+        self.main.show_generated_output()
+
+    def persist_project_root(self) -> None:
+        self._user_settings.project_root = str(
+            Path(self.main.project_root_edit.text()).expanduser().resolve()
+        )
+        self._settings_store.save(self._user_settings)
 
     def manifest_image_path(self, value: object, base_dir: Path) -> Path | None:
         if not isinstance(value, str) or not value:

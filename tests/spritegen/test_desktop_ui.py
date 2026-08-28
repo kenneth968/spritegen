@@ -1277,6 +1277,14 @@ def test_quick_composer_shows_inline_recovery_for_missing_key(tmp_path, monkeypa
     assert window.controller._thread is None
     assert "OpenAI image API key is required" in window.quick_composer.recovery_label.text()
     assert window.quick_composer.recovery_btn.text() == "Paste key"
+    assert not (tmp_path / "projects" / "quick-start" / "project.json").exists()
+    assert not (
+        tmp_path
+        / "projects"
+        / "quick-start"
+        / "assets"
+        / "glowing-mushroom-tower.json"
+    ).exists()
 
     window.close()
     app.processEvents()

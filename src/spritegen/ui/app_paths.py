@@ -3,8 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from PySide6.QtCore import QStandardPaths
-
 
 @dataclass(frozen=True, slots=True)
 class ProjectRootError(RuntimeError):
@@ -19,6 +17,8 @@ def default_project_root(
 ) -> Path:
     location = documents_location
     if location is None:
+        from PySide6.QtCore import QStandardPaths
+
         location = QStandardPaths.writableLocation(
             QStandardPaths.StandardLocation.DocumentsLocation
         )

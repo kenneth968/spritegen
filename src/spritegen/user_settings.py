@@ -99,13 +99,24 @@ class UserSettings:
 class UserSettingsStore:
     def __init__(self, path: Path | str | None = None) -> None:
         self.path = Path(path) if path is not None else default_settings_path()
+        self.load_was_invalid = False
 
     def load(self) -> UserSettings:
+        self.load_was_invalid = False
         if not self.path.exists():
             return UserSettings()
         try:
-            return UserSettings.from_dict(json.loads(self.path.read_text(encoding="utf-8")))
-        except (OSError, json.JSONDecodeError):
+            data = json.loads(self.path.read_text(encoding="utf-8"))
+            if not isinstance(data, dict) or data.get("version") not in (
+                1,
+                2,
+                SETTINGS_SCHEMA_VERSION,
+            ):
+                self.load_was_invalid = True
+                return UserSettings()
+            return UserSettings.from_dict(data)
+        except (AttributeError, OSError, TypeError, json.JSONDecodeError):
+            self.load_was_invalid = True
             return UserSettings()
 
     def save(self, settings: UserSettings) -> Path:
