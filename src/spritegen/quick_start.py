@@ -52,15 +52,17 @@ def build_quick_specs(
         provider_defaults=provider_defaults,
     )
     project.provider_defaults = provider_defaults
-    asset_type = preset.to_asset_type()
-    project.add_asset_type(asset_type)
+    asset_type = project.asset_types.get(preset.asset_type)
+    if asset_type is None:
+        asset_type = preset.to_asset_type()
+        project.add_asset_type(asset_type)
     name, slug = _unique_asset_name(description, existing_assets)
     return project, AssetSpec(
         name=name,
         slug=slug,
         asset_type=asset_type.name,
         description=description,
-        layout=asset_type.default_layout,
+        layout=preset.default_layout,
     )
 
 
@@ -88,7 +90,7 @@ def _unique_asset_name(
 def _asset_name_from_description(description: str) -> str:
     words = [
         word
-        for word in re.findall(r"[A-Za-z0-9]+", description)
+        for word in re.findall(r"[^\W_]+", description, flags=re.UNICODE)
         if word.lower() not in _NAME_STOP_WORDS
     ]
     if not words:

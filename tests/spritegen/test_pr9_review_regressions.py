@@ -118,12 +118,76 @@ def test_quick_retry_reuses_same_asset_after_generation_error(tmp_path, monkeypa
     window.quick_composer.generate_btn.click()
     first_thread = window.controller._thread
 
+    window._set_app_mode("advanced")
     window.controller.on_thread_error("provider failed after preflight")
+    assert window.quick_composer.recovery_label.isHidden() is False
     window.quick_composer.recovery_btn.click()
 
     retry_thread = window.controller._thread
     assert retry_thread is not None
     assert retry_thread.asset.slug == first_thread.asset.slug
+    window.close()
+    QApplication.processEvents()
+
+
+def test_malformed_quick_start_records_are_recovered_inline(tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QApplication
+
+    from spritegen.projects import ProjectStore
+    from spritegen.ui import main_window as main_window_mod
+    from spritegen.ui.main_window import MainWindow
+    from spritegen.user_settings import UserSettingsStore
+
+    root = tmp_path / "projects"
+    quick_dir = root / "quick-start"
+    (quick_dir / "assets").mkdir(parents=True)
+    (quick_dir / "project.json").write_text("not json", encoding="utf-8")
+    (quick_dir / "assets" / "old.json").write_text("not json", encoding="utf-8")
+    monkeypatch.setattr(main_window_mod.ProjectGenerationThread, "start", lambda self: None)
+
+    _qapp()
+    window = MainWindow(settings_store=UserSettingsStore(tmp_path / "settings.json"))
+    window.project_root_edit.setText(str(root))
+    window.quick_composer.description_edit.setPlainText("glowing mushroom tower")
+    window.quick_composer.generate_btn.click()
+
+    assert window.controller._thread is not None
+    assert window.quick_composer.recovery_label.isHidden() is True
+    assert ProjectStore(root).load_project("quick-start").name == "Quick Start"
+    window.close()
+    QApplication.processEvents()
+
+
+def test_advanced_thread_error_uses_job_origin_after_switching_to_quick(
+    tmp_path, monkeypatch
+):
+    from PySide6.QtWidgets import QApplication
+
+    from spritegen.ui import controller as controller_mod
+    from spritegen.ui import main_window as main_window_mod
+    from spritegen.ui.main_window import MainWindow
+    from spritegen.user_settings import UserSettingsStore
+
+    monkeypatch.setattr(main_window_mod.ProjectGenerationThread, "start", lambda self: None)
+    warnings: list[tuple] = []
+    monkeypatch.setattr(
+        controller_mod.QMessageBox,
+        "warning",
+        lambda *args: warnings.append(args),
+    )
+
+    _qapp()
+    window = MainWindow(settings_store=UserSettingsStore(tmp_path / "settings.json"))
+    window.project_root_edit.setText(str(tmp_path / "projects"))
+    window._set_app_mode("advanced")
+    project, asset = window.controller.save_current_specs()
+    window.controller._start_generation(project, asset, quick_mode=False)
+    window._set_app_mode("quick")
+
+    window.controller.on_thread_error("advanced generation failed")
+
+    assert warnings
+    assert window.quick_composer.recovery_label.isHidden() is True
     window.close()
     QApplication.processEvents()
 

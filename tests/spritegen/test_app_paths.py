@@ -81,6 +81,29 @@ def test_ensure_writable_project_root_preserves_existing_probe(tmp_path: Path) -
     assert probe.exists()
 
 
+def test_ensure_writable_project_root_creates_directory_before_existing_probe_check(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from spritegen.ui.app_paths import ensure_writable_project_root
+
+    root = tmp_path / "projects"
+    root.mkdir()
+    (root / ".spritegen-write-test").write_text("keep", encoding="utf-8")
+    mkdir_calls: list[Path] = []
+    original_mkdir = Path.mkdir
+
+    def track_mkdir(path: Path, *args, **kwargs) -> None:
+        if path == root:
+            mkdir_calls.append(path)
+        original_mkdir(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "mkdir", track_mkdir)
+
+    ensure_writable_project_root(root)
+
+    assert mkdir_calls == [root]
+
+
 def test_ensure_writable_project_root_translates_permission_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

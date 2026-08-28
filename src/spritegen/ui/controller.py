@@ -75,6 +75,7 @@ class MainWindowController:
         self._quick_project: ProjectSpec | None = None
         self._quick_asset: AssetSpec | None = None
         self._quick_run_active = False
+        self._job_origin: str | None = None
         self._busy = False
 
     # ------------------------------------------------------------------
@@ -994,7 +995,10 @@ class MainWindowController:
             existing_project = None
             quick_project_path = store.project_path(QUICK_START_SLUG)
             if quick_project_path.exists():
-                existing_project = store.load_project(quick_project_path)
+                try:
+                    existing_project = store.load_project(quick_project_path)
+                except (OSError, ValueError, KeyError, TypeError):
+                    existing_project = None
             existing_assets = (
                 store.load_assets(existing_project) if existing_project is not None else []
             )
@@ -1108,6 +1112,7 @@ class MainWindowController:
             self.main.quick_composer.clear_recovery()
             self.main.quick_composer.set_busy(True)
             self._quick_run_active = True
+        self._job_origin = "quick" if quick_mode else "advanced"
         self._thread = self._thread_class("ProjectGenerationThread")(
             project=project,
             asset=asset,
@@ -1215,7 +1220,9 @@ class MainWindowController:
         self.main.show_generated_output()
         summary = f"Generated {len(result.outputs)} image(s)"
         self.set_busy(False, summary)
-        if self._quick_run_active:
+        job_origin = self._job_origin
+        self._job_origin = None
+        if job_origin == "quick" or self._quick_run_active:
             self._quick_run_active = False
             self.main.quick_composer.set_busy(False)
             self.main.quick_composer.clear_recovery()
@@ -1290,10 +1297,12 @@ class MainWindowController:
 
     def on_thread_error(self, message: str) -> None:
         self.set_busy(False, f"Error: {message}")
+        job_origin = self._job_origin
+        self._job_origin = None
         if self._quick_run_active:
             self._quick_run_active = False
             self.main.quick_composer.set_busy(False)
-        if self.main._app_mode == "quick":
+        if job_origin == "quick":
             self._show_quick_recovery(message, "Retry", "retry")
         else:
             QMessageBox.warning(self.main, "spritegen", message)

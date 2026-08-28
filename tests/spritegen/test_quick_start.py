@@ -80,7 +80,7 @@ def test_build_quick_specs_makes_asset_slugs_unique_within_quick_start():
     assert second_asset.slug == "glowing-mushroom-tower-2"
 
 
-def test_build_quick_specs_reapplies_selected_preset_to_existing_asset_type():
+def test_build_quick_specs_preserves_customized_existing_asset_type():
     from spritegen.projects import ProviderDefaults
     from spritegen.quick_start import QuickRequest, build_quick_specs
 
@@ -91,15 +91,28 @@ def test_build_quick_specs_reapplies_selected_preset_to_existing_asset_type():
     project.asset_types["prop"].default_layout = "four_stage_grid"
     project.asset_types["prop"].evolution.count = 8
 
-    build_quick_specs(
+    _project, second_asset = build_quick_specs(
         QuickRequest(description="glowing mushroom tower"),
         provider_defaults=ProviderDefaults(),
         existing_project=project,
         existing_assets=[first_asset],
     )
 
-    assert project.asset_types["prop"].default_layout == "single_sprite"
-    assert project.asset_types["prop"].evolution.count == 1
+    assert project.asset_types["prop"].default_layout == "four_stage_grid"
+    assert project.asset_types["prop"].evolution.count == 8
+    assert second_asset.layout == "single_sprite"
+
+
+def test_build_quick_specs_accepts_non_ascii_asset_descriptions():
+    from spritegen.projects import ProviderDefaults
+    from spritegen.quick_start import QuickRequest, build_quick_specs
+
+    _project, asset = build_quick_specs(
+        QuickRequest(description="魔法のキノコ塔"),
+        provider_defaults=ProviderDefaults(),
+    )
+
+    assert asset.name == "魔法のキノコ塔"
 
 
 @pytest.mark.parametrize(
