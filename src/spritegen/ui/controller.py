@@ -71,7 +71,11 @@ class MainWindowController:
         self._quick_description = ""
         self._quick_output_type = "single_sprite"
         self._quick_recovery_action = ""
+        self._quick_recovery_provider = ""
+        self._quick_project: ProjectSpec | None = None
+        self._quick_asset: AssetSpec | None = None
         self._quick_run_active = False
+        self._busy = False
 
     # ------------------------------------------------------------------
     # Attribute proxies so methods can read widget state in one place.
@@ -127,6 +131,10 @@ class MainWindowController:
     @property
     def _project_root(self) -> str:
         return self.main._project_root
+
+    @property
+    def busy(self) -> bool:
+        return self._busy
 
     # ------------------------------------------------------------------
     # Settings & API keys
@@ -222,6 +230,33 @@ class MainWindowController:
             self._user_settings.prompt_model = default_model(provider, PROMPT_ROLE)
             self._user_settings.shared_provider_setup = True
             repairs.append(f"Selected {PROVIDER_LABELS[provider]} for first use")
+
+        image_missing_key = (
+            self._user_settings.image_provider in KEYED_PROVIDERS
+            and not self.configured_api_key_for(self._user_settings.image_provider)
+        )
+        prompt_missing_key = (
+            self._user_settings.prompt_provider in KEYED_PROVIDERS
+            and not self.configured_api_key_for(self._user_settings.prompt_provider)
+        )
+        fallback_provider = self._preferred_startup_provider()
+        if image_missing_key:
+            self._user_settings.image_provider = fallback_provider
+            self._user_settings.image_model = default_model(fallback_provider, IMAGE_ROLE)
+            repairs.append(
+                f"Fell back to {PROVIDER_LABELS[fallback_provider]} without a saved image key"
+            )
+            if self._user_settings.shared_provider_setup:
+                self._user_settings.prompt_provider = fallback_provider
+                self._user_settings.prompt_model = default_model(fallback_provider, PROMPT_ROLE)
+        if prompt_missing_key and not (
+            self._user_settings.shared_provider_setup and image_missing_key
+        ):
+            self._user_settings.prompt_provider = fallback_provider
+            self._user_settings.prompt_model = default_model(fallback_provider, PROMPT_ROLE)
+            repairs.append(
+                f"Fell back to {PROVIDER_LABELS[fallback_provider]} without a saved prompt key"
+            )
 
         image_validation = validate_model_choice(
             self._user_settings.image_provider,
@@ -393,6 +428,7 @@ class MainWindowController:
         self.main.asset_details_edit.clear()
         self.main.enhanced_prompt_edit.clear()
         self.main.preview_panel.clear()
+        self.main.show_generation_pending()
         self.main.status_label.setText("Ready for a new asset")
 
     def on_save_plan(self) -> None:
@@ -968,6 +1004,8 @@ class MainWindowController:
                 existing_project=existing_project,
                 existing_assets=existing_assets,
             )
+            self._quick_project = project
+            self._quick_asset = asset
         except (ProjectRootError, QuickStartError) as exc:
             action = "folder" if isinstance(exc, ProjectRootError) else "description"
             action_label = "Choose another folder" if action == "folder" else "Edit description"
@@ -991,8 +1029,19 @@ class MainWindowController:
         if self._quick_recovery_action == "settings":
             self.main._open_settings_drawer()
             return
+        if self._quick_recovery_action == "key":
+            self.main._open_settings_drawer()
+            self.main._set_combo_value(
+                self.main.image_provider_combo, self._quick_recovery_provider
+            )
+            self.main.image_api_key_edit.setFocus()
+            self.main.image_api_key_edit.selectAll()
+            return
         if self._quick_recovery_action == "retry":
-            self.on_quick_generate(self._quick_description, self._quick_output_type)
+            if self._quick_project is not None and self._quick_asset is not None:
+                self._start_generation(self._quick_project, self._quick_asset, quick_mode=True)
+            else:
+                self.on_quick_generate(self._quick_description, self._quick_output_type)
 
     def on_generate(self) -> None:
         try:
@@ -1024,9 +1073,15 @@ class MainWindowController:
             self.main.status_label.setText(message)
             if quick_mode:
                 issue = preflight.errors[0]
-                action_label = "Paste key" if issue.code.endswith("api-key") else "Open advanced setup"
-                action = "settings"
-                self._show_quick_recovery(issue.message, action_label, action)
+                has_key_error = issue.code.endswith("api-key")
+                action_label = "Paste key" if has_key_error else "Open advanced setup"
+                action = "key" if has_key_error else "settings"
+                self._show_quick_recovery(
+                    issue.message,
+                    action_label,
+                    action,
+                    provider=provider if has_key_error else None,
+                )
             return
 
         if quick_mode:
@@ -1079,8 +1134,16 @@ class MainWindowController:
         if self.main._app_mode == "quick":
             self.main.quick_composer.set_provider_status(message)
 
-    def _show_quick_recovery(self, message: str, action_label: str, action: str) -> None:
+    def _show_quick_recovery(
+        self,
+        message: str,
+        action_label: str,
+        action: str,
+        *,
+        provider: str | None = None,
+    ) -> None:
         self._quick_recovery_action = action
+        self._quick_recovery_provider = provider or ""
         self.main.quick_composer.set_busy(False)
         self.main.quick_composer.set_recovery(message, action_label)
         self.main.status_label.setText(message)
@@ -1156,6 +1219,8 @@ class MainWindowController:
             self._quick_run_active = False
             self.main.quick_composer.set_busy(False)
             self.main.quick_composer.clear_recovery()
+            self._quick_project = None
+            self._quick_asset = None
         if self.main._app_mode == "quick":
             self.main._refresh_provider_chip()
         self.main.run_summary_label.setText(summary)
@@ -1527,6 +1592,7 @@ class MainWindowController:
     # Busy / status
     # ------------------------------------------------------------------
     def set_busy(self, busy: bool, status: str) -> None:
+        self._busy = busy
         self.main.set_busy_state(busy)
         self.main.status_label.setText(status)
         if busy and hasattr(self.main, "run_summary_label"):

@@ -67,6 +67,20 @@ def test_ensure_writable_project_root_creates_and_cleans_probe(tmp_path: Path) -
     assert not (root / ".spritegen-write-test").exists()
 
 
+def test_ensure_writable_project_root_preserves_existing_probe(tmp_path: Path) -> None:
+    from spritegen.ui.app_paths import ensure_writable_project_root
+
+    root = tmp_path / "projects"
+    root.mkdir()
+    probe = root / ".spritegen-write-test"
+    probe.write_text("keep this file", encoding="utf-8")
+
+    ensure_writable_project_root(root)
+
+    assert probe.read_text(encoding="utf-8") == "keep this file"
+    assert probe.exists()
+
+
 def test_ensure_writable_project_root_translates_permission_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

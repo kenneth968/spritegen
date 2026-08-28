@@ -51,6 +51,134 @@ def test_quick_preflight_uses_quick_generation_options(tmp_path):
     QApplication.processEvents()
 
 
+def test_switching_to_quick_preserves_busy_state(tmp_path):
+    from PySide6.QtWidgets import QApplication
+
+    from spritegen.ui.main_window import MainWindow
+    from spritegen.user_settings import UserSettingsStore
+
+    _qapp()
+    window = MainWindow(settings_store=UserSettingsStore(tmp_path / "settings.json"))
+    window._set_app_mode("advanced")
+    window.controller.set_busy(True, "Generating asset...")
+
+    window._set_app_mode("quick")
+
+    assert window.quick_composer.description_edit.isReadOnly() is True
+    assert window.quick_composer.generate_btn.isEnabled() is False
+    window.controller.set_busy(False, "Ready")
+    window.close()
+    QApplication.processEvents()
+
+
+@pytest.mark.parametrize("provider", ["openai", "openrouter"])
+def test_missing_key_recovery_focuses_the_selected_provider_key_field(
+    tmp_path, monkeypatch, provider
+):
+    from PySide6.QtWidgets import QApplication
+
+    from spritegen.ui.main_window import MainWindow
+    from spritegen.user_settings import UserSettingsStore
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    _qapp()
+    window = MainWindow(settings_store=UserSettingsStore(tmp_path / "settings.json"))
+    window.show()
+    QApplication.processEvents()
+    window.project_root_edit.setText(str(tmp_path / "projects"))
+    window._set_combo_value(window.image_provider_combo, provider)
+    window._on_image_provider_changed()
+    window.quick_composer.description_edit.setPlainText("glowing mushroom tower")
+
+    window.quick_composer.generate_btn.click()
+    assert window.quick_composer.recovery_btn.text() == "Paste key"
+
+    window.quick_composer.recovery_btn.click()
+    QApplication.processEvents()
+
+    assert window.settings_drawer.isHidden() is False
+    assert window.image_api_key_edit.hasFocus() is True
+    window.close()
+    QApplication.processEvents()
+
+
+def test_quick_retry_reuses_same_asset_after_generation_error(tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QApplication
+
+    from spritegen.ui import main_window as main_window_mod
+    from spritegen.ui.main_window import MainWindow
+    from spritegen.user_settings import UserSettingsStore
+
+    monkeypatch.setattr(main_window_mod.ProjectGenerationThread, "start", lambda self: None)
+    _qapp()
+    window = MainWindow(settings_store=UserSettingsStore(tmp_path / "settings.json"))
+    window.project_root_edit.setText(str(tmp_path / "projects"))
+    window.quick_composer.description_edit.setPlainText("glowing mushroom tower")
+    window.quick_composer.generate_btn.click()
+    first_thread = window.controller._thread
+
+    window.controller.on_thread_error("provider failed after preflight")
+    window.quick_composer.recovery_btn.click()
+
+    retry_thread = window.controller._thread
+    assert retry_thread is not None
+    assert retry_thread.asset.slug == first_thread.asset.slug
+    window.close()
+    QApplication.processEvents()
+
+
+def test_missing_saved_provider_key_falls_back_to_pollinations(tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QApplication
+
+    from spritegen.provider_models import IMAGE_ROLE, PROMPT_ROLE, default_model
+    from spritegen.ui.main_window import MainWindow
+    from spritegen.user_settings import UserSettings, UserSettingsStore
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    settings_store = UserSettingsStore(tmp_path / "settings.json")
+    settings_store.save(
+        UserSettings(
+            image_provider="openai",
+            image_model="gpt-image-2",
+            prompt_provider="openrouter",
+            prompt_model="openai/gpt-5.5",
+            shared_provider_setup=False,
+        )
+    )
+
+    _qapp()
+    window = MainWindow(settings_store=settings_store)
+
+    assert window.image_provider_combo.currentData() == "pollinations"
+    assert window.prompt_provider_combo.currentData() == "pollinations"
+    assert window.image_model_edit.text() == default_model("pollinations", IMAGE_ROLE)
+    assert window.prompt_model_edit.text() == default_model("pollinations", PROMPT_ROLE)
+    window.close()
+    QApplication.processEvents()
+
+
+def test_new_asset_hides_stale_output_actions(tmp_path):
+    from PySide6.QtWidgets import QApplication
+
+    from spritegen.ui.main_window import MainWindow
+    from spritegen.user_settings import UserSettingsStore
+
+    _qapp()
+    window = MainWindow(settings_store=UserSettingsStore(tmp_path / "settings.json"))
+    window.workspace_panel.show_generated_output()
+    assert window.workspace_panel.export_sprites_btn.isHidden() is False
+
+    window._on_new_asset()
+
+    assert window.workspace_panel.export_sprites_btn.isHidden() is True
+    assert window.workspace_panel.open_gallery_btn.isHidden() is True
+    assert window.workspace_panel.open_folder_btn.isHidden() is True
+    window.close()
+    QApplication.processEvents()
+
+
 def test_quick_run_resets_composer_when_mode_changes_before_completion(tmp_path, monkeypatch):
     from PySide6.QtWidgets import QApplication
 

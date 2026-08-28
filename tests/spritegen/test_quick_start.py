@@ -80,6 +80,28 @@ def test_build_quick_specs_makes_asset_slugs_unique_within_quick_start():
     assert second_asset.slug == "glowing-mushroom-tower-2"
 
 
+def test_build_quick_specs_reapplies_selected_preset_to_existing_asset_type():
+    from spritegen.projects import ProviderDefaults
+    from spritegen.quick_start import QuickRequest, build_quick_specs
+
+    project, first_asset = build_quick_specs(
+        QuickRequest(description="glowing mushroom tower"),
+        provider_defaults=ProviderDefaults(),
+    )
+    project.asset_types["prop"].default_layout = "four_stage_grid"
+    project.asset_types["prop"].evolution.count = 8
+
+    build_quick_specs(
+        QuickRequest(description="glowing mushroom tower"),
+        provider_defaults=ProviderDefaults(),
+        existing_project=project,
+        existing_assets=[first_asset],
+    )
+
+    assert project.asset_types["prop"].default_layout == "single_sprite"
+    assert project.asset_types["prop"].evolution.count == 1
+
+
 @pytest.mark.parametrize(
     ("description", "output_type", "message"),
     [

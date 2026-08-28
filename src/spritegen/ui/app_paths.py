@@ -29,13 +29,20 @@ def default_project_root(
 def ensure_writable_project_root(root: Path | str) -> Path:
     resolved = Path(root).expanduser().resolve()
     probe = resolved / ".spritegen-write-test"
+    created_probe = False
     try:
         resolved.mkdir(parents=True, exist_ok=True)
-        probe.write_text("spritegen", encoding="utf-8")
+        if probe.exists():
+            with probe.open("ab"):
+                pass
+        else:
+            probe.write_text("spritegen", encoding="utf-8")
+            created_probe = True
     except OSError as exc:
         raise ProjectRootError(resolved) from exc
     try:
-        probe.unlink(missing_ok=True)
+        if created_probe:
+            probe.unlink()
     except OSError as exc:
         raise ProjectRootError(resolved) from exc
     return resolved

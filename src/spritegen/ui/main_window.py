@@ -419,6 +419,7 @@ class MainWindow(QWidget):
         )
         self.action_footer.setVisible(not quick_mode)
         self.workspace_panel.set_quick_mode(quick_mode)
+        self.quick_composer.set_busy(self.controller.busy)
         self.provider_bar.set_mode(mode)
 
     def _set_welcome_visible(self, visible: bool) -> None:
