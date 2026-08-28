@@ -1603,6 +1603,7 @@ class MainWindowController:
     def set_busy(self, busy: bool, status: str) -> None:
         self._busy = busy
         self.main.set_busy_state(busy)
+        self.main.quick_composer.set_busy(busy)
         self.main.status_label.setText(status)
         if busy and hasattr(self.main, "run_summary_label"):
             self.main.run_summary_label.setText(status)

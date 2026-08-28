@@ -283,6 +283,44 @@ def test_quick_run_resets_composer_when_mode_changes_before_completion(tmp_path,
     QApplication.processEvents()
 
 
+def test_advanced_run_releases_quick_composer_after_switching_modes(
+    tmp_path, monkeypatch
+):
+    from PySide6.QtWidgets import QApplication
+
+    from spritegen.project_generation import ProjectGenerationResult
+    from spritegen.ui import main_window as main_window_mod
+    from spritegen.ui.main_window import MainWindow
+    from spritegen.user_settings import UserSettingsStore
+
+    monkeypatch.setattr(main_window_mod.ProjectGenerationThread, "start", lambda self: None)
+
+    _qapp()
+    window = MainWindow(settings_store=UserSettingsStore(tmp_path / "settings.json"))
+    window.project_root_edit.setText(str(tmp_path / "projects"))
+    window._set_app_mode("advanced")
+    project, asset = window.controller.save_current_specs()
+    window.controller._start_generation(project, asset, quick_mode=False)
+
+    window._set_app_mode("quick")
+    assert window.quick_composer.generate_btn.isEnabled() is False
+
+    result = ProjectGenerationResult(
+        project_slug=project.slug,
+        asset_slug=asset.slug,
+        output_dir=tmp_path / "projects" / project.slug / "generated" / asset.slug,
+        manifest_path=tmp_path / "manifest.json",
+        gallery_path=tmp_path / "gallery.html",
+        outputs=[],
+    )
+    window._on_generation_finished(result)
+
+    assert window.quick_composer.generate_btn.isEnabled() is True
+    assert window.quick_composer.description_edit.isReadOnly() is False
+    window.close()
+    QApplication.processEvents()
+
+
 @pytest.mark.parametrize(
     "raw_settings",
     [
