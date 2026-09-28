@@ -36,7 +36,7 @@ def test_welcome_overlay_hidden_when_already_seen(tmp_path, monkeypatch):
     app.processEvents()
 
 
-def test_welcome_overlay_shown_on_first_run(tmp_path, monkeypatch):
+def test_quick_composer_shown_on_first_run(tmp_path, monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
 
@@ -46,8 +46,12 @@ def test_welcome_overlay_shown_on_first_run(tmp_path, monkeypatch):
     app = _qapp()
     window = MainWindow(settings_store=UserSettingsStore(tmp_path / "settings.json"))
 
-    assert window.welcome_overlay.isHidden() is False
-    assert window.app_background.isEnabled() is False
+    assert window.welcome_overlay.isHidden() is True
+    assert window.app_background.isEnabled() is True
+    assert window.quick_composer.isHidden() is False
+    assert window.project_panel.isHidden() is True
+    assert window.provider_bar.project_pill.text() == "Project: Quick Start"
+    assert window.provider_bar.asset_pill.text() == "No asset"
     window.close()
     app.processEvents()
 
@@ -61,7 +65,6 @@ def test_welcome_pollinations_dismisses_and_picks_provider(tmp_path, monkeypatch
 
     app = _qapp()
     window = MainWindow(settings_store=UserSettingsStore(tmp_path / "settings.json"))
-    assert window.welcome_overlay.isHidden() is False
     window.project_root_edit.setText(str(tmp_path / "projects"))
 
     # Simulate clicking the Pollinations card
@@ -162,10 +165,13 @@ def test_welcome_escape_skips_and_reenables_app(tmp_path, monkeypatch):
     app = _qapp()
     window = MainWindow(settings_store=store)
 
+    window._set_welcome_visible(True)
     assert window.welcome_overlay.isHidden() is False
     assert window.app_background.isEnabled() is False
 
-    window.keyPressEvent(QKeyEvent(QEvent.KeyPress, Qt.Key_Escape, Qt.NoModifier))
+    window.keyPressEvent(
+        QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Escape, Qt.KeyboardModifier.NoModifier)
+    )
     app.processEvents()
 
     assert window.welcome_overlay.isHidden() is True
@@ -191,7 +197,7 @@ def test_env_var_openai_key_auto_configures_on_first_run(tmp_path, monkeypatch):
     assert window.image_provider_combo.currentData() == "openai"
     assert "OpenAI" in window.provider_bar.provider_chip.text()
     assert "Key loaded" in window.provider_bar.provider_chip.text()
-    assert store.load().has_seen_welcome is True
+    assert store.load().has_seen_welcome is False
     window.close()
     app.processEvents()
 

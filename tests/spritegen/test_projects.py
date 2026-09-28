@@ -481,6 +481,48 @@ def test_project_custom_layout_round_trips_and_drives_prompt_plan(tmp_path):
     assert len(result.outputs[0].slices) == 6
 
 
+def test_project_generator_normalizes_provider_images_to_the_requested_layout(
+    tmp_path, monkeypatch
+):
+    from PIL import Image
+
+    project = ProjectSpec(
+        name="Quick Start",
+        summary="Quick test project",
+        visual_style="Readable sprite art",
+        shared_context="",
+    )
+    project.add_asset_type(AssetTypeSpec(name="prop", default_layout="single_sprite"))
+    asset = AssetSpec(
+        name="Lantern Mushroom",
+        asset_type="prop",
+        description="A warm glowing mushroom tower.",
+    )
+
+    def fake_generate_raw_image(
+        self, prompt, negative_prompt, width, height, reference_images=None
+    ):
+        image = Image.new("RGBA", (768, 768), (255, 0, 0, 255))
+        buffer = BytesIO()
+        image.save(buffer, format="PNG")
+        return buffer.getvalue()
+
+    monkeypatch.setattr(
+        "spritegen.project_generation.SpriteGenerator.generate_raw_image",
+        fake_generate_raw_image,
+    )
+
+    result = ProjectAssetGenerator(ProjectStore(tmp_path / "projects")).generate(
+        project=project,
+        asset=asset,
+        output_root=tmp_path / "generated",
+    )
+
+    with Image.open(result.outputs[0].raw_image) as raw_image:
+        assert raw_image.size == (1024, 1024)
+    assert len(result.outputs[0].slices) == 1
+
+
 def test_prompt_uses_known_assets_for_universe_coherence():
     project = ProjectSpec(
         name="Dungeon portraits",

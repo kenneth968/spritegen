@@ -707,7 +707,10 @@ class ProjectStore:
             return []
         assets: list[AssetSpec] = []
         for path in sorted(root.glob("*.json")):
-            assets.append(AssetSpec.from_dict(json.loads(path.read_text(encoding="utf-8"))))
+            try:
+                assets.append(AssetSpec.from_dict(json.loads(path.read_text(encoding="utf-8"))))
+            except (OSError, ValueError, KeyError, TypeError):
+                continue
         return assets
 
     def load_assets_for_slug(self, project_slug: str) -> list[AssetSpec]:
@@ -716,7 +719,10 @@ class ProjectStore:
             return []
         assets: list[AssetSpec] = []
         for path in sorted(root.glob("*.json")):
-            assets.append(AssetSpec.from_dict(json.loads(path.read_text(encoding="utf-8"))))
+            try:
+                assets.append(AssetSpec.from_dict(json.loads(path.read_text(encoding="utf-8"))))
+            except (OSError, ValueError, KeyError, TypeError):
+                continue
         return assets
 
     def list_projects(self) -> list[ProjectSpec]:
